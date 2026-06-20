@@ -106,8 +106,10 @@ const startLive = async (videoId, relay) => {
 
   client.start(videoId, {
     onMessages,
-    onState: ({ healthy, replay }) => setStatus(healthy ? (replay ? "replay" : "live") : "reconnecting…"),
-    onError: () => setStatus("reconnecting…"),
+    onState: ({ healthy, failures, replay }) => {
+      const mode = replay ? "replay" : "live";
+      setStatus(healthy || failures < 2 ? mode : "reconnecting…");
+    },
     onEnded: ({ reason }) => setStatus(reason === "ended" ? "ended" : "stopped"),
   });
 

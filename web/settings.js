@@ -11,7 +11,7 @@
     { key: "enabled",      group: "General",     label: "Overlay enabled",        type: "bool",                                   default: true },
     { key: "hideDefaultChat", group: "General",  label: "Hide YouTube chat while overlay is on", type: "bool",                     default: false },
     { key: "opacity",      group: "Display",     label: "Opacity",                type: "range", min: 20,  max: 100,  step: 5, unit: "%",  default: 100 },
-    { key: "fontPx",       group: "Display",     label: "Font size",              type: "range", min: 14,  max: 48,   step: 1, unit: "px", default: 24 },
+    { key: "fontPx",       group: "Display",     label: "Font size",              type: "range", min: 14,  max: 48,   step: 1, unit: "px", default: 18 },
     { key: "fontFamily",   group: "Display",     label: "Font family",            type: "select",  default: "",
       options: [
         { value: "", label: "System default" },
@@ -35,17 +35,17 @@
     { key: "fastMs",       group: "Speed",       label: "Fast tier time",         type: "range", min: 2000, max: 12000, step: 250, unit: "ms", default: 6000 },
     { key: "normalMs",     group: "Speed",       label: "Normal tier time",       type: "range", min: 3000, max: 16000, step: 250, unit: "ms", default: 7500 },
     { key: "slowMs",       group: "Speed",       label: "Slow tier time",         type: "range", min: 4000, max: 20000, step: 250, unit: "ms", default: 10000 },
-    { key: "maxActive",    group: "Performance", label: "Max comments on screen", type: "range", min: 100, max: 2000, step: 50,            default: 700 },
-    { key: "maxQueue",     group: "Performance", label: "Pending comment queue",  type: "range", min: 100, max: 5000, step: 100,           default: 2000 },
-    { key: "spawnPerFrame", group: "Performance", label: "Comments prepared per frame", type: "range", min: 1, max: 24, step: 1,          default: 8 },
+    { key: "maxActive",    group: "Performance", label: "Max comments on screen", type: "range", min: 100, max: 2000, step: 50,            default: 250 },
+    { key: "maxQueue",     group: "Performance", label: "Pending comment queue",  type: "range", min: 100, max: 5000, step: 100,           default: 1000 },
+    { key: "spawnPerFrame", group: "Performance", label: "Comments prepared per frame", type: "range", min: 1, max: 24, step: 1,          default: 6 },
     { key: "renderScalePct", group: "Performance", label: "Render resolution",    type: "range", min: 50,  max: 150,  step: 5, unit: "%",  default: 60 },
     { key: "maxTextChars", group: "Performance", label: "Max comment length",     type: "range", min: 80,  max: 500,  step: 20,            default: 260 },
-    { key: "lineHeight",   group: "Layout",      label: "Lane height",            type: "range", min: 20,  max: 48,   step: 1, unit: "px", default: 30 },
+    { key: "lineHeight",   group: "Layout",      label: "Lane height",            type: "range", min: 20,  max: 48,   step: 1, unit: "px", default: 24 },
     { key: "topPct",       group: "Layout",      label: "Top clear zone",         type: "range", min: 0,   max: 40,   step: 1, unit: "%",  default: 8 },
     { key: "bottomPct",    group: "Layout",      label: "Bottom clear zone",      type: "range", min: 0,   max: 40,   step: 1, unit: "%",  default: 14 },
     { key: "lengthSpread", group: "Behavior",    label: "Vary speed by length",   type: "bool",                                   default: true },
     { key: "spreadStrength", group: "Behavior",  label: "Length speed strength",  type: "range", min: 0,   max: 100,  step: 5, unit: "%", default: 35 },
-    { key: "dedup",        group: "Behavior",    label: "Drop near-duplicates",   type: "bool",                                   default: false },
+    { key: "dedup",        group: "Behavior",    label: "Drop near-duplicates",   type: "bool",                                   default: true },
     { key: "dedupThreshold", group: "Behavior",  label: "Duplicate strictness",   type: "range", min: 1,   max: 8,    step: 1,            default: 3 }
   ];
 
