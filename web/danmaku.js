@@ -269,11 +269,12 @@
       const color = (this.cfg.roleColors && payload.authorType && payload.authorType !== "normal")
         ? (COLORS[payload.authorType] ?? this.cfg.textColor)
         : this.cfg.textColor;
-      const label = payload.author && payload.kind && payload.kind !== "text"
-        ? `${payload.author}: ${payload.text}`
-        : payload.text;
+      const msgParts = payload.parts && payload.parts.length ? payload.parts : [{ t: payload.text }];
+      const parts = (payload.author && payload.kind && payload.kind !== "text"
+        ? [{ t: `${payload.author}: ` }, ...msgParts]
+        : msgParts).slice(0, 60);
       const glow = emphasis >= 0.62 && this.frameEMA < 24; // skip glow when frames are heavy
-      const bmp = this._rasterize(label, color, fontPx, glow);
+      const bmp = this._rasterize(parts, color, fontPx, glow);
 
       const td = this.cfg.tierDurations;
       const baseMs = (td && td[payload.tier] != null) ? td[payload.tier] : (payload.durationMs || 8000);
@@ -316,20 +317,43 @@
       return best;
     }
 
-    _rasterize(text, color, fontPx, glow) {
+    // parts: [{ t: text } | { u: emojiUrl }]. Text is drawn with outline/glow;
+    // custom-emoji parts are drawn as images. A bitmap referencing an emoji image
+    // that has not loaded yet is NOT cached, so it re-rasterizes (with the image)
+    // next time the same comment appears.
+    _rasterize(parts, color, fontPx, glow) {
       const family = this.cfg.fontFamily || 'system-ui, -apple-system, "Segoe UI", sans-serif';
       const weight = this.cfg.fontWeight || 700;
       const ow = this.cfg.outlineWidth ?? 3;
       const oa = this.cfg.outlineAlpha ?? 0.85;
-      const key = `${fontPx}|${weight}|${ow}|${oa}|${glow ? 1 : 0}|${color}|${family}|${text}`;
+      const sig = parts.map((p) => (p.u ? "" + p.u : p.t)).join("");
+      const key = `${fontPx}|${weight}|${ow}|${oa}|${glow ? 1 : 0}|${color}|${family}|${sig}`;
       const hit = this.cache.get(key);
       if (hit) return hit;
+
       const font = `${weight} ${fontPx}px ${family}`;
       if (!this.measure) this.measure = document.createElement("canvas").getContext("2d");
       this.measure.font = font;
-      const pad = (glow ? 10 : 6) + Math.ceil((this.cfg.outlineWidth ?? 3) / 2);
+      const pad = (glow ? 10 : 6) + Math.ceil(ow / 2);
       const h = Math.max(this.cfg.lineHeight, fontPx + 8);
-      const w = Math.ceil(this.measure.measureText(text).width) + pad * 2;
+      const emojiSize = Math.round(fontPx * 1.15);
+      const emoji = globalThis.SYCEmoji;
+
+      // Measure each segment; track whether every emoji image is ready.
+      let allReady = true;
+      let w = 0;
+      const segs = parts.map((p) => {
+        if (p.u) {
+          const img = emoji ? emoji.get(p.u) : null;
+          const ready = !!(img && img.complete && img.naturalWidth);
+          if (!ready) allReady = false;
+          return { img: ready ? img : null, w: emojiSize + 2 };
+        }
+        return { text: p.t, w: this.measure.measureText(p.t).width };
+      });
+      for (const s of segs) w += s.w;
+      w = Math.ceil(w) + pad * 2;
+
       const dpr = this.cfg.dpr;
       const oc = document.createElement("canvas");
       oc.width = Math.max(1, Math.ceil(w * dpr));
@@ -339,21 +363,33 @@
       o.font = font;
       o.textBaseline = "middle";
       o.lineJoin = "round";
-      if (glow) { o.shadowColor = "rgba(255,255,255,.55)"; o.shadowBlur = 6; }
-      if (ow > 0) {
-        o.lineWidth = ow;
-        o.strokeStyle = `rgba(0,0,0,${oa})`;
-        o.strokeText(text, pad, h / 2);
+
+      let x = pad;
+      for (const s of segs) {
+        if (s.text != null) {
+          if (ow > 0) {
+            o.shadowBlur = 0;
+            o.lineWidth = ow;
+            o.strokeStyle = `rgba(0,0,0,${oa})`;
+            o.strokeText(s.text, x, h / 2);
+          }
+          if (glow) { o.shadowColor = "rgba(255,255,255,.55)"; o.shadowBlur = 6; } else o.shadowBlur = 0;
+          o.fillStyle = color;
+          o.fillText(s.text, x, h / 2);
+        } else if (s.img) {
+          o.shadowBlur = 0;
+          o.drawImage(s.img, x, h / 2 - emojiSize / 2, emojiSize, emojiSize);
+        }
+        x += s.w;
       }
-      o.shadowBlur = 0;
-      o.fillStyle = color;
-      o.fillText(text, pad, h / 2);
 
       const entry = { bmp: oc, w, h };
-      if (this.cache.size >= this.cfg.cacheMax) {
-        this.cache.delete(this.cache.keys().next().value); // drop oldest
+      if (allReady) {
+        if (this.cache.size >= this.cfg.cacheMax) {
+          this.cache.delete(this.cache.keys().next().value); // drop oldest
+        }
+        this.cache.set(key, entry);
       }
-      this.cache.set(key, entry);
       return entry;
     }
 

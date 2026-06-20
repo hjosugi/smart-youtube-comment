@@ -23,6 +23,7 @@ const initial = await page.evaluate(() => {
     listRows: document.querySelectorAll(".clist-row").length,
     listVisible: !document.querySelector(".clist").hidden,
     canvasLit: lit,
+    emojiImgs: document.querySelectorAll(".clist-emoji").length, // custom-emoji <img> in the list
   };
 });
 
@@ -46,6 +47,7 @@ const checks = [
   ["comment list populated", initial.listRows > 3],
   ["comment list visible by default", initial.listVisible === true],
   ["danmaku renders alongside list", initial.canvasLit > 1000],
+  ["custom emoji rendered as <img> in list", initial.emojiImgs > 0],
   ["list toggle hides the list", listOff.hidden === true],
   ["list toggle persists (listEnabled=false)", listOff.saved === false],
   ["danmaku toggle persists (enabled=false)", danmakuOff === false],

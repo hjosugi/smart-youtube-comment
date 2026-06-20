@@ -12,6 +12,7 @@ export const makeRenderer = (scorer, buildRenderPlan) => (msg) => {
   if (!plan) return null;
   return {
     text: msg.text,
+    parts: msg.parts,
     author: msg.author,
     kind: msg.kind,
     authorType: msg.authorType,

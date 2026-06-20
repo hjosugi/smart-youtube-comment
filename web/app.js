@@ -50,6 +50,7 @@ const onMessages = (msgs) => {
     if (f === "skip") continue; // future replay msg — revisit when playback reaches it
     remember(m.id);
     if (f !== "show") continue;
+    globalThis.SYCEmoji?.preload(m.parts); // start loading member-emoji images
     if (cfg.listEnabled) list.push(m);
     if (cfg.enabled) {
       const payload = render(m); // scoring may drop low-signal comments from danmaku

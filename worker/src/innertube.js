@@ -163,13 +163,36 @@ const extractContinuation = (continuations = []) => {
 
 const msToTs = (usec) => (usec ? Math.floor(Number(usec) / 1000) : 0);
 
-const runsToText = (node) => {
-  if (!node) return "";
-  if (node.simpleText) return node.simpleText;
-  return (node.runs ?? [])
-    .map((run) => run.text ?? run.emoji?.shortcuts?.[0] ?? run.emoji?.emojiId ?? "")
-    .join("");
+// Split a message node into renderable parts: { t: text } | { u: emojiUrl, a: label }.
+// Standard emojis become unicode text (emojiId); custom/member emojis become image
+// parts (so the device can render the actual member emoji, not its ":shortcut:").
+const runsToParts = (node) => {
+  if (!node) return [];
+  if (node.simpleText) return [{ t: node.simpleText }];
+  const parts = [];
+  for (const run of node.runs ?? []) {
+    if (run.text != null) {
+      parts.push({ t: run.text });
+      continue;
+    }
+    const e = run.emoji;
+    if (!e) continue;
+    if (e.isCustomEmoji) {
+      const thumbs = e.image?.thumbnails ?? [];
+      const url = thumbs[thumbs.length - 1]?.url;
+      const label = e.shortcuts?.[0] ?? e.image?.accessibility?.accessibilityData?.label ?? "";
+      if (url) parts.push({ u: url, a: label });
+      else if (label) parts.push({ t: label });
+    } else {
+      parts.push({ t: e.emojiId ?? e.shortcuts?.[0] ?? "" }); // standard -> unicode glyph
+    }
+  }
+  return parts;
 };
+
+const partsText = (parts) => parts.map((p) => p.t ?? p.a ?? "").join("");
+
+const runsToText = (node) => partsText(runsToParts(node));
 
 // owner > moderator > member > normal (member badge has a custom thumbnail, no iconType)
 const authorTypeFromBadges = (badges = []) => {
@@ -180,7 +203,7 @@ const authorTypeFromBadges = (badges = []) => {
   return "normal";
 };
 
-const message = ({ id, ts, kind, author, authorType, text, amount }) => ({
+const message = ({ id, ts, kind, author, authorType, text, parts, amount }) => ({
   id: id ?? "",
   ts,
   kind,
@@ -188,6 +211,7 @@ const message = ({ id, ts, kind, author, authorType, text, amount }) => ({
   authorType,
   authorColor: null,
   text,
+  parts: parts ?? [],
   amount: amount ?? null,
 });
 
@@ -195,27 +219,34 @@ const amountOf = (r) => r.purchaseAmountText?.simpleText ?? null;
 
 // A standard author/timestamp/message renderer -> ChatMessage. Paid items often
 // carry money but no comment, so fall back to the amount (the renderer needs text).
-const fromRenderer = (kind, amount) => (r) =>
-  message({
+const fromRenderer = (kind, amount) => (r) => {
+  const parts = runsToParts(r.message ?? r.headerSubtext);
+  let text = partsText(parts);
+  if (!text && kind === "paid") text = amount ?? ""; // paid sticker / no-comment superchat
+  return message({
     id: r.id,
     ts: msToTs(r.timestampUsec),
     kind,
     author: r.authorName?.simpleText,
     authorType: authorTypeFromBadges(r.authorBadges),
-    text: runsToText(r.message ?? r.headerSubtext) || (kind === "paid" ? amount ?? "" : ""),
+    text,
+    parts: parts.length ? parts : text ? [{ t: text }] : [],
     amount,
   });
+};
 
 // "X gifted N memberships" — text lives under the header, not message/headerSubtext.
 const fromSponsorship = (r) => {
   const h = r.header?.liveChatSponsorshipsHeaderRenderer;
+  const parts = runsToParts(h?.primaryText);
   return message({
     id: r.id,
     ts: msToTs(r.timestampUsec),
     kind: "membership",
     author: h?.authorName?.simpleText,
     authorType: authorTypeFromBadges(h?.authorBadges),
-    text: runsToText(h?.primaryText),
+    text: partsText(parts),
+    parts,
     amount: null,
   });
 };
@@ -242,4 +273,4 @@ const parseAction = (action) => {
 };
 
 // Exposed for unit tests of the pure transforms (no network required).
-export const _pure = { parseAction, parseItem, extractContinuation, authorTypeFromBadges, runsToText, replayItems, isReplayChat };
+export const _pure = { parseAction, parseItem, extractContinuation, authorTypeFromBadges, runsToText, runsToParts, replayItems, isReplayChat };

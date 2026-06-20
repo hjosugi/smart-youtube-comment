@@ -23,6 +23,7 @@ const SHELL = [
   "./settings.js",
   "./filter.js",
   "./scoring.js",
+  "./emoji.js",
   "./danmaku.js",
   "./manifest.webmanifest",
   "./icons/icon.svg",

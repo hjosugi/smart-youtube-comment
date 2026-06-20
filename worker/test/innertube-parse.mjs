@@ -149,6 +149,32 @@ const textRenderer = (over = {}) => ({
   assert("bare text renderer -> safe defaults", bare.text === "" && bare.author === "" && bare.authorType === "normal" && bare.ts === 0 && bare.authorColor === null);
 }
 
+// --- emoji parts: standard -> unicode text, custom -> image part ---
+{
+  const rp = _pure.runsToParts;
+  assert("parts: text run", JSON.stringify(rp({ runs: [{ text: "hi" }] })) === '[{"t":"hi"}]');
+  assert("parts: standard emoji -> unicode", JSON.stringify(rp({ runs: [{ emoji: { emojiId: "🥕", shortcuts: [":carrot:"] } }] })) === '[{"t":"🥕"}]');
+  const custom = rp({ runs: [{ emoji: { isCustomEmoji: true, shortcuts: [":x:"], image: { thumbnails: [{ url: "u1" }, { url: "u2" }] } } }] });
+  assert("parts: custom emoji -> largest image", custom.length === 1 && custom[0].u === "u2" && custom[0].a === ":x:");
+  assert("parts: mixed text+emoji", JSON.stringify(rp({ runs: [{ text: "a " }, { emoji: { emojiId: "😀" } }, { text: " b" }] })) === '[{"t":"a "},{"t":"😀"},{"t":" b"}]');
+  assert("parts: simpleText", JSON.stringify(rp({ simpleText: "hello" })) === '[{"t":"hello"}]');
+  assert("parts: null -> []", JSON.stringify(rp(null)) === "[]");
+
+  const m = parseAction({
+    addChatItemAction: {
+      item: {
+        liveChatTextMessageRenderer: {
+          id: "e1",
+          authorName: { simpleText: "@a" },
+          message: { runs: [{ text: "hi " }, { emoji: { isCustomEmoji: true, shortcuts: [":m:"], image: { thumbnails: [{ url: "IMG" }] } } }] },
+        },
+      },
+    },
+  });
+  assert("message: parts carry emoji image", m.parts.some((p) => p.u === "IMG"));
+  assert("message: text flattens emoji to label", m.text === "hi :m:");
+}
+
 let allOk = true;
 for (const c of checks) {
   console.log(`${c.ok ? "✅" : "❌"} ${c.name}${c.ok ? "" : "  -> " + c.extra}`);

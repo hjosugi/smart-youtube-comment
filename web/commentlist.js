@@ -19,6 +19,25 @@ export const createCommentList = (root) => {
     return el;
   };
 
+  // Render message parts: text nodes + custom-emoji <img>. Falls back to plain
+  // text when the relay didn't supply parts.
+  const renderText = (m) => {
+    const span = make("span", "clist-text");
+    const parts = m.parts && m.parts.length ? m.parts : [{ t: m.text }];
+    for (const p of parts) {
+      if (p.u) {
+        const img = make("img", "clist-emoji");
+        img.src = p.u;
+        img.alt = p.a || "";
+        img.loading = "lazy";
+        span.append(img);
+      } else if (p.t) {
+        span.append(document.createTextNode(p.t));
+      }
+    }
+    return span;
+  };
+
   return {
     push(m) {
       if (!visible || !m || !m.text) return;
@@ -26,7 +45,7 @@ export const createCommentList = (root) => {
       const row = make("div", m.kind === "paid" ? "clist-row paid" : "clist-row");
       const who = make("span", "clist-author", m.author || "");
       who.style.color = ROLE_COLOR[m.authorType] ?? ROLE_COLOR.normal;
-      row.append(who, make("span", "clist-text", m.text));
+      row.append(who, renderText(m));
       list.append(row);
       while (list.childElementCount > MAX_ROWS) list.firstChild.remove();
       if (stick) list.scrollTop = list.scrollHeight;

@@ -12,6 +12,16 @@ const POOL = [
   { text: "new member here, happy to join", authorType: "member", kind: "membership" },
   { text: "ggwp", authorType: "normal", kind: "text" },
   { text: "that play was actually insane, replay it", authorType: "normal", kind: "text" },
+  // a custom (member) emoji message — exercises image rendering in both views
+  {
+    text: "love this :emote:",
+    authorType: "member",
+    kind: "text",
+    parts: [
+      { t: "love this " },
+      { u: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC", a: ":emote:" },
+    ],
+  },
 ];
 
 const makeMessage = (i) => {

@@ -107,6 +107,12 @@ body {
 .clist-text {
   color: #e7e7ea;
 }
+.clist-emoji {
+  height: 1.3em;
+  width: auto;
+  vertical-align: -0.25em;
+  margin: 0 1px;
+}
 
 .perf {
   position: fixed;
