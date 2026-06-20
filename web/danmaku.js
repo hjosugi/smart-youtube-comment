@@ -141,6 +141,16 @@
       this.player = null;
     }
 
+    // Drop all on-screen + pending comments (used on seek). Keeps the canvas.
+    clear() {
+      this.active.length = 0;
+      this.nextActive.length = 0;
+      this.pending.length = 0;
+      this.pendingHead = 0;
+      this.recentLen = 0;
+      this.recentPos = 0;
+    }
+
     setConfig(partial) {
       Object.assign(this.cfg, partial);
       if (partial.maxActive != null) this.dynamicCap = Math.min(this.dynamicCap, this.cfg.maxActive);

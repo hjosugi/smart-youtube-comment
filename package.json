@@ -6,7 +6,7 @@
   "scripts": {
     "security": "node scripts/security-check.mjs && npm audit --omit=dev",
     "security:bun": "bun scripts/security-check.mjs && npm audit --omit=dev",
-    "test": "node scripts/check-sandbox.mjs",
+    "test": "node scripts/test.mjs",
     "test:bun": "bun scripts/check-sandbox.mjs",
     "test:e2e": "node bench/e2e/perf.mjs",
     "test:e2e:bun": "bun bench/e2e/perf.mjs",

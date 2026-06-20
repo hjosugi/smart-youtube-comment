@@ -133,6 +133,22 @@ const textRenderer = (over = {}) => ({
   assert("replay: non-replay action -> []", _pure.replayItems({ addChatItemAction: {} }).length === 0);
 }
 
+// --- null-safety / malformed input (must never throw, just drop) ---
+{
+  assert("parseAction(null) -> null", parseAction(null) === null);
+  assert("parseAction({}) -> null", parseAction({}) === null);
+  assert("parseItem(undefined) -> null", _pure.parseItem(undefined) === null);
+  assert("parseItem unknown renderer -> null", _pure.parseItem({ someUnknownRenderer: { id: "x" } }) === null);
+  assert("runsToText(null) -> ''", _pure.runsToText(null) === "");
+  assert("runsToText simpleText", _pure.runsToText({ simpleText: "hi" }) === "hi");
+  assert("runsToText mixed runs+emoji", _pure.runsToText({ runs: [{ text: "a" }, { emoji: { shortcuts: [":x:"] } }, { text: "b" }] }) === "a:x:b");
+  assert("authorTypeFromBadges(undefined) -> normal", authorTypeFromBadges(undefined) === "normal");
+  assert("authorTypeFromBadges([]) -> normal", authorTypeFromBadges([]) === "normal");
+  // a text renderer with no message and no author still yields a safe ChatMessage
+  const bare = parseAction({ addChatItemAction: { item: { liveChatTextMessageRenderer: { id: "b1" } } } });
+  assert("bare text renderer -> safe defaults", bare.text === "" && bare.author === "" && bare.authorType === "normal" && bare.ts === 0 && bare.authorColor === null);
+}
+
 let allOk = true;
 for (const c of checks) {
   console.log(`${c.ok ? "✅" : "❌"} ${c.name}${c.ok ? "" : "  -> " + c.extra}`);

@@ -27,6 +27,7 @@
         <button type="submit">再生</button>
       </form>
       <button id="toggle" class="icon-btn" type="button" title="弾幕 表示/非表示" aria-pressed="true">💬</button>
+      <button id="listToggle" class="icon-btn" type="button" title="コメント一覧 表示/非表示" aria-pressed="true">📋</button>
       <button id="settings" class="icon-btn" type="button" title="設定">⚙</button>
     </header>
 
@@ -36,6 +37,9 @@
       <div id="player"></div>
       <span id="status" class="status" role="status">idle</span>
     </main>
+
+    <!-- non-danmaku comment feed (fills the space below the player) -->
+    <section id="list" class="list-wrap"></section>
 
     <!-- core (classic IIFE globals) must load before the module orchestrator.
          store.js installs the localStorage shim that settings.js/filter.js use. -->

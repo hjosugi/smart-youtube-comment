@@ -66,6 +66,36 @@ const assert = (name, cond, extra = "") => checks.push({ name, ok: !!cond, extra
   assert("filter: lists persisted", reloaded.users.includes("@spambot") && reloaded.words.includes("discord.gg/"));
 }
 
+// --- store: multi-key get, get-all, array values ---
+{
+  await chrome.storage.local.set({ "m:1": 1, "m:2": [3, 4] });
+  const multi = await chrome.storage.local.get(["m:1", "m:2"]);
+  assert("store: get multiple keys", multi["m:1"] === 1 && JSON.stringify(multi["m:2"]) === "[3,4]");
+  const all = await chrome.storage.local.get(null);
+  assert("store: get-all enumerates keys", "m:1" in all && "m:2" in all);
+}
+
+// --- settings: normalize edge cases (types, ranges, selects) ---
+{
+  assert("settings: bool from 'false' string", S.normalize({ enabled: "false" }).enabled === false);
+  assert("settings: bool from 1", S.normalize({ enabled: 1 }).enabled === true);
+  assert("settings: select invalid -> default", S.normalize({ fontFamily: "nonsense" }).fontFamily === "");
+  assert("settings: range step rounding (117->120)", S.normalize({ speedPct: 117 }).speedPct === 120);
+  assert("settings: range over-max clamps", S.normalize({ fontPx: 999 }).fontPx === 48);
+  assert("settings: range non-numeric -> default", S.normalize({ maxActive: "abc" }).maxActive === S.DEFAULTS.maxActive);
+  assert("settings: listEnabled in schema", "listEnabled" in S.DEFAULTS && S.DEFAULTS.listEnabled === true);
+}
+
+// --- filter: cleanList, empties, overlapping words ---
+{
+  assert("filter: cleanList dedups+normalizes", JSON.stringify(F.cleanList(["A", " a ", "B", ""])) === JSON.stringify(["a", "b"]));
+  await F.save({ users: [], words: [] });
+  assert("filter: empty lists never drop", F.shouldDrop("@anyone", "anything at all") === false);
+  await F.save({ users: [], words: ["abc", "abcdef"] });
+  assert("filter: overlapping words both match", F.shouldDrop("@x", "zzabcdefzz") === true && F.shouldDrop("@x", "qabcq") === true);
+  assert("filter: stats reflect lists", F.stats().words === 2);
+}
+
 let allOk = true;
 for (const c of checks) {
   console.log(`${c.ok ? "✅" : "❌"} ${c.name}${c.ok ? "" : "  -> " + c.extra}`);

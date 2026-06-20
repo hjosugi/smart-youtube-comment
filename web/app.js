@@ -1,13 +1,15 @@
-// Thin orchestrator: wires player + chat source + scoring + danmaku + settings.
-// All real logic lives in the small modules it composes.
+// Thin orchestrator: wires player + chat source + scoring + danmaku + list +
+// settings. All real logic lives in the small modules it composes.
 
 import { readParams } from "./config.js";
 import { makeRenderer } from "./pipeline.js";
+import { makeFate, isSeek } from "./playback.js";
 import { mountPlayer } from "./player.js";
 import { startMock } from "./mock.js";
 import { createWakeLock, setMediaSession } from "./lifecycle.js";
 import { mountSettings } from "./ui.js";
 import { mountPerfHud } from "./perf.js";
+import { createCommentList } from "./commentlist.js";
 import { createLiveChatClient } from "./chat-client.js";
 
 const { createFallbackScorer, buildRenderPlan } = globalThis.SYCScoring;
@@ -16,55 +18,41 @@ const settings = globalThis.SYCSettings;
 const filter = globalThis.SYCFilter;
 
 const $ = (id) => document.getElementById(id);
-const stage = $("stage");
 const setStatus = (s) => ($("status").textContent = s);
 
 const overlay = new DanmakuOverlay();
+const list = createCommentList($("list"));
 const render = makeRenderer(createFallbackScorer(), buildRenderPlan);
 
-// Live-updated user settings.
+// Live-updated user settings (drives danmaku config + which views are visible).
 let cfg = settings.DEFAULTS;
 const applySettings = (s) => {
   cfg = s;
   overlay.setConfig(settings.toEngineConfig(s));
+  list.setVisible(s.listEnabled);
 };
 
-// Current playback position in ms — drives replay/VOD sync. Infinity for live or
-// mock (no offset gating). Reset by startLive when a player is mounted.
+// Current playback position (ms) — Infinity for live/mock (no replay gating).
 let playbackMs = () => Infinity;
 
-// --- message pipeline ---
-// Live chat streams straight through (deduped). Replay (VOD) messages carry an
-// offsetMs; we only show those within a window around the current playback, so
-// they appear in sync instead of dumping the whole backlog at once.
+// --- message pipeline: gate once, fan out to danmaku (scored) + list (raw) ---
 const seen = new Set();
 const remember = (id) => {
   if (seen.size > 4000) seen.clear();
   seen.add(id);
 };
+const fate = makeFate({ seen, shouldDrop: (a, t) => filter.shouldDrop(a, t) });
 
-// "show" now, "skip" (revisit when playback reaches it), or "drop" (never).
-const verdict = (m, now) => {
-  if (filter.shouldDrop(m.author, m.text)) return "drop";
-  if (m.offsetMs != null) {
-    if (m.offsetMs > now + 1500) return "skip"; // future — don't mark seen yet
-    if (m.offsetMs < now - 8000) return "drop"; // stale backlog — never show
-  }
-  return seen.has(m.id) ? "drop" : "show";
-};
-
-let lastNow = 0;
 const onMessages = (msgs) => {
-  if (!cfg.enabled) return;
   const now = playbackMs();
-  if (now < lastNow - 5000) seen.clear(); // scrubbed back -> allow re-show
-  lastNow = now;
   for (const m of msgs) {
-    const v = verdict(m, now);
-    if (v === "skip") continue;
+    const f = fate(m, now);
+    if (f === "skip") continue; // future replay msg — revisit when playback reaches it
     remember(m.id);
-    if (v === "show") {
-      const payload = render(m);
+    if (f !== "show") continue;
+    if (cfg.listEnabled) list.push(m);
+    if (cfg.enabled) {
+      const payload = render(m); // scoring may drop low-signal comments from danmaku
       if (payload) overlay.push(payload);
     }
   }
@@ -75,12 +63,13 @@ const wakeLock = createWakeLock();
 let stop = () => {};
 
 const startMockMode = () => {
-  overlay.attach(stage);
+  overlay.attach($("stage"));
   setStatus("mock");
   const stopMock = startMock(onMessages, { ratePerSec: 30 });
   stop = () => {
     stopMock();
     overlay.detach();
+    list.clear();
   };
 };
 
@@ -90,17 +79,33 @@ const startLive = async (videoId, relay) => {
   setStatus("loading…");
   const client = createLiveChatClient({ base: relay, getOffsetMs: () => playbackMs() });
 
-  // Pause polling when not actively watching (free-tier saver). For a VOD this
-  // also feeds the current playback offset back to the chat client for sync.
-  const player = await mountPlayer("player", videoId, (state) =>
-    state === "playing" ? client.resume() : client.pause()
-  );
+  let playing = false;
+  const player = await mountPlayer("player", videoId, (state) => {
+    playing = state === "playing";
+    playing ? client.resume() : client.pause();
+  });
   playbackMs = () => (player.getCurrentTime?.() ?? 0) * 1000;
+
+  // Seek detection: on a scrub, clear both views, forget shown ids, re-fetch now.
+  let lastT = playbackMs();
+  let lastWall = performance.now();
+  const seekTimer = setInterval(() => {
+    const t = playbackMs();
+    const wall = performance.now();
+    if (playing && isSeek(t - lastT, wall - lastWall)) {
+      overlay.clear();
+      list.clear();
+      seen.clear();
+      client.refresh();
+    }
+    lastT = t;
+    lastWall = wall;
+  }, 700);
 
   const onVisibility = () => (document.hidden ? client.pause() : client.resume());
   document.addEventListener("visibilitychange", onVisibility);
 
-  overlay.attach(stage);
+  overlay.attach($("stage"));
   wakeLock.acquire();
   setMediaSession({ title: videoId });
 
@@ -114,31 +119,36 @@ const startLive = async (videoId, relay) => {
   });
 
   stop = () => {
+    clearInterval(seekTimer);
     document.removeEventListener("visibilitychange", onVisibility);
     client.stop();
     overlay.detach();
+    list.clear();
     wakeLock.release();
     playbackMs = () => Infinity;
     player.destroy?.();
   };
 };
 
-// --- danmaku on/off toggle ---
-const toggleBtn = $("toggle");
-const reflectToggle = () => {
-  toggleBtn.setAttribute("aria-pressed", String(cfg.enabled));
-  toggleBtn.classList.toggle("off", !cfg.enabled);
+// --- toggles: 💬 danmaku, 📋 comment list (both persist via settings) ---
+const danmakuBtn = $("toggle");
+const listBtn = $("listToggle");
+const reflectToggles = () => {
+  danmakuBtn.classList.toggle("off", !cfg.enabled);
+  danmakuBtn.setAttribute("aria-pressed", String(cfg.enabled));
+  listBtn.classList.toggle("off", !cfg.listEnabled);
+  listBtn.setAttribute("aria-pressed", String(cfg.listEnabled));
 };
-toggleBtn.addEventListener("click", () => settings.save({ ...cfg, enabled: !cfg.enabled }));
+danmakuBtn.addEventListener("click", () => settings.save({ ...cfg, enabled: !cfg.enabled }));
+listBtn.addEventListener("click", () => settings.save({ ...cfg, listEnabled: !cfg.listEnabled }));
 
 // --- launch form ---
-const launchFromInput = (e) => {
+$("launch").addEventListener("submit", (e) => {
   e.preventDefault();
   const { video } = readParams(`?v=${encodeURIComponent($("video").value)}`);
   if (video) startLive(video, readParams(location.search).relay);
   else setStatus("invalid video URL/ID");
-};
-$("launch").addEventListener("submit", launchFromInput);
+});
 
 // --- init ---
 if ("serviceWorker" in navigator) {
@@ -150,10 +160,10 @@ if ("serviceWorker" in navigator) {
   await filter.load();
   settings.onChange((s) => {
     applySettings(s);
-    reflectToggle();
+    reflectToggles();
   });
   mountSettings({ settings, filter, button: $("settings") });
-  reflectToggle();
+  reflectToggles();
 
   const params = readParams(location.search);
   if (params.perf) mountPerfHud(overlay);
@@ -162,4 +172,4 @@ if ("serviceWorker" in navigator) {
 })();
 
 // Exposed for tests / debugging.
-globalThis.SYCApp = { overlay, startMockMode, startLive, stop: () => stop() };
+globalThis.SYCApp = { overlay, list, startMockMode, startLive, stop: () => stop() };

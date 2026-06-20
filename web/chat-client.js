@@ -75,8 +75,6 @@ const jitter = (ratio, rng) => (ms) => Math.max(0, Math.round(ms + (rng() * 2 - 
 
 // ---- effectful shell --------------------------------------------------------
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
 const buildUrl = (base, { cont, video, offset }) => {
   const url = new URL(base.replace(/\/$/, "") + "/api/livechat");
   if (cont) url.searchParams.set("cont", cont);
@@ -99,6 +97,26 @@ export function createLiveChatClient(options = {}) {
     const w = wake;
     wake = null;
     w?.();
+  };
+
+  // Interruptible inter-poll wait so refresh() (e.g. on a seek) can poll now.
+  let napTimer = null;
+  let napResolve = null;
+  const nap = (ms) =>
+    new Promise((resolve) => {
+      napResolve = resolve;
+      napTimer = setTimeout(() => {
+        napTimer = null;
+        napResolve = null;
+        resolve();
+      }, ms);
+    });
+  const wakeNap = () => {
+    if (napTimer) clearTimeout(napTimer);
+    napTimer = null;
+    const r = napResolve;
+    napResolve = null;
+    r?.();
   };
 
   const fetchEnvelope = async (params, signal) => {
@@ -133,10 +151,15 @@ export function createLiveChatClient(options = {}) {
       paused = false;
       releasePause();
     },
+    // Poll now instead of waiting out the current interval (e.g. after a seek).
+    refresh() {
+      wakeNap();
+    },
     stop() {
       stopped = true;
       paused = false;
       releasePause();
+      wakeNap();
       inflight?.abort();
     },
 
@@ -171,7 +194,7 @@ export function createLiveChatClient(options = {}) {
 
         const wait = plan.healthy ? plan.wait : applyJitter(plan.wait);
         onState?.({ healthy: plan.healthy, failures: state.failures, quiet: state.quiet, nextInMs: wait, replay });
-        await sleep(wait);
+        await nap(wait);
       }
     },
   };

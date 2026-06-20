@@ -14,6 +14,8 @@ const SHELL = [
   "./mock.js",
   "./lifecycle.js",
   "./perf.js",
+  "./playback.js",
+  "./commentlist.js",
   "./ui.js",
   "./controls.js",
   "./chat-client.js",

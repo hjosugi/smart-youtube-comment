@@ -8,7 +8,8 @@
   // globalThis.SYCSettings. (Same pattern as scoring.js.)
 
   const SCHEMA = [
-    { key: "enabled",      group: "General",     label: "Overlay enabled",        type: "bool",                                   default: true },
+    { key: "enabled",      group: "General",     label: "Danmaku (overlay)",      type: "bool",                                   default: true },
+    { key: "listEnabled",  group: "General",     label: "Comment list",           type: "bool",                                   default: true },
     { key: "hideDefaultChat", group: "General",  label: "Hide YouTube chat while overlay is on", type: "bool",                     default: false },
     { key: "opacity",      group: "Display",     label: "Opacity",                type: "range", min: 20,  max: 100,  step: 5, unit: "%",  default: 100 },
     { key: "fontPx",       group: "Display",     label: "Font size",              type: "range", min: 14,  max: 48,   step: 1, unit: "px", default: 18 },

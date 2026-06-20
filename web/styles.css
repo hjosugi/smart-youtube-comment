@@ -73,6 +73,41 @@ body {
   opacity: 0.4;
 }
 
+/* --- comment list (non-danmaku feed below the player) --- */
+.list-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.clist {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 6px 10px calc(6px + env(safe-area-inset-bottom));
+  font-size: 14px;
+  line-height: 1.45;
+}
+.clist[hidden] {
+  display: none;
+}
+.clist-row {
+  padding: 3px 0;
+  border-bottom: 1px solid #15151c;
+  word-break: break-word;
+}
+.clist-row.paid {
+  background: #2a1f0a;
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+.clist-author {
+  font-weight: 700;
+  margin-right: 7px;
+}
+.clist-text {
+  color: #e7e7ea;
+}
+
 .perf {
   position: fixed;
   left: 8px;
