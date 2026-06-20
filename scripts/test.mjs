@@ -9,6 +9,7 @@ const SUITES = [
   ["unit", "web/test/playback.mjs"],
   ["unit", "web/test/config.mjs"],
   ["unit", "web/test/videoctl.mjs"],
+  ["unit", "web/test/i18n.mjs"],
   ["unit", "web/test/pipeline.mjs"],
   ["unit", "web/test/chat-client-pure.mjs"],
   ["unit", "web/test/store-settings.mjs"],

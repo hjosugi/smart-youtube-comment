@@ -1,6 +1,6 @@
 // Pure tests for config: parseVideoId across URL shapes + readParams.
 
-import { parseVideoId, readParams, RELAY_DEFAULT } from "../config.js";
+import { parseVideoId, parseStartSeconds, parseInput, readParams, RELAY_DEFAULT } from "../config.js";
 
 const checks = [];
 const assert = (name, cond, extra = "") => checks.push({ name, ok: !!cond, extra });
@@ -33,6 +33,16 @@ assert("readParams: default relay", readParams("").relay === RELAY_DEFAULT);
 assert("readParams: custom relay", readParams("?relay=https://r.dev").relay === "https://r.dev");
 assert("readParams: mock default false", readParams("?v=" + ID).mock === false);
 assert("readParams: empty video for junk", readParams("?v=junk").video === "");
+
+// start-time parsing (t= / start=)
+assert("start: plain seconds", parseStartSeconds(`https://youtu.be/${ID}?t=90`) === 90);
+assert("start: s suffix", parseStartSeconds(`watch?v=${ID}&t=9938s`) === 9938);
+assert("start: h/m/s", parseStartSeconds(`watch?v=${ID}&t=1h2m3s`) === 3723);
+assert("start: start= param", parseStartSeconds(`?v=${ID}&start=120`) === 120);
+assert("start: none -> 0", parseStartSeconds(`watch?v=${ID}`) === 0);
+assert("parseInput: video + start", (() => { const r = parseInput(`https://www.youtube.com/watch?v=${ID}&t=30s`); return r.video === ID && r.start === 30; })());
+assert("readParams: start from &t=", readParams(`?v=${ID}&t=42`).start === 42);
+assert("readParams: start default 0", readParams(`?v=${ID}`).start === 0);
 
 let allOk = true;
 for (const c of checks) {

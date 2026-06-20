@@ -20,6 +20,7 @@ const SHELL = [
   "./ui.js",
   "./controls.js",
   "./chat-client.js",
+  "./i18n.js",
   "./store.js",
   "./settings.js",
   "./filter.js",
