@@ -23,5 +23,6 @@ export const readParams = (search = "") => {
     video: parseVideoId(p.get("v") || ""),
     relay: p.get("relay") || RELAY_DEFAULT,
     mock: p.get("mock") === "1",
+    perf: p.get("perf") === "1",
   };
 };

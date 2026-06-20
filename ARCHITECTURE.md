@@ -237,6 +237,22 @@ CF Worker が以下を中継する(クライアントには CORS 制約のため
 > 持続的な不調は端末がバックオフして負荷を下げていなす設計。Worker は単発吸収＋境界化に
 > 徹し、リトライで上流を叩き続けない(それが throttling を悪化させるため)。
 
+### 7.2 Replay(VOD)対応 — 録画＋チャットリプレイに弾幕
+
+過去ライブの録画(チャットリプレイあり)も対応。リレーは `isReplay` を検出し、ライブの
+`get_live_chat` ではなく **`get_live_chat_replay` を再生位置(`playerOffsetMs`)で seek** する
+(`?cont=&offset=<ms>`)。各メッセージに動画タイムスタンプ `offsetMs` を付与。端末は
+`player.getCurrentTime()` を offset として送り、**現在地の窓 `[-8s, +1.5s]` のメッセージだけ表示**
+(バックログ一括ダンプ防止・id 重複排除)。前方は同期、後方シーク時は表示済み集合をリセット。
+
+### 7.3 端末の最適化
+
+- **モバイル最適化既定値**(`web/settings.js`, extension からの分岐): `maxActive` 700 /
+  `renderScalePct` 60% / `spawnPerFrame` 8。弱い端末はレンダラの適応キャップが更に自動で守る。
+- **性能 HUD**(`?perf=1`, `web/perf.js`): fps / active / drop / frameP95 / longTasks を実機表示。
+  OffscreenCanvas 等の重い最適化は**この実測で必要性を確認してから**入れる方針(WASM 撤去と同じ
+  「実測してから」原則)。
+
 ---
 
 ## 8. モバイル特有の実装ポイント

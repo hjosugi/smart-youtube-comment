@@ -7,6 +7,7 @@ import { mountPlayer } from "./player.js";
 import { startMock } from "./mock.js";
 import { createWakeLock, setMediaSession } from "./lifecycle.js";
 import { mountSettings } from "./ui.js";
+import { mountPerfHud } from "./perf.js";
 import { createLiveChatClient } from "./chat-client.js";
 
 const { createFallbackScorer, buildRenderPlan } = globalThis.SYCScoring;
@@ -52,9 +53,12 @@ const verdict = (m, now) => {
   return seen.has(m.id) ? "drop" : "show";
 };
 
+let lastNow = 0;
 const onMessages = (msgs) => {
   if (!cfg.enabled) return;
   const now = playbackMs();
+  if (now < lastNow - 5000) seen.clear(); // scrubbed back -> allow re-show
+  lastNow = now;
   for (const m of msgs) {
     const v = verdict(m, now);
     if (v === "skip") continue;
@@ -150,6 +154,7 @@ if ("serviceWorker" in navigator) {
   reflectToggle();
 
   const params = readParams(location.search);
+  if (params.perf) mountPerfHud(overlay);
   if (params.mock) startMockMode();
   else if (params.video) startLive(params.video, params.relay);
 })();
