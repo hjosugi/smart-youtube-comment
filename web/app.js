@@ -5,10 +5,16 @@ import { readParams, mobileDanmaku } from "./config.js";
 import { makeRenderer, renderBatch } from "./pipeline.js";
 import { mountPlayer } from "./player.js";
 import { startMock } from "./mock.js";
+import { createWakeLock, setMediaSession } from "./lifecycle.js";
 import { createLiveChatClient } from "./chat-client.js";
 
 const { createFallbackScorer, buildRenderPlan } = globalThis.SYCScoring;
 const { DanmakuOverlay } = globalThis.SYCDanmaku;
+
+const wakeLock = createWakeLock();
+if ("serviceWorker" in navigator) {
+  addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+}
 
 const stage = document.getElementById("stage");
 const statusEl = document.getElementById("status");
@@ -35,6 +41,8 @@ const startLive = async (videoId, relay) => {
   setStatus("loading player…");
   const player = await mountPlayer("player", videoId);
   overlay.attach(stage);
+  wakeLock.acquire();
+  setMediaSession({ title: `Live · ${videoId}` });
   setStatus("live");
 
   const client = createLiveChatClient({ base: relay });
@@ -47,6 +55,7 @@ const startLive = async (videoId, relay) => {
   stop = () => {
     client.stop();
     overlay.detach();
+    wakeLock.release();
     player.destroy?.();
   };
 };

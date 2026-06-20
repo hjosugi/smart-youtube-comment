@@ -3,29 +3,9 @@
 // Run: node web/test/e2e.mjs   (needs: npm i -D playwright + npx playwright install chromium)
 
 import { chromium } from "playwright";
-import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { serveWeb } from "./_serve.mjs";
 
-const ROOT = new URL("../../web/", import.meta.url).pathname;
-const MIME = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css" };
-
-const server = createServer(async (req, res) => {
-  try {
-    const rel = decodeURIComponent(req.url.split("?")[0]);
-    const file = join(ROOT, rel === "/" ? "index.html" : rel);
-    const body = await readFile(file);
-    res.writeHead(200, { "Content-Type": MIME[extname(file)] || "application/octet-stream" });
-    res.end(body);
-  } catch {
-    res.writeHead(404);
-    res.end("not found");
-  }
-});
-
-await new Promise((r) => server.listen(0, r));
-const port = server.address().port;
-
+const { port, close } = await serveWeb();
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } }); // iPhone-ish
 const errors = [];
@@ -45,7 +25,7 @@ const result = await page.evaluate(() => {
 });
 
 await browser.close();
-server.close();
+close();
 
 console.log("pageerrors:", errors.length ? errors : "none");
 console.log("canvas:", JSON.stringify(result));
