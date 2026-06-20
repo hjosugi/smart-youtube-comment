@@ -7,7 +7,12 @@ Contract version: `2`
 ## Ownership
 
 - Claude owns live-chat extraction, overlay rendering, settings, filtering, and
-  browser UX under `extension/`.
+  browser UX under `extension/` (desktop Chrome) and `web/` (mobile PWA), plus
+  the InnerTube CORS relay under `worker/` (Cloudflare Worker).
+- The `ChatMessage` / `ScoreInput` / `ScoreResult` shapes below are shared across
+  all surfaces. The mobile `web/` build may keep its own optimized copy of the
+  scorer/renderer (it is NOT required to be byte-identical to `extension/`), but
+  it MUST keep producing/consuming these shapes.
 - Shared behavior changes must be reflected here and in `docs/PLAN.md`.
 
 ## Current Transport
@@ -40,6 +45,28 @@ Produced by the live-chat reader and consumed by the overlay renderer.
   "amount": null
 }
 ```
+
+## LiveChat Poll Envelope
+
+The `worker/` relay returns this envelope to the device on each poll. The device
+feeds `messages` into the scorer and uses `continuation` / `timeoutMs` to drive
+the next poll.
+
+```jsonc
+{
+  "messages": [],          // ChatMessage[]
+  "continuation": "string",// token for the next poll, or null when ended
+  "timeoutMs": 1000,       // device should wait this long before the next poll
+  "ended": false           // true => stream/chat is over; stop polling
+}
+```
+
+Terminal signal: when the stream ends YouTube stops issuing continuations, so the
+relay sets `ended: true` and `continuation: null`. The device MUST stop polling
+on this signal (do not re-poll the previous token — it is dead).
+
+`timeoutMs` is clamped by the relay to `[250, 30000]`; the device may apply its
+own additional floor.
 
 ## ScoreInput
 

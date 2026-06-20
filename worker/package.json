@@ -1,0 +1,13 @@
+{
+  "name": "syc-livechat-relay",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "probe": "node test/probe.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.103.0"
+  }
+}

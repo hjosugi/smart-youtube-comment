@@ -1,5 +1,10 @@
 # Dependencies
 /node_modules/
+/worker/node_modules/
+/web/node_modules/
+
+# Cloudflare Worker local state
+.wrangler/
 
 # Release/package outputs
 /.release/
