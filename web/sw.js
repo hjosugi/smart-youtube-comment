@@ -15,6 +15,7 @@ const SHELL = [
   "./lifecycle.js",
   "./perf.js",
   "./playback.js",
+  "./videoctl.js",
   "./commentlist.js",
   "./ui.js",
   "./controls.js",

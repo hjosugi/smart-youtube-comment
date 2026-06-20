@@ -8,6 +8,7 @@ const SUITES = [
   ["unit", "worker/test/innertube-parse.mjs"],
   ["unit", "web/test/playback.mjs"],
   ["unit", "web/test/config.mjs"],
+  ["unit", "web/test/videoctl.mjs"],
   ["unit", "web/test/pipeline.mjs"],
   ["unit", "web/test/chat-client-pure.mjs"],
   ["unit", "web/test/store-settings.mjs"],
@@ -19,6 +20,7 @@ const SUITES = [
   ["e2e", "web/test/pwa.mjs"],
   ["e2e", "web/test/settings-e2e.mjs"],
   ["e2e", "web/test/views-e2e.mjs"],
+  ["e2e", "web/test/videoctl-e2e.mjs"],
 ];
 
 let pass = 0;

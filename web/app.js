@@ -9,6 +9,7 @@ import { startMock } from "./mock.js";
 import { createWakeLock, setMediaSession } from "./lifecycle.js";
 import { mountSettings } from "./ui.js";
 import { mountPerfHud } from "./perf.js";
+import { mountControls } from "./videoctl.js";
 import { createCommentList } from "./commentlist.js";
 import { createLiveChatClient } from "./chat-client.js";
 
@@ -107,6 +108,7 @@ const startLive = async (videoId, relay) => {
   document.addEventListener("visibilitychange", onVisibility);
 
   overlay.attach($("stage"));
+  const unmountCtl = mountControls($("stage"), player);
   wakeLock.acquire();
   setMediaSession({ title: videoId });
 
@@ -124,6 +126,7 @@ const startLive = async (videoId, relay) => {
     document.removeEventListener("visibilitychange", onVisibility);
     client.stop();
     overlay.detach();
+    unmountCtl();
     list.clear();
     wakeLock.release();
     playbackMs = () => Infinity;

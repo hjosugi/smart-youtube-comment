@@ -73,6 +73,55 @@ body {
   opacity: 0.4;
 }
 
+/* --- custom video controls (over the IFrame, controls=0) --- */
+.vctl {
+  position: absolute;
+  inset: 0;
+  z-index: 2147483646; /* above the danmaku canvas; below the status badge */
+  cursor: pointer;
+}
+.vctl-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 10px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0));
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.2s, transform 0.2s;
+  cursor: default;
+}
+.vctl.show .vctl-bar {
+  opacity: 1;
+  transform: none;
+}
+.vctl-play {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-size: 15px;
+}
+.vctl-time {
+  flex: none;
+  font-size: 11px;
+  color: #e7e7ea;
+  font-variant-numeric: tabular-nums;
+}
+.vctl-seek {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+  height: 22px;
+}
+
 /* --- comment list (non-danmaku feed below the player) --- */
 .list-wrap {
   flex: 1;
