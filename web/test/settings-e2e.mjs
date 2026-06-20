@@ -11,8 +11,8 @@ const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
 
 await page.goto(`http://localhost:${port}/index.html?mock=1`, { waitUntil: "load" });
-await page.waitForSelector(".settings-btn", { timeout: 8000 });
-await page.click(".settings-btn");
+await page.waitForSelector("#settings", { timeout: 8000 });
+await page.click("#settings");
 await page.waitForSelector('[data-key="speedPct"]', { timeout: 4000 });
 
 // schema-driven: several known controls exist

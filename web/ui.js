@@ -50,20 +50,21 @@ const filterSection = async (filter, sheet) => {
   sheet.append(section("NG フィルタ"), labelled("NG ユーザー", users), labelled("NG ワード", words), save);
 };
 
-export const mountSettings = ({ settings, filter, root = document.body }) => {
+// `button` is the existing trigger in the top bar; the sheet attaches to `root`.
+export const mountSettings = ({ settings, filter, button, root = document.body }) => {
   const sheet = el("aside", { className: "sheet", hidden: true });
-  const head = el("div", { className: "sheet-head" }, [
-    el("strong", { textContent: "設定" }),
-    el("button", { type: "button", className: "sheet-close", textContent: "閉じる", onclick: () => (sheet.hidden = true) }),
-  ]);
-  sheet.append(head);
+  sheet.append(
+    el("div", { className: "sheet-head" }, [
+      el("strong", { textContent: "設定" }),
+      el("button", { type: "button", className: "sheet-close", textContent: "閉じる", onclick: () => (sheet.hidden = true) }),
+    ])
+  );
 
-  const btn = el("button", { type: "button", className: "settings-btn", title: "設定", textContent: "⚙" });
-  btn.addEventListener("click", () => (sheet.hidden = !sheet.hidden));
+  button.addEventListener("click", () => (sheet.hidden = !sheet.hidden));
 
   settingsSection(settings, sheet);
   filterSection(filter, sheet);
-  root.append(btn, sheet);
+  root.append(sheet);
 
   return { open: () => (sheet.hidden = false), close: () => (sheet.hidden = true) };
 };

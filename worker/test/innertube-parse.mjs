@@ -113,6 +113,26 @@ const textRenderer = (over = {}) => ({
   assert("cont: tiny timeout floored to default", extractContinuation([{ timedContinuationData: { continuation: "E", timeoutMs: 10 } }]).timeoutMs === 1000);
 }
 
+// --- replay (VOD): isReplay detection + replayChatItemAction unwrapping ---
+{
+  const headerWith = (titles) => ({
+    header: { liveChatHeaderRenderer: { viewSelector: { sortFilterSubMenuRenderer: { subMenuItems: titles.map((title) => ({ title })) } } } },
+  });
+  assert("isReplay: submenu 'replay' titles", _pure.isReplayChat(headerWith(["Top chat replay", "Live chat replay"])) === true);
+  assert("isReplay: live submenu -> false", _pure.isReplayChat(headerWith(["Top chat", "Live chat"])) === false);
+  assert("isReplay: isReplay flag", _pure.isReplayChat({ isReplay: true }) === true);
+
+  const items = _pure.replayItems({
+    replayChatItemAction: {
+      videoOffsetTimeMsec: "123456",
+      actions: [{ addChatItemAction: { item: { liveChatTextMessageRenderer: { id: "rp1", authorName: { simpleText: "@v" }, message: { runs: [{ text: "vod comment" }] } } } } }],
+    },
+  });
+  assert("replay: unwraps inner action + offset", items.length === 1 && items[0].off === 123456);
+  assert("replay: inner action parses", parseAction(items[0].action)?.text === "vod comment");
+  assert("replay: non-replay action -> []", _pure.replayItems({ addChatItemAction: {} }).length === 0);
+}
+
 let allOk = true;
 for (const c of checks) {
   console.log(`${c.ok ? "✅" : "❌"} ${c.name}${c.ok ? "" : "  -> " + c.extra}`);

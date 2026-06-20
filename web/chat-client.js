@@ -26,6 +26,7 @@ const DEFAULTS = {
   quietThreshold: 1, // a poll with < this many messages counts as "quiet" (i.e. 0)
   quietGrowth: 1.6, // interval multiplier per consecutive quiet poll
   maxQuietMs: 40000, // ceiling while quiet
+  getOffsetMs: null, // () => current player offset (ms); enables replay/VOD mode
   random: Math.random,
 };
 
@@ -76,10 +77,11 @@ const jitter = (ratio, rng) => (ms) => Math.max(0, Math.round(ms + (rng() * 2 - 
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const buildUrl = (base, { cont, video }) => {
+const buildUrl = (base, { cont, video, offset }) => {
   const url = new URL(base.replace(/\/$/, "") + "/api/livechat");
   if (cont) url.searchParams.set("cont", cont);
   else if (video) url.searchParams.set("video", video);
+  if (offset != null) url.searchParams.set("offset", String(offset));
   return url;
 };
 
@@ -142,13 +144,21 @@ export function createLiveChatClient(options = {}) {
       const { onMessages, onState, onError, onEnded } = handlers;
       stopped = false;
       let state = { cont: null, failures: 0, quiet: 0 };
+      let replay = false; // latched the first time the relay reports a VOD
+
+      const paramsFor = (s) => {
+        const p = s.cont ? { cont: s.cont } : { video: videoId };
+        if (replay) p.offset = Math.max(0, Math.floor(cfg.getOffsetMs?.() ?? 0));
+        return p;
+      };
 
       while (!stopped) {
         await waitWhilePaused(); // zero requests while paused
         if (stopped) break;
 
-        const params = state.cont ? { cont: state.cont } : { video: videoId };
-        const plan = advance(state, await pollOnce(params));
+        const outcome = await pollOnce(paramsFor(state));
+        if (outcome.ok && outcome.env.isReplay) replay = true;
+        const plan = advance(state, outcome);
         state = plan.state;
 
         if (plan.emit.length) onMessages?.(plan.emit);
@@ -160,7 +170,7 @@ export function createLiveChatClient(options = {}) {
         if (stopped) break;
 
         const wait = plan.healthy ? plan.wait : applyJitter(plan.wait);
-        onState?.({ healthy: plan.healthy, failures: state.failures, quiet: state.quiet, nextInMs: wait });
+        onState?.({ healthy: plan.healthy, failures: state.failures, quiet: state.quiet, nextInMs: wait, replay });
         await sleep(wait);
       }
     },

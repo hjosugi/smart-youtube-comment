@@ -2,7 +2,7 @@
 // All real logic lives in the small modules it composes.
 
 import { readParams } from "./config.js";
-import { makeRenderer, renderBatch } from "./pipeline.js";
+import { makeRenderer } from "./pipeline.js";
 import { mountPlayer } from "./player.js";
 import { startMock } from "./mock.js";
 import { createWakeLock, setMediaSession } from "./lifecycle.js";
@@ -14,27 +14,61 @@ const { DanmakuOverlay } = globalThis.SYCDanmaku;
 const settings = globalThis.SYCSettings;
 const filter = globalThis.SYCFilter;
 
-const stage = document.getElementById("stage");
-const statusEl = document.getElementById("status");
-const setStatus = (s) => statusEl && (statusEl.textContent = s);
+const $ = (id) => document.getElementById(id);
+const stage = $("stage");
+const setStatus = (s) => ($("status").textContent = s);
 
 const overlay = new DanmakuOverlay();
 const render = makeRenderer(createFallbackScorer(), buildRenderPlan);
 
-let current = settings.DEFAULTS;
+// Live-updated user settings.
+let cfg = settings.DEFAULTS;
 const applySettings = (s) => {
-  current = s;
+  cfg = s;
   overlay.setConfig(settings.toEngineConfig(s));
 };
 
-// Drop NG-filtered authors/words, honor the enabled toggle, then render the batch.
-const onMessages = (msgs) => {
-  if (!current.enabled) return;
-  renderBatch(render, overlay, msgs.filter((m) => !filter.shouldDrop(m.author, m.text)));
+// Current playback position in ms — drives replay/VOD sync. Infinity for live or
+// mock (no offset gating). Reset by startLive when a player is mounted.
+let playbackMs = () => Infinity;
+
+// --- message pipeline ---
+// Live chat streams straight through (deduped). Replay (VOD) messages carry an
+// offsetMs; we only show those within a window around the current playback, so
+// they appear in sync instead of dumping the whole backlog at once.
+const seen = new Set();
+const remember = (id) => {
+  if (seen.size > 4000) seen.clear();
+  seen.add(id);
 };
 
+// "show" now, "skip" (revisit when playback reaches it), or "drop" (never).
+const verdict = (m, now) => {
+  if (filter.shouldDrop(m.author, m.text)) return "drop";
+  if (m.offsetMs != null) {
+    if (m.offsetMs > now + 1500) return "skip"; // future — don't mark seen yet
+    if (m.offsetMs < now - 8000) return "drop"; // stale backlog — never show
+  }
+  return seen.has(m.id) ? "drop" : "show";
+};
+
+const onMessages = (msgs) => {
+  if (!cfg.enabled) return;
+  const now = playbackMs();
+  for (const m of msgs) {
+    const v = verdict(m, now);
+    if (v === "skip") continue;
+    remember(m.id);
+    if (v === "show") {
+      const payload = render(m);
+      if (payload) overlay.push(payload);
+    }
+  }
+};
+
+// --- sources ---
 const wakeLock = createWakeLock();
-let stop = () => {}; // teardown for the current source
+let stop = () => {};
 
 const startMockMode = () => {
   overlay.attach(stage);
@@ -48,26 +82,29 @@ const startMockMode = () => {
 
 const startLive = async (videoId, relay) => {
   stop();
-  setStatus("loading player…");
-  const client = createLiveChatClient({ base: relay });
+  seen.clear();
+  setStatus("loading…");
+  const client = createLiveChatClient({ base: relay, getOffsetMs: () => playbackMs() });
 
-  // Pause polling when not actively watching — the key free-tier request saver.
+  // Pause polling when not actively watching (free-tier saver). For a VOD this
+  // also feeds the current playback offset back to the chat client for sync.
   const player = await mountPlayer("player", videoId, (state) =>
     state === "playing" ? client.resume() : client.pause()
   );
+  playbackMs = () => (player.getCurrentTime?.() ?? 0) * 1000;
+
   const onVisibility = () => (document.hidden ? client.pause() : client.resume());
   document.addEventListener("visibilitychange", onVisibility);
 
   overlay.attach(stage);
   wakeLock.acquire();
-  setMediaSession({ title: `Live · ${videoId}` });
-  setStatus("live");
+  setMediaSession({ title: videoId });
 
   client.start(videoId, {
     onMessages,
-    onState: ({ healthy }) => setStatus(healthy ? "live" : "reconnecting…"),
+    onState: ({ healthy, replay }) => setStatus(healthy ? (replay ? "replay" : "live") : "reconnecting…"),
     onError: () => setStatus("reconnecting…"),
-    onEnded: ({ reason }) => setStatus(reason === "ended" ? "stream ended" : "stopped"),
+    onEnded: ({ reason }) => setStatus(reason === "ended" ? "ended" : "stopped"),
   });
 
   stop = () => {
@@ -75,13 +112,29 @@ const startLive = async (videoId, relay) => {
     client.stop();
     overlay.detach();
     wakeLock.release();
+    playbackMs = () => Infinity;
     player.destroy?.();
   };
 };
 
-// --- init + wiring ---
-const params = readParams(location.search);
+// --- danmaku on/off toggle ---
+const toggleBtn = $("toggle");
+const reflectToggle = () => {
+  toggleBtn.setAttribute("aria-pressed", String(cfg.enabled));
+  toggleBtn.classList.toggle("off", !cfg.enabled);
+};
+toggleBtn.addEventListener("click", () => settings.save({ ...cfg, enabled: !cfg.enabled }));
 
+// --- launch form ---
+const launchFromInput = (e) => {
+  e.preventDefault();
+  const { video } = readParams(`?v=${encodeURIComponent($("video").value)}`);
+  if (video) startLive(video, readParams(location.search).relay);
+  else setStatus("invalid video URL/ID");
+};
+$("launch").addEventListener("submit", launchFromInput);
+
+// --- init ---
 if ("serviceWorker" in navigator) {
   addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 }
@@ -89,21 +142,17 @@ if ("serviceWorker" in navigator) {
 (async () => {
   applySettings(await settings.load());
   await filter.load();
-  settings.onChange(applySettings);
-  mountSettings({ settings, filter });
+  settings.onChange((s) => {
+    applySettings(s);
+    reflectToggle();
+  });
+  mountSettings({ settings, filter, button: $("settings") });
+  reflectToggle();
+
+  const params = readParams(location.search);
+  if (params.mock) startMockMode();
+  else if (params.video) startLive(params.video, params.relay);
 })();
-
-const form = document.getElementById("launch");
-const input = document.getElementById("video");
-form?.addEventListener("submit", (e) => {
-  e.preventDefault();
-  const { video } = readParams(`?v=${encodeURIComponent(input.value)}`);
-  if (video) startLive(video, params.relay);
-  else setStatus("invalid video URL/ID");
-});
-
-if (params.mock) startMockMode();
-else if (params.video) startLive(params.video, params.relay);
 
 // Exposed for tests / debugging.
 globalThis.SYCApp = { overlay, startMockMode, startLive, stop: () => stop() };

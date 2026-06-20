@@ -75,22 +75,69 @@ const tagged = (message, status) => Object.assign(new Error(message), { status }
 
 // ---- IO entry points --------------------------------------------------------
 
-// Resolve the initial live-chat continuation token, or null if no live chat.
-export const resolveContinuation = async (videoId) => {
-  const data = await innertubePost("next", { ...context(), videoId });
-  const lc = data?.contents?.twoColumnWatchNextResults?.conversationBar?.liveChatRenderer;
-  return lc ? extractContinuation(lc.continuations).token : null;
+const REPLAY_POLL_MS = 3000; // replay is paced by playback, not YouTube's timeoutMs
+
+// A watch page is a "replay" (VOD of a past live) when its chat sub-menu offers
+// replay views or it flags isReplay. Replay chat uses a different endpoint and is
+// seeked by player offset, not advanced by a live continuation.
+const isReplayChat = (lc) => {
+  if (lc?.isReplay === true) return true;
+  const titles =
+    lc?.header?.liveChatHeaderRenderer?.viewSelector?.sortFilterSubMenuRenderer?.subMenuItems?.map(
+      (s) => s.title
+    ) ?? [];
+  return titles.some((t) => /replay/i.test(t));
 };
 
-// Poll one batch. Returns { messages, continuation, timeoutMs, ended }.
-// When the stream ends YouTube stops issuing continuations; we surface that as
-// `ended: true` + `continuation: null` so the device stops polling.
-export const pollLiveChat = async (continuation) => {
+// Resolve the initial continuation. Returns { continuation, isReplay } or null.
+export const resolveLiveChat = async (videoId) => {
+  const data = await innertubePost("next", { ...context(), videoId });
+  const lc = data?.contents?.twoColumnWatchNextResults?.conversationBar?.liveChatRenderer;
+  if (!lc) return null;
+  return { continuation: extractContinuation(lc.continuations).token, isReplay: isReplayChat(lc) };
+};
+
+// Back-compat helper (probe / tests / loadtest): just the token.
+export const resolveContinuation = async (videoId) => (await resolveLiveChat(videoId))?.continuation ?? null;
+
+// Poll one batch. opts.replay (+ opts.offsetMs) switches to replay mode.
+// Live: returns { messages, continuation, timeoutMs, ended }; ended=true (and
+// continuation=null) when the stream is over so the device stops polling.
+// Replay: messages carry `offsetMs` (their video timestamp); the same continuation
+// is reused and the next offset comes from the player.
+export const pollLiveChat = async (continuation, opts = {}) => {
+  if (opts.replay) return pollReplay(continuation, opts.offsetMs ?? 0);
   const data = await innertubePost("live_chat/get_live_chat", { ...context(), continuation });
   const lc = data?.continuationContents?.liveChatContinuation;
   const messages = (lc?.actions ?? []).map(parseAction).filter(Boolean);
   const { token, timeoutMs } = extractContinuation(lc?.continuations);
-  return { messages, continuation: token, timeoutMs, ended: !token };
+  return { messages, continuation: token, timeoutMs, ended: !token, isReplay: false };
+};
+
+const pollReplay = async (continuation, offsetMs) => {
+  const data = await innertubePost("live_chat/get_live_chat_replay", {
+    ...context(),
+    continuation,
+    currentPlayerState: { playerOffsetMs: String(Math.max(0, Math.floor(offsetMs))) },
+  });
+  const lc = data?.continuationContents?.liveChatContinuation;
+  const messages = (lc?.actions ?? [])
+    .flatMap(replayItems)
+    .map(({ action, off }) => {
+      const m = parseAction(action);
+      return m && { ...m, offsetMs: off };
+    })
+    .filter(Boolean);
+  // Reuse the input continuation — replay seeks by offset on every poll.
+  return { messages, continuation, timeoutMs: REPLAY_POLL_MS, ended: false, isReplay: true };
+};
+
+// Unwrap a replayChatItemAction into its inner add/replace actions + video offset.
+const replayItems = (a) => {
+  const r = a.replayChatItemAction;
+  if (!r) return [];
+  const off = Number(r.videoOffsetTimeMsec ?? 0);
+  return (r.actions ?? []).map((action) => ({ action, off }));
 };
 
 // ---- pure: continuation extraction -----------------------------------------
@@ -195,4 +242,4 @@ const parseAction = (action) => {
 };
 
 // Exposed for unit tests of the pure transforms (no network required).
-export const _pure = { parseAction, parseItem, extractContinuation, authorTypeFromBadges, runsToText };
+export const _pure = { parseAction, parseItem, extractContinuation, authorTypeFromBadges, runsToText, replayItems, isReplayChat };

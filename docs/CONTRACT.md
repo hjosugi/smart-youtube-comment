@@ -42,7 +42,8 @@ Produced by the live-chat reader and consumed by the overlay renderer.
   "authorType": "normal",  // "normal" | "member" | "moderator" | "owner"
   "authorColor": null,
   "text": "string",
-  "amount": null
+  "amount": null,
+  "offsetMs": 0            // replay/VOD only: the message's video timestamp (omitted for live)
 }
 ```
 
@@ -57,13 +58,20 @@ the next poll.
   "messages": [],          // ChatMessage[]
   "continuation": "string",// token for the next poll, or null when ended
   "timeoutMs": 1000,       // device should wait this long before the next poll
-  "ended": false           // true => stream/chat is over; stop polling
+  "ended": false,          // true => stream/chat is over; stop polling
+  "isReplay": false        // true => VOD replay chat (see below)
 }
 ```
 
 Terminal signal: when the stream ends YouTube stops issuing continuations, so the
 relay sets `ended: true` and `continuation: null`. The device MUST stop polling
 on this signal (do not re-poll the previous token — it is dead).
+
+Replay (VOD) mode: when a video is a past-live recording, the relay reports
+`isReplay: true`. The device then polls `GET /api/livechat?cont=<token>&offset=<ms>`
+where `offset` is the current player position; each replay message carries an
+`offsetMs` (its video timestamp). The same continuation is reused — replay seeks by
+offset, it does not advance. The device gates messages to a window around playback.
 
 `timeoutMs` is clamped by the relay to `[250, 30000]`; the device may apply its
 own additional floor.
