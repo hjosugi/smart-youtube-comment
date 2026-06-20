@@ -15,10 +15,13 @@ export const fmtTime = (secs) => {
 
 const el = (tag, cls, props = {}) => Object.assign(document.createElement(tag), { className: cls, ...props });
 
+const ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
+const ICON_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
+
 export const mountControls = (stage, player, { hideMs = 3500 } = {}) => {
   const wrap = el("div", "vctl");
   const bar = el("div", "vctl-bar");
-  const playBtn = el("button", "vctl-play", { type: "button", textContent: "▶" });
+  const playBtn = el("button", "vctl-play", { type: "button", innerHTML: ICON_PLAY });
   const cur = el("span", "vctl-time", { textContent: "0:00" });
   const dur = el("span", "vctl-time", { textContent: "0:00" });
   const seek = el("input", "vctl-seek", { type: "range", min: "0", max: "1000", value: "0" });
@@ -31,7 +34,7 @@ export const mountControls = (stage, player, { hideMs = 3500 } = {}) => {
   let hideTimer = null;
   let scrubbing = false;
 
-  const setIcon = () => (playBtn.textContent = isPlaying() ? "⏸" : "▶");
+  const setIcon = () => (playBtn.innerHTML = isPlaying() ? ICON_PAUSE : ICON_PLAY);
   const show = () => {
     wrap.classList.add("show");
     clearTimeout(hideTimer);

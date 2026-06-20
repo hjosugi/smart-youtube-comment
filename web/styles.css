@@ -68,16 +68,30 @@ body {
 }
 .icon-btn {
   flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 38px;
   height: 38px;
   border: 1px solid #2a2a35;
   border-radius: 10px;
   background: #0e0e14;
-  color: var(--fg);
-  font-size: 17px;
+  color: #cfcfd6;
+}
+.icon-btn svg {
+  width: 20px;
+  height: 20px;
+}
+.icon-btn:active {
+  background: #1b1b24;
 }
 .icon-btn.off {
-  opacity: 0.4;
+  color: #5a5a66;
+}
+#toggle:not(.off),
+#listToggle:not(.off) {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 /* --- custom video controls (over the IFrame, controls=0) --- */
@@ -108,13 +122,19 @@ body {
 }
 .vctl-play {
   flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 34px;
   height: 34px;
   border: 0;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.15);
   color: #fff;
-  font-size: 15px;
+}
+.vctl-play svg {
+  width: 18px;
+  height: 18px;
 }
 .vctl-time {
   flex: none;
