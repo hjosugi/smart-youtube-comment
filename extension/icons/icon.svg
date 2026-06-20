@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Smart YouTube Comment Overlay">
+  <defs>
+    <linearGradient id="bg" x1="18" y1="12" x2="110" y2="116" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff335f"/>
+      <stop offset="0.48" stop-color="#d6002f"/>
+      <stop offset="1" stop-color="#7d001d"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#000" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
+  <path d="M31 39c0-7.2 5.8-13 13-13h40c7.2 0 13 5.8 13 13v21c0 7.2-5.8 13-13 13H58L41 88c-2.3 2-6 .4-6-2.7V72.4c-2.6-1.2-4-4-4-7.4V39Z" fill="#fff" filter="url(#soft)"/>
+  <path d="M58 42.8c0-2.4 2.6-3.9 4.7-2.7l17.8 10.3c2.1 1.2 2.1 4.2 0 5.4L62.7 66.1c-2.1 1.2-4.7-.3-4.7-2.7V42.8Z" fill="#d6002f"/>
+  <path d="M17 94h76" stroke="#fff" stroke-width="8" stroke-linecap="round" opacity=".92"/>
+  <path d="M31 109h80" stroke="#fff" stroke-width="8" stroke-linecap="round" opacity=".72"/>
+  <path d="M14 24h17" stroke="#fff" stroke-width="7" stroke-linecap="round" opacity=".75"/>
+  <path d="M100 25h14" stroke="#fff" stroke-width="7" stroke-linecap="round" opacity=".6"/>
+</svg>

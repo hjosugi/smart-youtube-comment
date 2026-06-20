@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Smart YouTube Comment Sandbox</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101214;
+      --panel: #181b1f;
+      --line: #30343a;
+      --text: #f4f6f8;
+      --muted: #a7b0ba;
+      --accent: #3fbf8f;
+      --warn: #f0b44c;
+      --bad: #e35b68;
+      --blue: #62a8ff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      display: grid;
+      grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+      min-height: 100%;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      border: 1px solid var(--line);
+      background: #22272e;
+      color: var(--text);
+      min-height: 34px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      border-color: #58616d;
+      background: #2b3138;
+    }
+
+    button.primary {
+      background: #147f5a;
+      border-color: #20996f;
+    }
+
+    button.danger {
+      background: #7d2530;
+      border-color: #9e3441;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: #111418;
+      color: var(--text);
+      border-radius: 6px;
+      padding: 7px 8px;
+    }
+
+    textarea {
+      min-height: 76px;
+      resize: vertical;
+    }
+
+    label {
+      display: grid;
+      gap: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    aside {
+      border-right: 1px solid var(--line);
+      background: var(--panel);
+      overflow: auto;
+      padding: 16px;
+    }
+
+    main {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: minmax(360px, 1fr) 220px;
+      height: 100vh;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.2;
+    }
+
+    h2 {
+      margin: 18px 0 8px;
+      font-size: 13px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    .subtle {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .control-grid {
+      display: grid;
+      gap: 10px;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .status {
+      display: grid;
+      gap: 6px;
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    .metric {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .metric b {
+      color: var(--text);
+      font-weight: 650;
+    }
+
+    .stage {
+      position: relative;
+      overflow: hidden;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.04), transparent 22%),
+        radial-gradient(circle at 18% 12%, rgba(98,168,255,0.18), transparent 28%),
+        radial-gradient(circle at 70% 30%, rgba(63,191,143,0.16), transparent 32%),
+        linear-gradient(135deg, #171c24, #101319 55%, #090b0f);
+    }
+
+    .stage::before {
+      content: "";
+      position: absolute;
+      inset: 8% 10%;
+      border: 1px solid rgba(255,255,255,0.08);
+      background:
+        linear-gradient(90deg, transparent, rgba(255,255,255,0.045), transparent),
+        repeating-linear-gradient(0deg, rgba(255,255,255,0.025) 0 1px, transparent 1px 44px);
+      pointer-events: none;
+    }
+
+    .fake-player {
+      position: absolute;
+      left: 18px;
+      right: 18px;
+      bottom: 18px;
+      height: 42px;
+      border-top: 1px solid rgba(255,255,255,0.14);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: rgba(255,255,255,0.78);
+      font-size: 12px;
+      pointer-events: none;
+    }
+
+    .play-dot {
+      width: 13px;
+      height: 13px;
+      border-left: 13px solid rgba(255,255,255,0.82);
+      border-top: 8px solid transparent;
+      border-bottom: 8px solid transparent;
+    }
+
+    .progress {
+      flex: 1;
+      height: 5px;
+      background: rgba(255,255,255,0.18);
+      border-radius: 99px;
+      overflow: hidden;
+    }
+
+    .progress span {
+      display: block;
+      width: 42%;
+      height: 100%;
+      background: var(--accent);
+    }
+
+    .comment {
+      position: absolute;
+      left: 100%;
+      top: var(--lane);
+      max-width: 94%;
+      white-space: nowrap;
+      color: white;
+      font: 700 24px/1.25 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      text-shadow:
+        -1px -1px 0 rgba(0,0,0,0.88),
+        1px -1px 0 rgba(0,0,0,0.88),
+        -1px 1px 0 rgba(0,0,0,0.88),
+        1px 1px 0 rgba(0,0,0,0.88);
+      will-change: transform;
+      animation: scroll var(--duration) linear forwards;
+      filter: drop-shadow(0 0 var(--glow, 0px) rgba(255,255,255,0.36));
+      pointer-events: none;
+    }
+
+    .comment.fast {
+      opacity: 0.72;
+      font-size: 21px;
+    }
+
+    .comment.normal {
+      opacity: 0.9;
+    }
+
+    .comment.slow {
+      opacity: 1;
+      font-size: 27px;
+    }
+
+    @keyframes scroll {
+      from { transform: translate3d(0, 0, 0); }
+      to { transform: translate3d(calc(-100vw - 100%), 0, 0); }
+    }
+
+    .log {
+      border-top: 1px solid var(--line);
+      background: #111418;
+      overflow: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    th,
+    td {
+      padding: 7px 9px;
+      border-bottom: 1px solid #252a31;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: #181b1f;
+      color: var(--muted);
+      font-weight: 650;
+    }
+
+    .tier-fast { color: var(--warn); }
+    .tier-normal { color: var(--blue); }
+    .tier-slow { color: var(--accent); }
+    .tier-drop { color: var(--bad); }
+
+    .message-cell {
+      max-width: 46vw;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    @media (max-width: 820px) {
+      body {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr;
+      }
+
+      aside {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+        max-height: 46vh;
+      }
+
+      main {
+        height: 54vh;
+        grid-template-rows: minmax(260px, 1fr) 180px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <aside>
+    <h1>Local Overlay Sandbox</h1>
+    <p class="subtle">Runs the packaged JS scorer locally and renders simulated live chat over a fake video surface.</p>
+
+    <h2>Run</h2>
+    <div class="control-grid">
+      <div class="button-row">
+        <button id="start" class="primary">Start stream</button>
+        <button id="stop" class="danger">Stop</button>
+        <button id="burst">Burst</button>
+      </div>
+      <div class="split">
+        <label>Rate / sec
+          <input id="rate" type="number" value="6" min="1" max="80">
+        </label>
+        <label>Mode
+          <select id="mode">
+            <option value="mixed">Mixed</option>
+            <option value="spam">Spam-heavy</option>
+            <option value="info">Info-heavy</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <h2>Manual Message</h2>
+    <div class="control-grid">
+      <label>Text
+        <textarea id="manual">The audio is delayed by about two seconds after the scene transition.</textarea>
+      </label>
+      <div class="split">
+        <label>Author
+          <select id="authorType">
+            <option value="normal">Normal</option>
+            <option value="member">Member</option>
+            <option value="moderator">Moderator</option>
+            <option value="owner">Owner</option>
+          </select>
+        </label>
+        <label>Kind
+          <select id="kind">
+            <option value="text">Text</option>
+            <option value="paid">Paid</option>
+            <option value="membership">Membership</option>
+          </select>
+        </label>
+      </div>
+      <button id="send">Send manual</button>
+    </div>
+
+    <div class="status">
+      <div class="metric">Scorer <b id="scorerStatus">loading</b></div>
+      <div class="metric">Visible <b id="visibleCount">0</b></div>
+      <div class="metric">Rendered <b id="renderedCount">0</b></div>
+      <div class="metric">Dropped <b id="droppedCount">0</b></div>
+      <div class="metric">Avg score ms <b id="avgMs">0.000</b></div>
+    </div>
+  </aside>
+
+  <main>
+    <section id="stage" class="stage" aria-label="Simulated video player">
+      <div class="fake-player">
+        <span class="play-dot"></span>
+        <div class="progress"><span></span></div>
+        <span>local sandbox</span>
+      </div>
+    </section>
+    <section class="log" aria-label="Score log">
+      <table>
+        <thead>
+          <tr>
+            <th>Tier</th>
+            <th>Quality</th>
+            <th>Spam</th>
+            <th>Emphasis</th>
+            <th>Reasons</th>
+            <th>Message</th>
+          </tr>
+        </thead>
+        <tbody id="logRows"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="/extension/scoring.js"></script>
+  <script type="module">
+    const {
+      TIER,
+      TIER_NAME,
+      buildRenderPlan,
+      createFallbackScorer
+    } = globalThis.SYCScoring;
+    const SAMPLE = {
+      mixed: [
+        "wwww",
+        "nice play",
+        "The audio is delayed by about two seconds after the scene transition.",
+        "聞こえてますよ 配信お疲れ様です",
+        "😂😂😂😂😂",
+        "Could you show the settings screen again?",
+        "same same same same",
+        "The explanation about local-only scoring makes sense.",
+        "gg",
+        "Super useful detail, thanks for slowing down here."
+      ],
+      spam: [
+        "wwwwwwww",
+        "😂😂😂😂😂😂😂",
+        "lol lol lol lol",
+        "gg",
+        "first",
+        "!!!",
+        "same same same same same",
+        "POG POG POG"
+      ],
+      info: [
+        "The audio is delayed by about two seconds after the scene transition.",
+        "This comment should be slower because it contains more information to read.",
+        "字幕と音声の同期が少しずれているので確認してほしいです",
+        "The overlay should keep useful messages visible longer than emoji floods.",
+        "Moderator update: the stream will restart in two minutes."
+      ]
+    };
+
+    const stage = document.getElementById("stage");
+    const rows = document.getElementById("logRows");
+    const scorerStatus = document.getElementById("scorerStatus");
+    const visibleCount = document.getElementById("visibleCount");
+    const renderedCount = document.getElementById("renderedCount");
+    const droppedCount = document.getElementById("droppedCount");
+    const avgMs = document.getElementById("avgMs");
+
+    let timer = 0;
+    let rendered = 0;
+    let dropped = 0;
+    let totalScoreMs = 0;
+    let scored = 0;
+    let scorer = null;
+
+    init();
+
+    async function init() {
+      scorer = createScorer();
+      document.getElementById("start").onclick = start;
+      document.getElementById("stop").onclick = stop;
+      document.getElementById("burst").onclick = () => burst(30);
+      document.getElementById("send").onclick = () => sendManual();
+      updateMetrics();
+    }
+
+    function createScorer() {
+      const js = createFallbackScorer();
+      scorerStatus.textContent = js.source;
+      return js;
+    }
+
+    function start() {
+      stop();
+      const tick = async () => {
+        const rate = clamp(Number(document.getElementById("rate").value) || 6, 1, 80);
+        await sendRandom();
+        timer = window.setTimeout(tick, 1000 / rate);
+      };
+      tick();
+    }
+
+    function stop() {
+      window.clearTimeout(timer);
+      timer = 0;
+    }
+
+    async function burst(count) {
+      for (let index = 0; index < count; index += 1) {
+        window.setTimeout(() => sendRandom(), index * 35);
+      }
+    }
+
+    async function sendManual() {
+      const text = document.getElementById("manual").value.trim();
+      if (!text) return;
+      await processMessage({
+        text,
+        authorType: document.getElementById("authorType").value,
+        kind: document.getElementById("kind").value
+      });
+    }
+
+    async function sendRandom() {
+      const mode = document.getElementById("mode").value;
+      const pool = SAMPLE[mode] ?? SAMPLE.mixed;
+      const text = pool[Math.floor(Math.random() * pool.length)];
+      const authorType = Math.random() < 0.04 ? "owner" : Math.random() < 0.12 ? "member" : "normal";
+      const kind = Math.random() < 0.04 ? "paid" : "text";
+      await processMessage({ text, authorType, kind });
+    }
+
+    async function processMessage(input) {
+      const started = performance.now();
+      const result = scorer.score(input);
+      const elapsed = performance.now() - started;
+      totalScoreMs += elapsed;
+      scored += 1;
+
+      const plan = buildRenderPlan(input.text, result);
+      addLog(input.text, result, plan);
+      if (!plan) {
+        dropped += 1;
+        updateMetrics();
+        return;
+      }
+
+      renderComment(input.text, plan);
+      rendered += 1;
+      updateMetrics();
+    }
+
+    function renderComment(text, plan) {
+      const node = document.createElement("div");
+      const tierName = TIER_NAME[plan.tier] ?? "normal";
+      node.className = `comment ${tierName}`;
+      node.textContent = text;
+      node.style.setProperty("--duration", `${plan.durationMs}ms`);
+      node.style.setProperty("--lane", `${chooseLane(text, plan)}px`);
+      node.style.setProperty("--glow", `${plan.emphasis * 8}px`);
+      stage.appendChild(node);
+      window.setTimeout(() => {
+        node.remove();
+        updateMetrics();
+      }, plan.durationMs + 600);
+    }
+
+    function chooseLane(text, plan) {
+      const laneHeight = plan.tier === TIER.SLOW ? 38 : 32;
+      const height = Math.max(stage.clientHeight - 92, 180);
+      const lanes = Math.max(4, Math.floor(height / laneHeight));
+      let hash = 2166136261;
+      for (let index = 0; index < text.length; index += 1) {
+        hash ^= text.charCodeAt(index);
+        hash = Math.imul(hash, 16777619) >>> 0;
+      }
+      hash = (hash + rendered * 13) >>> 0;
+      return 20 + (hash % lanes) * laneHeight;
+    }
+
+    function addLog(text, result, plan) {
+      const tr = document.createElement("tr");
+      const tierName = plan ? TIER_NAME[plan.tier] : "drop";
+      tr.innerHTML = `
+        <td class="tier-${tierName}">${tierName}</td>
+        <td>${format(result.quality)}</td>
+        <td>${format(result.spam)}</td>
+        <td>${format(result.emphasis)}</td>
+        <td>${(result.reasons ?? []).join(", ") || "-"}</td>
+        <td class="message-cell"></td>
+      `;
+      tr.querySelector(".message-cell").textContent = text;
+      rows.prepend(tr);
+      while (rows.children.length > 80) rows.lastElementChild.remove();
+    }
+
+    function updateMetrics() {
+      visibleCount.textContent = String(stage.querySelectorAll(".comment").length);
+      renderedCount.textContent = String(rendered);
+      droppedCount.textContent = String(dropped);
+      avgMs.textContent = scored ? (totalScoreMs / scored).toFixed(3) : "0.000";
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(value, max));
+    }
+
+    function format(value) {
+      return Number.isFinite(value) ? value.toFixed(3) : "0.000";
+    }
+  </script>
+</body>
+</html>

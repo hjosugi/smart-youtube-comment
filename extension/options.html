@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Smart YouTube Comment Overlay — Settings</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: #1a1a1a; color: #eee; }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 24px 20px 60px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: #999; font-size: 12px; margin: 0 0 20px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #ff7591;
+    margin: 22px 0 6px; border-bottom: 1px solid #333; padding-bottom: 4px; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 7px 0; }
+  .row .name { flex: 1; }
+  .rangewrap { display: flex; align-items: center; gap: 10px; }
+  .rangewrap .val { min-width: 48px; text-align: right; color: #9ad; font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 200px; accent-color: #dd0531; }
+  input[type=checkbox] { width: 18px; height: 18px; accent-color: #dd0531; }
+  input[type=color] { width: 46px; height: 28px; padding: 0; border: 1px solid #555;
+    border-radius: 6px; background: #222; cursor: pointer; }
+  input.text { width: 210px; }
+  .actions { margin-top: 26px; display: flex; align-items: center; gap: 14px; }
+  button { background: #333; color: #eee; border: 1px solid #555; border-radius: 6px;
+    padding: 7px 14px; cursor: pointer; font: inherit; }
+  button:hover { background: #444; }
+  #status { color: #7CFC8C; font-size: 12px; min-height: 1em; }
+  .note { color: #888; font-size: 12px; margin-top: 24px; }
+  .presets { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 10px; }
+  .chip { padding: 5px 10px; font-size: 12px; }
+  .fcol { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+  .fcol span { color: #bbb; font-size: 12px; }
+  textarea { width: 100%; box-sizing: border-box; background: #222; color: #eee;
+    border: 1px solid #444; border-radius: 6px; padding: 6px 8px; font: inherit;
+    resize: vertical; min-height: 60px; }
+  select { background: #222; color: #eee; border: 1px solid #444; border-radius: 4px;
+    padding: 3px 6px; max-width: 60%; }
+  .preview { margin: 6px 0 16px; padding: 18px 14px; border-radius: 8px; overflow: hidden;
+    text-align: center; background: repeating-linear-gradient(45deg,#242424 0 18px,#1b1b1b 18px 36px); }
+  #preview-text { display: inline-block; white-space: nowrap; line-height: 1.2; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1 data-i18n="opt_title">Smart YouTube Comment Overlay</h1>
+      <p class="sub" data-i18n="opt_subtitle">Settings apply live to any open YouTube tab.</p>
+    </div>
+    <span id="status"></span>
+  </header>
+  <div class="preview"><span id="preview-text">Sample コメント 123 ✨</span></div>
+  <div id="settings"></div>
+  <div class="actions">
+    <button id="reset" type="button" data-i18n="opt_reset">Reset to defaults</button>
+  </div>
+  <p class="note" data-i18n="opt_note">Changes are saved automatically and synced across your Chrome profile.</p>
+</div>
+<script src="settings.js"></script>
+<script src="filter.js"></script>
+<script src="options.js"></script>
+</body>
+</html>

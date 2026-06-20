@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Danmaku rendering + behavior probe — target 1000–2000, quality-first</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #111; color: #eee;
+    font: 13px/1.4 system-ui, sans-serif; }
+  #stage { position: absolute; inset: 0; overflow: hidden; background:
+    repeating-linear-gradient(45deg, #161616 0 24px, #131313 24px 48px); }
+  #stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .cmt { position: absolute; left: 100%; white-space: nowrap; color: #fff;
+    font: 700 24px/1.25 system-ui, sans-serif; will-change: transform;
+    text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000; }
+  .cmt.css { animation: scroll var(--dur) linear forwards; }
+  @keyframes scroll { to { transform: translate3d(calc(-100vw - 100%), 0, 0); } }
+  #hud { position: absolute; top: 10px; left: 10px; z-index: 10; background:
+    rgba(0,0,0,.8); border: 1px solid #333; border-radius: 8px; padding: 12px 14px;
+    width: 350px; backdrop-filter: blur(4px); }
+  #hud h1 { font-size: 14px; margin: 0 0 8px; }
+  #hud label { display: flex; justify-content: space-between; gap: 10px; margin: 5px 0; align-items: center; }
+  #hud label > span { white-space: nowrap; }
+  #hud .field { margin: 6px 0; }
+  #hud .field .lbl { display: block; margin-bottom: 3px; color: #bbb; }
+  #hud select, #hud input { background: #222; color: #eee; border: 1px solid #444;
+    border-radius: 4px; padding: 3px 6px; max-width: 58%; }
+  #hud select.full { width: 100%; max-width: none; box-sizing: border-box; }
+  #hud input[type=range] { max-width: none; width: 130px; padding: 0; }
+  #hud input[type=checkbox] { max-width: none; }
+  #hud button { margin-top: 8px; padding: 6px 10px; border: 0; border-radius: 6px;
+    background: #dd0531; color: #fff; cursor: pointer; font-weight: 700; }
+  #hud button.secondary { background: #333; }
+  .stat { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
+  .stat b { font-weight: 700; }
+  #fps.bad { color: #ff5a5a; } #fps.ok { color: #7CFC8C; } #fps.warn { color: #ffd24a; }
+  #live.target { color: #7CFC8C; }
+  #results { margin-top: 8px; max-height: 30vh; overflow: auto; border-top: 1px solid #333;
+    padding-top: 6px; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 1px 4px; } th { color: #aaa; font-weight: 600; }
+  tr.inband td { color: #7CFC8C; }
+  .knee { color: #ffd24a; font-weight: 700; min-height: 1.2em; }
+  .goal { color: #7cc4ff; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="cv" hidden></canvas></div>
+<div id="hud">
+  <h1>Danmaku probe <span class="goal">— 1000–2000, quality-first</span></h1>
+  <div class="field">
+    <span class="lbl">Render mode</span>
+    <select id="mode" class="full">
+      <option value="canvas-cached" selected>Canvas + cached bitmaps (1000–2000)</option>
+      <option value="canvas">Canvas, fillText/frame (no cache)</option>
+      <option value="css">DOM + CSS animation (reference)</option>
+      <option value="js">DOM + JS transform/frame (worst)</option>
+    </select>
+  </div>
+  <label><span>Base time (s)</span> <input id="life" type="number" value="8" min="2" max="20" style="width:64px"></label>
+  <label><span>Opacity (%)</span> <input id="opacity" type="range" min="20" max="100" value="100"></label>
+  <label title="Short comments scroll faster, long ones slower (reading time)">
+    Speed spread by length <input id="spread" type="checkbox" checked></label>
+  <label title="Drop comments too similar to recently-shown ones — keep variety">
+    Drop near-duplicates <input id="dedup" type="checkbox"></label>
+  <label>Auto-ramp to find knee <input id="ramp" type="checkbox" checked></label>
+  <label>Manual spawn/s <input id="rate" type="number" value="200" min="1" max="4000" style="width:72px"></label>
+  <button id="go">Start</button>
+  <button id="stop" class="secondary">Stop</button>
+  <div style="margin-top:10px">
+    <div class="stat">FPS <b id="fps">–</b></div>
+    <div class="stat">on screen <b id="live">0</b></div>
+    <div class="stat">spawn/s <b id="srate">0</b></div>
+    <div class="stat">dropped/s (dedup) <b id="dropped">0</b></div>
+    <div class="stat">long frames/s (&gt;33ms) <b id="long">0</b></div>
+    <div class="stat">bitmap cache <b id="cache">0</b></div>
+    <div class="stat">mode <b id="curmode">–</b></div>
+  </div>
+  <div id="results"><div class="knee" id="kneeline"></div>
+    <table><thead><tr><th>spawn/s</th><th>on screen</th><th>fps</th><th>long/s</th></tr></thead>
+    <tbody id="rows"></tbody></table>
+  </div>
+  <p style="color:#888;margin:8px 0 0">North star: <b style="color:#7cc4ff">communication quality</b>,
+  not raw count. Speed-spread = readable timing (long = slower). Dedup = drop near-duplicates so
+  variety survives the cap. Rows in the <b style="color:#7CFC8C">1000–2000</b> band are highlighted.
+  Run <b>fullscreen</b>.</p>
+</div>
+
+<script>
+// Mixed lengths on purpose: glanceable reactions vs information-rich messages.
+const SAMPLE = [
+  "草", "w", "POG", "gg", "それな", "優勝", "100点", "かわいい", "letsgooo",
+  "nice play", "what song is this", "great stream today", "hello from germany 🇩🇪",
+  "聞こえてますよ配信お疲れ様です",
+  "thanks for the explanation that really helped me understand it",
+  "the audio is delayed by about two seconds after the scene transition, please check the encoder",
+];
+const stage = document.getElementById("stage");
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+const $ = (id) => document.getElementById(id);
+
+let running = false, mode = "canvas-cached", baseMs = 8000;
+let spawnPerSec = 200, autoRamp = true, spreadOn = true, dedupOn = false;
+let active = [];
+let lastSpawn = 0, raf = 0;
+let frameTimes = [], longFrames = 0, lastSecond = 0, fpsVal = 0, longPerSec = 0;
+let rampStep = 0, results = [], kneeReported = false, dpr = 1;
+let droppedFrame = 0, droppedPerSec = 0;
+let textOpacity = 1;
+const recentSigs = [];                 // rolling signatures for dedup
+const SIM_THRESHOLD = 3;               // Hamming distance <= this => near-duplicate
+const bitmapCache = new Map();
+const FONT = "700 24px system-ui, sans-serif";
+let measureCtx;
+
+const W = () => stage.clientWidth, H = () => stage.clientHeight;
+function laneY(i) { const h = H(); const lanes = Math.max(3, Math.floor(h / 30));
+  return ((i % lanes) + 0.5) * (h / lanes); }
+function color(i) { return ["#fff","#ffd24a","#7CFC8C","#7cc4ff","#ff9ecb"][i % 5]; }
+
+// --- Behavior: timing by length (short = fast/short dwell, long = slow/long dwell) ---
+function durationFor(text) {
+  if (!spreadOn) return baseMs;
+  const len = [...text].length;
+  // wide spread: ~0.4x (short, snappy) .. ~2.2x (long, crawls so it can be read)
+  const factor = Math.min(2.2, Math.max(0.4, 0.35 + len / 26));
+  return baseMs * factor;
+}
+
+// --- Behavior: cheap content signature + dedup (variety over repetition) ---
+function popcount(v) {
+  v -= (v >>> 1) & 0x55555555;
+  v = (v & 0x33333333) + ((v >>> 2) & 0x33333333);
+  return (((v + (v >>> 4)) & 0x0f0f0f0f) * 0x01010101) >>> 24;
+}
+function signature(text) {
+  const norm = text.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
+  const toks = norm.match(/[\p{L}\p{N}]+/gu) ?? [norm];
+  let h = 0x811c9dc5;
+  for (const t of toks) for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h >>> 0;
+}
+function isNearDuplicate(sig) {
+  for (const p of recentSigs) if (popcount(sig ^ p) <= SIM_THRESHOLD) return true;
+  return false;
+}
+
+function rasterize(text, col) {
+  const key = col + "|" + text;
+  const hit = bitmapCache.get(key);
+  if (hit) return hit;
+  if (!measureCtx) measureCtx = document.createElement("canvas").getContext("2d");
+  measureCtx.font = FONT;
+  const pad = 6, h = 34;
+  const w = Math.ceil(measureCtx.measureText(text).width) + pad * 2;
+  const oc = document.createElement("canvas");
+  oc.width = Math.max(1, Math.ceil(w * dpr)); oc.height = Math.ceil(h * dpr);
+  const o = oc.getContext("2d");
+  o.scale(dpr, dpr);
+  o.font = FONT; o.textBaseline = "middle";
+  o.lineJoin = "round"; o.lineWidth = 3; o.strokeStyle = "rgba(0,0,0,.85)";
+  o.strokeText(text, pad, h / 2);
+  o.fillStyle = col; o.fillText(text, pad, h / 2);
+  const entry = { bmp: oc, w, h };
+  bitmapCache.set(key, entry);
+  return entry;
+}
+
+function spawn(now) {
+  const text = SAMPLE[(Math.random() * SAMPLE.length) | 0];
+
+  if (dedupOn) {
+    const sig = signature(text);
+    if (isNearDuplicate(sig)) { droppedFrame++; return; }   // drop high-similarity
+    recentSigs.push(sig);
+    if (recentSigs.length > 400) recentSigs.shift();
+  }
+
+  const dur = durationFor(text);
+  const dieAt = now + dur;
+  const startX = W();
+  const approx = [...text].length * 14 + 40;
+  const vx = (startX + approx) / dur;               // px per ms — long text => smaller vx => slower
+  const y = laneY(active.length);
+  const c = color(active.length);
+
+  if (mode === "css") {
+    const el = document.createElement("div");
+    el.className = "cmt css"; el.textContent = text;
+    el.style.top = y + "px"; el.style.color = c; el.style.opacity = textOpacity; el.style.setProperty("--dur", dur + "ms");
+    stage.appendChild(el); active.push({ el, dieAt });
+  } else if (mode === "js") {
+    const el = document.createElement("div");
+    el.className = "cmt"; el.textContent = text;
+    el.style.top = y + "px"; el.style.color = c; el.style.opacity = textOpacity;
+    stage.appendChild(el); active.push({ el, x: startX, vx, dieAt });
+  } else if (mode === "canvas") {
+    active.push({ x: startX, y, vx, text, color: c, dieAt });
+  } else {
+    const r = rasterize(text, c);
+    active.push({ x: startX, y, vx, bmp: r.bmp, w: r.w, h: r.h, dieAt });
+  }
+}
+
+function reap(now) {
+  if (mode === "canvas" || mode === "canvas-cached") { active = active.filter((a) => a.dieAt > now); return; }
+  const keep = [];
+  for (const a of active) { if (a.dieAt <= now) a.el?.remove(); else keep.push(a); }
+  active = keep;
+}
+
+function ensureCanvasSize() {
+  const w = Math.round(W() * dpr), h = Math.round(H() * dpr);
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+}
+
+function draw(now, dt) {
+  if (mode === "js") {
+    for (const a of active) { a.x -= a.vx * dt; a.el.style.transform = `translate3d(${a.x - W()}px,0,0)`; }
+  } else if (mode === "canvas") {
+    ensureCanvasSize();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W(), H());
+    ctx.globalAlpha = textOpacity;
+    ctx.font = FONT; ctx.textBaseline = "middle";
+    ctx.lineJoin = "round"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,.85)";
+    for (const a of active) {
+      a.x -= a.vx * dt;
+      ctx.strokeText(a.text, a.x, a.y);
+      ctx.fillStyle = a.color; ctx.fillText(a.text, a.x, a.y);
+    }
+  } else if (mode === "canvas-cached") {
+    ensureCanvasSize();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W(), H());
+    ctx.globalAlpha = textOpacity;
+    for (const a of active) { a.x -= a.vx * dt; ctx.drawImage(a.bmp, a.x, a.y - a.h / 2, a.w, a.h); }
+  }
+}
+
+function tick(now) {
+  if (!running) return;
+  const prev = frameTimes.length ? frameTimes[frameTimes.length - 1] : now;
+  const dt = now - prev;
+  frameTimes.push(now);
+  if (dt > 33) longFrames++;
+
+  const interval = 1000 / spawnPerSec;
+  let guard = 0;
+  while (now - lastSpawn >= interval && guard < 600) { spawn(now); lastSpawn += interval; guard++; }
+
+  reap(now);
+  draw(now, dt || 16);
+
+  if (now - lastSecond >= 1000) {
+    const win = frameTimes.filter((t) => t > now - 1000);
+    fpsVal = win.length; longPerSec = longFrames; longFrames = 0; frameTimes = win;
+    droppedPerSec = droppedFrame; droppedFrame = 0;
+    lastSecond = now;
+    updateHud();
+    if (autoRamp) maybeRamp();
+  }
+  raf = requestAnimationFrame(tick);
+}
+
+const RAMP = [25, 50, 75, 100, 150, 200, 250, 300, 350, 425, 500];
+function maybeRamp() {
+  if (!maybeRamp.t) maybeRamp.t = lastSecond;
+  if (lastSecond - maybeRamp.t < 3000) return;
+  maybeRamp.t = lastSecond;
+  results.push({ rate: spawnPerSec, live: active.length, fps: fpsVal, long: longPerSec });
+  renderRows();
+  if (fpsVal < 50 && !kneeReported) {
+    kneeReported = true;
+    const verdict = active.length >= 1000 ? "✓ reached the 1000+ band" : "✗ below 1000 target";
+    $("kneeline").textContent = `KNEE: fps ${fpsVal} at ${active.length} on-screen (${spawnPerSec}/s, ${mode}) — ${verdict}`;
+  }
+  rampStep++;
+  if (rampStep < RAMP.length) spawnPerSec = RAMP[rampStep];
+}
+
+function renderRows() {
+  $("rows").innerHTML = results.map((r) => {
+    const band = r.live >= 1000 && r.live <= 2000 ? " class='inband'" : "";
+    return `<tr${band}><td>${r.rate}</td><td>${r.live}</td><td>${r.fps}</td><td>${r.long}</td></tr>`;
+  }).join("");
+}
+
+function updateHud() {
+  const f = $("fps"); f.textContent = fpsVal;
+  f.className = fpsVal >= 55 ? "ok" : fpsVal >= 45 ? "warn" : "bad";
+  const l = $("live"); l.textContent = active.length;
+  l.className = active.length >= 1000 && active.length <= 2000 ? "target" : "";
+  $("srate").textContent = spawnPerSec;
+  $("dropped").textContent = droppedPerSec;
+  $("long").textContent = longPerSec;
+  $("cache").textContent = bitmapCache.size;
+  $("curmode").textContent = mode;
+}
+
+function start() {
+  stop();
+  mode = $("mode").value;
+  baseMs = Math.max(2, +$("life").value) * 1000;
+  autoRamp = $("ramp").checked; spreadOn = $("spread").checked; dedupOn = $("dedup").checked;
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  textOpacity = (Number($("opacity").value) || 100) / 100;
+  cv.hidden = !(mode === "canvas" || mode === "canvas-cached");
+  spawnPerSec = autoRamp ? RAMP[0] : Math.max(1, +$("rate").value);
+  rampStep = 0; results = []; kneeReported = false; renderRows(); $("kneeline").textContent = "";
+  recentSigs.length = 0; droppedFrame = 0; droppedPerSec = 0;
+  maybeRamp.t = 0;
+  running = true;
+  lastSpawn = performance.now(); lastSecond = performance.now(); frameTimes = []; longFrames = 0;
+  raf = requestAnimationFrame(tick);
+}
+function stop() {
+  running = false; cancelAnimationFrame(raf);
+  for (const a of active) a.el?.remove();
+  active = [];
+  if (ctx) { ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0, 0, cv.width, cv.height); }
+}
+$("go").onclick = start;
+$("stop").onclick = stop;
+$("opacity").addEventListener("input", () => {
+  textOpacity = (Number($("opacity").value) || 100) / 100;  // live on canvas
+});
+</script>
+</body>
+</html>
