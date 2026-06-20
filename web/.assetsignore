@@ -1,0 +1,5 @@
+node_modules
+test
+package.json
+package-lock.json
+.assetsignore
