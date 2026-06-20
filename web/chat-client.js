@@ -1,17 +1,17 @@
 // Device-side live-chat client (mobile PWA).
 //
-// Polls the Cloudflare relay (worker/) with an ADAPTIVE cadence:
-//   - healthy   -> poll at the server-provided `timeoutMs` (clamped)
-//   - transient failure -> exponential backoff with jitter, so we BACK OFF a
-//     tarpitting/throttling upstream instead of hammering it (which helps it
-//     recover, and is gentler on the relay's shared CF egress IP)
-//   - recovery  -> cadence resets immediately on the next success
-//   - sustained failure -> re-resolve from the videoId (in case the continuation
-//     went stale), and optionally give up after a hard cap
-//   - `ended` (stream over) -> stop polling
+// Polls the Cloudflare relay with an ADAPTIVE cadence:
+//   - healthy            -> poll at the server-provided `timeoutMs` (clamped)
+//   - transient failure  -> exponential backoff with jitter (back off a
+//     tarpitting upstream instead of hammering it; gentler on the shared egress)
+//   - recovery           -> cadence resets on the next success
+//   - sustained failure  -> re-resolve from the videoId (continuation may be stale)
+//   - `ended`            -> stop polling
 //
-// Runtime-agnostic: uses only fetch / AbortController / setTimeout (browser and
-// Node both provide these). The relay envelope is documented in docs/CONTRACT.md.
+// Design: the decision logic is a PURE state machine (`step`) — no fetch, no
+// timers — so it is fully testable in isolation. `start` is the thin effectful
+// shell that performs requests and runs the effects the machine returns.
+// Relay envelope shape: see docs/CONTRACT.md.
 
 const DEFAULTS = {
   base: "", // relay origin, e.g. "https://syc-livechat-relay.acofun.workers.dev"
@@ -19,44 +19,99 @@ const DEFAULTS = {
   maxIntervalMs: 30000, // cap during backoff
   backoffBase: 1000, // first backoff step after a failure
   backoffFactor: 1.8, // exponential growth per consecutive failure
-  jitterRatio: 0.25, // +/- jitter fraction applied to every wait
+  jitterRatio: 0.25, // +/- jitter fraction applied to backoff waits
   requestTimeoutMs: 12000, // client-side abort for a single in-flight request
   reResolveAfter: 4, // consecutive failures before re-resolving from videoId
   maxConsecutiveFailures: Infinity, // hard stop (Infinity = never give up)
+  random: Math.random, // injectable RNG (keeps jitter deterministic in tests)
 };
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+// ---- pure core --------------------------------------------------------------
 
-function withJitter(ms, ratio) {
-  const delta = ms * ratio;
-  return Math.max(0, Math.round(ms + (Math.random() * 2 - 1) * delta));
-}
+const clamp = (lo, hi) => (n) => Math.max(lo, Math.min(hi, n));
+
+const healthyWait = (cfg, timeoutMs) =>
+  clamp(cfg.minIntervalMs, cfg.maxIntervalMs)(Number(timeoutMs) || cfg.minIntervalMs);
+
+const backoffWait = (cfg, failures) =>
+  Math.min(cfg.maxIntervalMs, cfg.backoffBase * cfg.backoffFactor ** (failures - 1));
+
+// (cfg) -> (state, outcome) -> plan   [PURE]
+//   state   = { cont: string|null, failures: number }
+//   outcome = { ok: true, env } | { ok: false, error }
+//   plan    = { state, emit: ChatMessage[], wait?, healthy?, stop?, error? }
+const step = (cfg) => (state, outcome) => {
+  if (outcome.ok) {
+    const env = outcome.env;
+    const emit = env.messages ?? [];
+    if (env.ended || !env.continuation) return { state, emit, stop: "ended" };
+    return {
+      state: { cont: env.continuation, failures: 0 },
+      emit,
+      wait: healthyWait(cfg, env.timeoutMs),
+      healthy: true,
+    };
+  }
+  const failures = state.failures + 1;
+  if (failures >= cfg.maxConsecutiveFailures) {
+    return { state: { ...state, failures }, emit: [], stop: "failed", error: outcome.error };
+  }
+  return {
+    state: { cont: failures >= cfg.reResolveAfter ? null : state.cont, failures },
+    emit: [],
+    wait: backoffWait(cfg, failures),
+    healthy: false,
+    error: outcome.error,
+  };
+};
+
+// jitter is the one impure cadence concern; applied at the effect boundary
+const jitter = (ratio, rng) => (ms) => Math.max(0, Math.round(ms + (rng() * 2 - 1) * ms * ratio));
+
+// ---- effectful shell --------------------------------------------------------
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const buildUrl = (base, { cont, video }) => {
+  const url = new URL(base.replace(/\/$/, "") + "/api/livechat");
+  if (cont) url.searchParams.set("cont", cont);
+  else if (video) url.searchParams.set("video", video);
+  return url;
+};
 
 export function createLiveChatClient(options = {}) {
   const cfg = { ...DEFAULTS, ...options };
+  const advance = step(cfg);
+  const applyJitter = jitter(cfg.jitterRatio, cfg.random);
   let stopped = false;
-  let inflight = null; // AbortController of the current request
+  let inflight = null;
 
-  async function fetchEnvelope(params, signal) {
-    const url = new URL(cfg.base.replace(/\/$/, "") + "/api/livechat");
-    if (params.cont) url.searchParams.set("cont", params.cont);
-    else if (params.video) url.searchParams.set("video", params.video);
-
-    const res = await fetch(url, { signal, headers: { Accept: "application/json" } });
-    let body = {};
-    try {
-      body = await res.json();
-    } catch {
-      /* keep body = {} */
-    }
+  const fetchEnvelope = async (params, signal) => {
+    const res = await fetch(buildUrl(cfg.base, params), {
+      signal,
+      headers: { Accept: "application/json" },
+    });
+    const body = await res.json().catch(() => ({}));
     if (!res.ok) {
       const err = new Error(body?.error || `HTTP ${res.status}`);
       err.status = res.status;
       throw err;
     }
     return body; // { messages, continuation, timeoutMs, ended }
-  }
+  };
+
+  // One request -> a pure outcome the state machine can fold.
+  const pollOnce = async (params) => {
+    inflight = new AbortController();
+    const timer = setTimeout(() => inflight.abort(), cfg.requestTimeoutMs);
+    try {
+      return { ok: true, env: await fetchEnvelope(params, inflight.signal) };
+    } catch (error) {
+      return { ok: false, error };
+    } finally {
+      clearTimeout(timer);
+    }
+  };
 
   return {
     stop() {
@@ -64,64 +119,37 @@ export function createLiveChatClient(options = {}) {
       inflight?.abort();
     },
 
-    // Drive the poll loop. Handlers (all optional):
-    //   onMessages(ChatMessage[]) — a fresh batch arrived
-    //   onState({ healthy, failures, nextInMs }) — cadence/health changed
-    //   onError(error, consecutiveFailures) — a poll failed (will be retried)
-    //   onEnded({ reason }) — stream ended ("ended") or gave up ("failed")
+    // Drive the loop. Handlers (all optional):
+    //   onMessages(ChatMessage[]), onState({healthy,failures,nextInMs}),
+    //   onError(error, consecutiveFailures), onEnded({reason})
     async start(videoId, handlers = {}) {
       const { onMessages, onState, onError, onEnded } = handlers;
       stopped = false;
-      let cont = null;
-      let failures = 0;
+      let state = { cont: null, failures: 0 };
 
       while (!stopped) {
-        let wait;
-        try {
-          inflight = new AbortController();
-          const timer = setTimeout(() => inflight.abort(), cfg.requestTimeoutMs);
-          let env;
-          try {
-            env = await fetchEnvelope(cont ? { cont } : { video: videoId }, inflight.signal);
-          } finally {
-            clearTimeout(timer);
-          }
+        const params = state.cont ? { cont: state.cont } : { video: videoId };
+        const plan = advance(state, await pollOnce(params));
+        state = plan.state;
 
-          failures = 0;
-          if (env.messages?.length) onMessages?.(env.messages);
-          if (env.ended || !env.continuation) {
-            onEnded?.({ reason: "ended" });
-            break;
-          }
-          cont = env.continuation;
-          wait = clamp(Number(env.timeoutMs) || cfg.minIntervalMs, cfg.minIntervalMs, cfg.maxIntervalMs);
-          onState?.({ healthy: true, failures: 0, nextInMs: wait });
-        } catch (e) {
-          if (stopped) break;
-          failures += 1;
-          onError?.(e, failures);
-
-          if (failures >= cfg.maxConsecutiveFailures) {
-            onEnded?.({ reason: "failed" });
-            break;
-          }
-          // Sustained failure: the continuation may have gone stale — drop back
-          // to a fresh resolve from the videoId on the next attempt.
-          if (failures >= cfg.reResolveAfter) cont = null;
-
-          wait = withJitter(
-            Math.min(cfg.maxIntervalMs, cfg.backoffBase * cfg.backoffFactor ** (failures - 1)),
-            cfg.jitterRatio
-          );
-          onState?.({ healthy: false, failures, nextInMs: wait });
+        if (plan.emit.length) onMessages?.(plan.emit);
+        if (plan.error) onError?.(plan.error, state.failures);
+        if (plan.stop) {
+          onEnded?.({ reason: plan.stop });
+          break;
         }
-
         if (stopped) break;
+
+        const wait = plan.healthy ? plan.wait : applyJitter(plan.wait);
+        onState?.({ healthy: plan.healthy, failures: state.failures, nextInMs: wait });
         await sleep(wait);
       }
     },
   };
 }
+
+// Exposed for unit tests of the pure core (no network required).
+export const _pure = { step, healthyWait, backoffWait, clamp, jitter };
 
 // Classic-script convenience (mirrors globalThis.SYC* used by scoring/danmaku).
 if (typeof globalThis !== "undefined") {

@@ -262,8 +262,9 @@ CF Worker が以下を中継する(クライアントには CORS 制約のため
    `worker/test/probe.mjs` で実機検証可。
 2. ✅ **実デプロイ(`syc-livechat-relay.acofun.workers.dev`)で CF エッジ IP からの取得を確認**。
    タールピット対策の **2層リトライ + 適応 cadence** を実装・検証(§7.1)。
-   端末側 `web/chat-client.js`(適応バックオフ)は実ライブ + 決定論テストで検証済み
-   (`web/test/chat-client-live.mjs` / `web/test/chat-client-adaptive.mjs`)。
+   端末側 `web/chat-client.js`(適応バックオフ)は純粋な状態機械 `step` + 薄い副作用シェルに
+   分離し、純粋ユニット + 決定論 + 実ライブの3層で検証済み(`web/test/chat-client-pure.mjs`
+   / `chat-client-adaptive.mjs` / `chat-client-live.mjs`)。
 3. `web/` の残りを構築。`scoring.js` / `danmaku.js` を `extension/` から出発点として
    コピーし、以後モバイル最適化で分岐(§5.1)。`settings.js` / `filter.js` を
    localStorage 化。モック chat で弾幕描画を単体確認。
