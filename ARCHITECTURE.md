@@ -265,10 +265,26 @@ CF Worker が以下を中継する(クライアントには CORS 制約のため
    端末側 `web/chat-client.js`(適応バックオフ)は純粋な状態機械 `step` + 薄い副作用シェルに
    分離し、純粋ユニット + 決定論 + 実ライブの3層で検証済み(`web/test/chat-client-pure.mjs`
    / `chat-client-adaptive.mjs` / `chat-client-live.mjs`)。
-3. `web/` の残りを構築。`scoring.js` / `danmaku.js` を `extension/` から出発点として
-   コピーし、以後モバイル最適化で分岐(§5.1)。`settings.js` / `filter.js` を
-   localStorage 化。モック chat で弾幕描画を単体確認。
-4. `app.js` で player + chat poll(`chat-client.js` → Worker)+ scoring + danmaku を結線。
-5. タッチ UI / PWA / Wake Lock / Media Session を実装。
-6. 実機(iOS Safari / Android Chrome)で確認・チューニング。
+3. ✅ **垂直スライス**: `scoring.js`/`danmaku.js` を `extension/` からコピー、`app.js` で
+   player + chat-client + scoring + danmaku を結線。**実ブラウザ(headless Chromium)で弾幕
+   描画を e2e 検証**(`web/test/e2e.mjs`)。FP の小モジュール分割(config/pipeline/player/mock)。
+4. ✅ **PWA + ライフサイクル**: `sw.js`(静的シェルキャッシュ・チャットAPIは非キャッシュ) +
+   `manifest.webmanifest` + Wake Lock/Media Session(`lifecycle.js`)。SW activate を e2e 検証。
+5. ✅ **タッチ設定UI**: `store.js`(localStorage シム)で `settings.js`/`filter.js` を**無改変流用**、
+   schema 駆動の `controls.js`/`ui.js` ボトムシート。速度/表示/NG等をライブ反映+永続化を e2e 検証。
+6. 実機(iOS Safari / Android Chrome)で確認・チューニング(CF Pages へデプロイ → 実機)。
+
+### 9.1 無料枠での運用(measured)
+
+実測した無料枠の天井(§7.1 のリレー + Workers Free 100k req/日):
+- **1ポーリング = 1 Worker リクエスト**(キャッシュ HIT/MISS 問わず Worker が起動)。10秒間隔で
+  1視聴者 8,640 req/日 → **常時24h なら ~11人**、**1時間セッションなら ~278/日**。
+- **キャッシュは無料枠の天井を上げない**(上流 YouTube 呼び出しと IP-BAN 対策にのみ効く)。
+  有料公開規模(数千同時)は WebSocket + Durable Object 単一フライトが必要(ロードマップ)。
+
+無料枠を**有料機能なしで**広げる実装(`chat-client.js`):
+- **非表示/一時停止中はポーリング停止**(Page Visibility + プレイヤー状態 → `pause()/resume()`)。
+  バックグラウンドのタブはリクエスト消費ゼロ。実利用で最大の節約。
+- **静寂適応**: 0件の窓が続くと間隔を `quietGrowth` 倍に延長(上限 `maxQuietMs`=40s)、
+  メッセージが戻れば即サーバー cadence に復帰。過疎チャットの無駄打ちを削減。
 ```

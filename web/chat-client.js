@@ -1,54 +1,59 @@
 // Device-side live-chat client (mobile PWA).
 //
-// Polls the Cloudflare relay with an ADAPTIVE cadence:
-//   - healthy            -> poll at the server-provided `timeoutMs` (clamped)
-//   - transient failure  -> exponential backoff with jitter (back off a
-//     tarpitting upstream instead of hammering it; gentler on the shared egress)
-//   - recovery           -> cadence resets on the next success
-//   - sustained failure  -> re-resolve from the videoId (continuation may be stale)
-//   - `ended`            -> stop polling
+// Polls the Cloudflare relay with an ADAPTIVE cadence. Free-tier friendly:
+//   - healthy            -> poll at the server `timeoutMs` (clamped)
+//   - QUIET (empty polls) -> stretch the interval (up to maxQuietMs) so a dead
+//     chat burns far fewer Worker requests; snaps back the moment messages return
+//   - PAUSED (tab hidden / video paused) -> stop polling entirely (zero requests)
+//   - transient failure  -> exponential backoff with jitter; re-resolve on a streak
+//   - `ended`            -> stop
 //
-// Design: the decision logic is a PURE state machine (`step`) — no fetch, no
-// timers — so it is fully testable in isolation. `start` is the thin effectful
-// shell that performs requests and runs the effects the machine returns.
+// Design: the cadence decision is a PURE state machine (`step`) — no fetch, no
+// timers — fully testable in isolation. `start` is the thin effectful shell.
 // Relay envelope shape: see docs/CONTRACT.md.
 
 const DEFAULTS = {
-  base: "", // relay origin, e.g. "https://syc-livechat-relay.acofun.workers.dev"
-  minIntervalMs: 800, // floor between polls even when healthy
+  base: "",
+  minIntervalMs: 800,
   maxIntervalMs: 30000, // cap during backoff
-  backoffBase: 1000, // first backoff step after a failure
-  backoffFactor: 1.8, // exponential growth per consecutive failure
-  jitterRatio: 0.25, // +/- jitter fraction applied to backoff waits
-  requestTimeoutMs: 12000, // client-side abort for a single in-flight request
-  reResolveAfter: 4, // consecutive failures before re-resolving from videoId
-  maxConsecutiveFailures: Infinity, // hard stop (Infinity = never give up)
-  random: Math.random, // injectable RNG (keeps jitter deterministic in tests)
+  backoffBase: 1000,
+  backoffFactor: 1.8,
+  jitterRatio: 0.25,
+  requestTimeoutMs: 12000,
+  reResolveAfter: 4,
+  maxConsecutiveFailures: Infinity,
+  // quiet-stream adaptation (free-tier request saver)
+  quietThreshold: 1, // a poll with < this many messages counts as "quiet" (i.e. 0)
+  quietGrowth: 1.6, // interval multiplier per consecutive quiet poll
+  maxQuietMs: 40000, // ceiling while quiet
+  random: Math.random,
 };
 
 // ---- pure core --------------------------------------------------------------
 
 const clamp = (lo, hi) => (n) => Math.max(lo, Math.min(hi, n));
 
-const healthyWait = (cfg, timeoutMs) =>
-  clamp(cfg.minIntervalMs, cfg.maxIntervalMs)(Number(timeoutMs) || cfg.minIntervalMs);
+const healthyWait = (cfg, timeoutMs, quiet) => {
+  const base = clamp(cfg.minIntervalMs, cfg.maxIntervalMs)(Number(timeoutMs) || cfg.minIntervalMs);
+  return Math.min(cfg.maxQuietMs, Math.round(base * cfg.quietGrowth ** quiet));
+};
 
 const backoffWait = (cfg, failures) =>
   Math.min(cfg.maxIntervalMs, cfg.backoffBase * cfg.backoffFactor ** (failures - 1));
 
 // (cfg) -> (state, outcome) -> plan   [PURE]
-//   state   = { cont: string|null, failures: number }
+//   state   = { cont, failures, quiet }
 //   outcome = { ok: true, env } | { ok: false, error }
-//   plan    = { state, emit: ChatMessage[], wait?, healthy?, stop?, error? }
 const step = (cfg) => (state, outcome) => {
   if (outcome.ok) {
     const env = outcome.env;
     const emit = env.messages ?? [];
     if (env.ended || !env.continuation) return { state, emit, stop: "ended" };
+    const quiet = emit.length < cfg.quietThreshold ? state.quiet + 1 : 0;
     return {
-      state: { cont: env.continuation, failures: 0 },
+      state: { cont: env.continuation, failures: 0, quiet },
       emit,
-      wait: healthyWait(cfg, env.timeoutMs),
+      wait: healthyWait(cfg, env.timeoutMs, quiet),
       healthy: true,
     };
   }
@@ -57,7 +62,7 @@ const step = (cfg) => (state, outcome) => {
     return { state: { ...state, failures }, emit: [], stop: "failed", error: outcome.error };
   }
   return {
-    state: { cont: failures >= cfg.reResolveAfter ? null : state.cont, failures },
+    state: { cont: failures >= cfg.reResolveAfter ? null : state.cont, failures, quiet: state.quiet },
     emit: [],
     wait: backoffWait(cfg, failures),
     healthy: false,
@@ -65,7 +70,6 @@ const step = (cfg) => (state, outcome) => {
   };
 };
 
-// jitter is the one impure cadence concern; applied at the effect boundary
 const jitter = (ratio, rng) => (ms) => Math.max(0, Math.round(ms + (rng() * 2 - 1) * ms * ratio));
 
 // ---- effectful shell --------------------------------------------------------
@@ -84,23 +88,28 @@ export function createLiveChatClient(options = {}) {
   const advance = step(cfg);
   const applyJitter = jitter(cfg.jitterRatio, cfg.random);
   let stopped = false;
+  let paused = false;
+  let wake = null; // resolve fn for the paused gate
   let inflight = null;
 
+  const waitWhilePaused = () => (paused ? new Promise((r) => (wake = r)) : Promise.resolve());
+  const releasePause = () => {
+    const w = wake;
+    wake = null;
+    w?.();
+  };
+
   const fetchEnvelope = async (params, signal) => {
-    const res = await fetch(buildUrl(cfg.base, params), {
-      signal,
-      headers: { Accept: "application/json" },
-    });
+    const res = await fetch(buildUrl(cfg.base, params), { signal, headers: { Accept: "application/json" } });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
       const err = new Error(body?.error || `HTTP ${res.status}`);
       err.status = res.status;
       throw err;
     }
-    return body; // { messages, continuation, timeoutMs, ended }
+    return body;
   };
 
-  // One request -> a pure outcome the state machine can fold.
   const pollOnce = async (params) => {
     inflight = new AbortController();
     const timer = setTimeout(() => inflight.abort(), cfg.requestTimeoutMs);
@@ -114,20 +123,30 @@ export function createLiveChatClient(options = {}) {
   };
 
   return {
+    // Suspend/resume polling without tearing down state (tab hidden, video paused).
+    pause() {
+      paused = true;
+    },
+    resume() {
+      paused = false;
+      releasePause();
+    },
     stop() {
       stopped = true;
+      paused = false;
+      releasePause();
       inflight?.abort();
     },
 
-    // Drive the loop. Handlers (all optional):
-    //   onMessages(ChatMessage[]), onState({healthy,failures,nextInMs}),
-    //   onError(error, consecutiveFailures), onEnded({reason})
     async start(videoId, handlers = {}) {
       const { onMessages, onState, onError, onEnded } = handlers;
       stopped = false;
-      let state = { cont: null, failures: 0 };
+      let state = { cont: null, failures: 0, quiet: 0 };
 
       while (!stopped) {
+        await waitWhilePaused(); // zero requests while paused
+        if (stopped) break;
+
         const params = state.cont ? { cont: state.cont } : { video: videoId };
         const plan = advance(state, await pollOnce(params));
         state = plan.state;
@@ -141,7 +160,7 @@ export function createLiveChatClient(options = {}) {
         if (stopped) break;
 
         const wait = plan.healthy ? plan.wait : applyJitter(plan.wait);
-        onState?.({ healthy: plan.healthy, failures: state.failures, nextInMs: wait });
+        onState?.({ healthy: plan.healthy, failures: state.failures, quiet: state.quiet, nextInMs: wait });
         await sleep(wait);
       }
     },
@@ -151,7 +170,6 @@ export function createLiveChatClient(options = {}) {
 // Exposed for unit tests of the pure core (no network required).
 export const _pure = { step, healthyWait, backoffWait, clamp, jitter };
 
-// Classic-script convenience (mirrors globalThis.SYC* used by scoring/danmaku).
 if (typeof globalThis !== "undefined") {
   globalThis.SYCChat = { createLiveChatClient };
 }

@@ -33,7 +33,11 @@
       <div id="player"></div>
     </main>
 
-    <!-- core (classic IIFE globals) must load before the module orchestrator -->
+    <!-- core (classic IIFE globals) must load before the module orchestrator.
+         store.js installs the localStorage shim that settings.js/filter.js use. -->
+    <script src="store.js"></script>
+    <script src="settings.js"></script>
+    <script src="filter.js"></script>
     <script src="scoring.js"></script>
     <script src="danmaku.js"></script>
     <script type="module" src="app.js"></script>

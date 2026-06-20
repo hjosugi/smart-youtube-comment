@@ -2,15 +2,9 @@
 
 export const RELAY_DEFAULT = "https://syc-livechat-relay.acofun.workers.dev";
 
-// Mobile-tuned danmaku overrides (the web build diverges from extension defaults
-// for phone GPUs — see ARCHITECTURE.md §5.1). Applied as config, not by editing
-// the copied danmaku.js, so the core stays a clean copy.
-export const mobileDanmaku = () => ({
-  maxActive: 600,
-  fontPx: 22,
-  spawnPerFrame: 6,
-  dpr: Math.min(globalThis.devicePixelRatio || 1, 2),
-});
+// Danmaku config is now settings-driven (SYCSettings.toEngineConfig), with mobile
+// tuning expressed through the schema's renderScalePct default + the renderer's
+// adaptive cap — so there is no separate mobile override layer here.
 
 // Accept a raw YouTube URL or a bare id; return the 11-char id or "".
 export const parseVideoId = (raw = "") => {
