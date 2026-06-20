@@ -193,3 +193,6 @@ const parseAction = (action) => {
   const item = action?.addChatItemAction?.item ?? action?.replaceChatItemAction?.replacementItem;
   return item ? parseItem(item) : null;
 };
+
+// Exposed for unit tests of the pure transforms (no network required).
+export const _pure = { parseAction, parseItem, extractContinuation, authorTypeFromBadges, runsToText };

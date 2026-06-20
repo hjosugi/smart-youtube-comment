@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0b0f" />
+    <title>Smart YouTube Comment — 弾幕</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <form id="launch" class="launch">
+        <input
+          id="video"
+          type="text"
+          inputmode="url"
+          placeholder="YouTube URL または 動画ID"
+          autocomplete="off"
+          aria-label="YouTube URL or video ID"
+        />
+        <button type="submit">再生</button>
+      </form>
+      <span id="status" class="status" role="status">idle</span>
+    </header>
+
+    <main class="stage" id="stage">
+      <!-- mountPlayer replaces #player with the YT IFrame; the danmaku canvas is
+           appended here as a sibling, absolutely positioned over the player. -->
+      <div id="player"></div>
+    </main>
+
+    <!-- core (classic IIFE globals) must load before the module orchestrator -->
+    <script src="scoring.js"></script>
+    <script src="danmaku.js"></script>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

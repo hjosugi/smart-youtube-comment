@@ -10,9 +10,12 @@
 // Response: { messages, continuation, timeoutMs, ended }
 //
 // Abuse/IP-ban mitigation: responses are cached in the edge cache keyed by the
-// request URL for the poll window (s-maxage = timeoutMs). N viewers of the same
-// stream share one continuation per window, so their polls collapse onto a
-// single upstream InnerTube call instead of multiplying from the Worker's IP.
+// request URL for the poll window (s-maxage = timeoutMs). Polls for the same
+// continuation that arrive AFTER the first response is stored are served from
+// cache (one upstream call serves the window). NOTE: there is NO in-flight
+// coalescing — N *simultaneous* cold-key requests all miss and all go upstream
+// during the ~1s cache-population gap. True single-flight needs a Durable Object
+// (paid plan); acceptable for the current scale. See ARCHITECTURE.md §7.1.
 
 import { resolveContinuation, pollLiveChat } from "./innertube.js";
 
@@ -20,6 +23,9 @@ const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
+  // Cache the preflight so a per-poll OPTIONS can't appear and halve the request
+  // budget. (Device polls use only CORS-safelisted headers, so none should fire.)
+  "Access-Control-Max-Age": "86400",
 };
 
 const VIDEO_ID_RE = /^[\w-]{11}$/;
@@ -69,7 +75,12 @@ const handle = async (request, ctx) => {
   const cache = caches.default;
   const cacheKey = new Request(url.toString(), { method: "GET" });
   const hit = await cache.match(cacheKey);
-  if (hit) return hit;
+  if (hit) {
+    // Served from edge cache — no upstream call. Marker aids ops/load testing.
+    const r = new Response(hit.body, hit);
+    r.headers.set("X-SYC-Cache", "HIT");
+    return r;
+  }
 
   try {
     const continuation = params.cont ?? (await resolveContinuation(params.video));
@@ -77,7 +88,10 @@ const handle = async (request, ctx) => {
 
     const result = await pollLiveChat(continuation);
     const ttl = Math.max(1, Math.floor((result.timeoutMs ?? 1000) / 1000));
-    const resp = json(result, 200, { "Cache-Control": `public, s-maxage=${ttl}` });
+    const resp = json(result, 200, {
+      "Cache-Control": `public, s-maxage=${ttl}`,
+      "X-SYC-Cache": "MISS",
+    });
     // Don't cache the terminal (ended) response — the stream may restart.
     if (!result.ended) ctx.waitUntil(cache.put(cacheKey, resp.clone()));
     return resp;
