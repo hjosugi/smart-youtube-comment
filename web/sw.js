@@ -2,7 +2,7 @@
 // launch. The live-chat API and all cross-origin requests (YouTube, the relay)
 // are NEVER cached: chat must always be fresh. See ARCHITECTURE.md §8.
 
-const CACHE = "syc-shell-v1";
+const CACHE = "syc-shell-v2";
 const SHELL = [
   "./",
   "./index.html",
@@ -50,5 +50,18 @@ self.addEventListener("fetch", (e) => {
   // are always live (pass through to the network).
   if (e.request.method !== "GET" || url.origin !== self.location.origin) return;
   if (url.pathname.includes("/api/livechat")) return;
-  e.respondWith(caches.match(e.request).then((hit) => hit || fetch(e.request)));
+  // Stale-while-revalidate: serve cache instantly, refresh in the background so a
+  // new deploy is picked up on the next load (no manual cache-busting needed).
+  e.respondWith(
+    caches.open(CACHE).then(async (cache) => {
+      const cached = await cache.match(e.request);
+      const fresh = fetch(e.request)
+        .then((res) => {
+          if (res.ok) cache.put(e.request, res.clone());
+          return res;
+        })
+        .catch(() => cached);
+      return cached || fresh;
+    })
+  );
 });
