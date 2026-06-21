@@ -4,19 +4,19 @@
 // complexity. Watch fps, frameP95, and longTasks under a busy stream.
 
 export const mountPerfHud = (overlay, root = document.body) => {
-  const hud = document.createElement("div");
-  hud.className = "perf";
-  root.append(hud);
+  const hud = document.createElement("div")
+  hud.className = "perf"
+  root.append(hud)
 
   const tick = () => {
-    const s = overlay.stats?.() ?? {};
-    hud.textContent = `fps ${s.fps ?? 0} · active ${s.active ?? 0}/${s.cap ?? 0} · drop ${s.dropped ?? 0} · p95 ${s.frameP95 ?? 0}ms · long ${s.longTasks ?? 0}`;
-  };
+    const s = overlay.stats?.() ?? {}
+    hud.textContent = `fps ${s.fps ?? 0} · active ${s.active ?? 0}/${s.cap ?? 0} · drop ${s.dropped ?? 0} · p95 ${s.frameP95 ?? 0}ms · long ${s.longTasks ?? 0}`
+  }
 
-  tick();
-  const id = setInterval(tick, 1000);
+  tick()
+  const id = setInterval(tick, 1000)
   return () => {
-    clearInterval(id);
-    hud.remove();
-  };
-};
+    clearInterval(id)
+    hud.remove()
+  }
+}

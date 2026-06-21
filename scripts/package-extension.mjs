@@ -1,5 +1,5 @@
-import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import {
   existsSync,
   mkdirSync,
@@ -7,22 +7,22 @@ import {
   readFileSync,
   rmSync,
   statSync,
-  writeFileSync
-} from "node:fs";
-import { tmpdir } from "node:os";
-import { basename, resolve } from "node:path";
+  writeFileSync,
+} from "node:fs"
+import { tmpdir } from "node:os"
+import { basename, resolve } from "node:path"
 
-const root = resolve(new URL("..", import.meta.url).pathname);
-const extensionDir = resolve(root, "extension");
-const releaseDir = resolve(root, ".release");
-const manifestPath = resolve(extensionDir, "manifest.json");
-const packagePath = resolve(root, "package.json");
+const root = resolve(new URL("..", import.meta.url).pathname)
+const extensionDir = resolve(root, "extension")
+const releaseDir = resolve(root, ".release")
+const manifestPath = resolve(extensionDir, "manifest.json")
+const packagePath = resolve(root, "package.json")
 
-const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-const pkg = JSON.parse(readFileSync(packagePath, "utf8"));
+const manifest = JSON.parse(readFileSync(manifestPath, "utf8"))
+const pkg = JSON.parse(readFileSync(packagePath, "utf8"))
 
 if (manifest.version !== pkg.version) {
-  throw new Error(`version mismatch: manifest=${manifest.version}, package=${pkg.version}`);
+  throw new Error(`version mismatch: manifest=${manifest.version}, package=${pkg.version}`)
 }
 
 const required = [
@@ -36,59 +36,59 @@ const required = [
   "options.html",
   "options.js",
   "_locales",
-  "icons"
-];
+  "icons",
+]
 
 for (const file of required) {
-  const path = resolve(extensionDir, file);
-  if (!existsSync(path)) throw new Error(`missing release file: extension/${file}`);
-  if (statSync(path).size === 0) throw new Error(`empty release file: extension/${file}`);
+  const path = resolve(extensionDir, file)
+  if (!existsSync(path)) throw new Error(`missing release file: extension/${file}`)
+  if (statSync(path).size === 0) throw new Error(`empty release file: extension/${file}`)
 }
 
-mkdirSync(releaseDir, { recursive: true });
+mkdirSync(releaseDir, { recursive: true })
 
-const artifactName = `${pkg.name}-v${manifest.version}.zip`;
-const artifactPath = resolve(releaseDir, artifactName);
-const baseName = `${pkg.name}-v${manifest.version}`;
-const checksumPath = resolve(releaseDir, `${baseName}.sha256`);
-const metadataPath = resolve(releaseDir, `${baseName}.release.json`);
-const notesPath = resolve(releaseDir, `${baseName}-notes.md`);
-const testerGuidePath = resolve(releaseDir, `${baseName}-tester-install.md`);
-rmSync(artifactPath, { force: true });
-rmSync(checksumPath, { force: true });
-rmSync(metadataPath, { force: true });
-rmSync(notesPath, { force: true });
-rmSync(testerGuidePath, { force: true });
+const artifactName = `${pkg.name}-v${manifest.version}.zip`
+const artifactPath = resolve(releaseDir, artifactName)
+const baseName = `${pkg.name}-v${manifest.version}`
+const checksumPath = resolve(releaseDir, `${baseName}.sha256`)
+const metadataPath = resolve(releaseDir, `${baseName}.release.json`)
+const notesPath = resolve(releaseDir, `${baseName}-notes.md`)
+const testerGuidePath = resolve(releaseDir, `${baseName}-tester-install.md`)
+rmSync(artifactPath, { force: true })
+rmSync(checksumPath, { force: true })
+rmSync(metadataPath, { force: true })
+rmSync(notesPath, { force: true })
+rmSync(testerGuidePath, { force: true })
 
 execFileSync("zip", ["-X", "-r", artifactPath, ...required], {
   cwd: extensionDir,
-  stdio: "inherit"
-});
+  stdio: "inherit",
+})
 
 execFileSync("unzip", ["-t", artifactPath], {
-  stdio: "inherit"
-});
+  stdio: "inherit",
+})
 
-const verifyDir = mkdtempSync(resolve(tmpdir(), `${baseName}-`));
+const verifyDir = mkdtempSync(resolve(tmpdir(), `${baseName}-`))
 try {
   execFileSync("unzip", ["-q", artifactPath, "-d", verifyDir], {
-    stdio: "inherit"
-  });
+    stdio: "inherit",
+  })
   for (const file of required) {
-    const path = resolve(verifyDir, file);
-    if (!existsSync(path)) throw new Error(`zip verification failed; missing ${file}`);
-    if (statSync(path).size === 0) throw new Error(`zip verification failed; empty ${file}`);
+    const path = resolve(verifyDir, file)
+    if (!existsSync(path)) throw new Error(`zip verification failed; missing ${file}`)
+    if (statSync(path).size === 0) throw new Error(`zip verification failed; empty ${file}`)
   }
 } finally {
-  rmSync(verifyDir, { recursive: true, force: true });
+  rmSync(verifyDir, { recursive: true, force: true })
 }
 
-const artifactBytes = readFileSync(artifactPath);
-const sha256 = createHash("sha256").update(artifactBytes).digest("hex");
-const size = statSync(artifactPath).size;
-const createdAt = new Date().toISOString();
+const artifactBytes = readFileSync(artifactPath)
+const sha256 = createHash("sha256").update(artifactBytes).digest("hex")
+const size = statSync(artifactPath).size
+const createdAt = new Date().toISOString()
 
-writeFileSync(checksumPath, `${sha256}  ${artifactName}\n`);
+writeFileSync(checksumPath, `${sha256}  ${artifactName}\n`)
 
 writeFileSync(
   metadataPath,
@@ -100,12 +100,12 @@ writeFileSync(
       artifact: artifactName,
       sha256,
       bytes: size,
-      files: required
+      files: required,
     },
     null,
-    2
-  )}\n`
-);
+    2,
+  )}\n`,
+)
 
 writeFileSync(
   notesPath,
@@ -141,8 +141,8 @@ writeFileSync(
 - YouTube DOM changes may break extraction
 - Busy-stream performance still needs real Chrome profiling
 - Not yet ready for Chrome Web Store submission
-`
-);
+`,
+)
 
 writeFileSync(
   testerGuidePath,
@@ -183,11 +183,11 @@ SHA-256:
 \`\`\`text
 ${sha256}  ${artifactName}
 \`\`\`
-`
-);
+`,
+)
 
-console.log(`Release artifact: .release/${basename(artifactPath)} (${size} bytes)`);
-console.log(`Checksum: .release/${basename(checksumPath)}`);
-console.log(`Metadata: .release/${basename(metadataPath)}`);
-console.log(`Notes: .release/${basename(notesPath)}`);
-console.log(`Tester guide: .release/${basename(testerGuidePath)}`);
+console.log(`Release artifact: .release/${basename(artifactPath)} (${size} bytes)`)
+console.log(`Checksum: .release/${basename(checksumPath)}`)
+console.log(`Metadata: .release/${basename(metadataPath)}`)
+console.log(`Notes: .release/${basename(notesPath)}`)
+console.log(`Tester guide: .release/${basename(testerGuidePath)}`)

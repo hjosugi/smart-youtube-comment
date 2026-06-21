@@ -1,8 +1,8 @@
 // Local test runner — runs every suite and reports. Usage: node scripts/test.mjs
-import { execFileSync } from "node:child_process";
-import { join } from "node:path";
+import { execFileSync } from "node:child_process"
+import { join } from "node:path"
 
-const ROOT = new URL("..", import.meta.url).pathname;
+const ROOT = new URL("..", import.meta.url).pathname
 
 const SUITES = [
   ["unit", "worker/test/innertube-parse.mjs"],
@@ -22,28 +22,28 @@ const SUITES = [
   ["e2e", "web/test/settings-e2e.mjs"],
   ["e2e", "web/test/views-e2e.mjs"],
   ["e2e", "web/test/videoctl-e2e.mjs"],
-];
+]
 
-let pass = 0;
-let fail = 0;
-let group = "";
+let pass = 0
+let fail = 0
+let group = ""
 for (const [g, suite] of SUITES) {
   if (g !== group) {
-    group = g;
-    console.log(`\n──── ${g.toUpperCase()} ────`);
+    group = g
+    console.log(`\n──── ${g.toUpperCase()} ────`)
   }
-  const name = suite.replace(/^.*\//, "");
+  const name = suite.replace(/^.*\//, "")
   try {
-    const out = execFileSync("node", [join(ROOT, suite)], { encoding: "utf8" });
-    const tail = out.match(/\((\d+) (?:assertions|checks)\)/);
-    console.log(`✅ ${name}${tail ? "  " + tail[0] : ""}`);
-    pass++;
+    const out = execFileSync("node", [join(ROOT, suite)], { encoding: "utf8" })
+    const tail = out.match(/\((\d+) (?:assertions|checks)\)/)
+    console.log(`✅ ${name}${tail ? "  " + tail[0] : ""}`)
+    pass++
   } catch (e) {
-    console.log(`❌ ${name}`);
-    console.log((e.stdout || e.message || "").toString().split("\n").slice(-8).join("\n"));
-    fail++;
+    console.log(`❌ ${name}`)
+    console.log((e.stdout || e.message || "").toString().split("\n").slice(-8).join("\n"))
+    fail++
   }
 }
 
-console.log(`\n════ ${pass} passed, ${fail} failed ════`);
-process.exit(fail ? 1 : 0);
+console.log(`\n════ ${pass} passed, ${fail} failed ════`)
+process.exit(fail ? 1 : 0)

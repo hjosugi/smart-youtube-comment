@@ -1,81 +1,92 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
-import { extname, join, relative, resolve } from "node:path";
+import { readdirSync, readFileSync, statSync } from "node:fs"
+import { extname, join, relative, resolve } from "node:path"
 
-const root = resolve(new URL("..", import.meta.url).pathname);
-const extensionDir = resolve(root, "extension");
-const failures = [];
-const warnings = [];
+const root = resolve(new URL("..", import.meta.url).pathname)
+const extensionDir = resolve(root, "extension")
+const failures = []
+const warnings = []
 
 function fail(message) {
-  failures.push(message);
+  failures.push(message)
 }
 
 function warn(message) {
-  warnings.push(message);
+  warnings.push(message)
 }
 
 function readJson(path) {
-  return JSON.parse(readFileSync(path, "utf8"));
+  return JSON.parse(readFileSync(path, "utf8"))
 }
 
 function rel(path) {
-  return relative(root, path).replaceAll("\\", "/");
+  return relative(root, path).replaceAll("\\", "/")
 }
 
 function walk(dir) {
-  const out = [];
+  const out = []
   for (const entry of readdirSync(dir)) {
-    const path = join(dir, entry);
-    const stat = statSync(path);
-    if (stat.isDirectory()) out.push(...walk(path));
-    else out.push(path);
+    const path = join(dir, entry)
+    const stat = statSync(path)
+    if (stat.isDirectory()) out.push(...walk(path))
+    else out.push(path)
   }
-  return out;
+  return out
 }
 
 function sameArray(actual, expected) {
-  return Array.isArray(actual) &&
+  return (
+    Array.isArray(actual) &&
     actual.length === expected.length &&
-    actual.every((value, index) => value === expected[index]);
+    actual.every((value, index) => value === expected[index])
+  )
 }
 
 function lineNumber(text, index) {
-  return text.slice(0, index).split("\n").length;
+  return text.slice(0, index).split("\n").length
 }
 
 function checkManifest() {
-  const manifestPath = resolve(extensionDir, "manifest.json");
-  const manifest = readJson(manifestPath);
-  if (manifest.manifest_version !== 3) fail("extension/manifest.json must stay on Manifest V3.");
+  const manifestPath = resolve(extensionDir, "manifest.json")
+  const manifest = readJson(manifestPath)
+  if (manifest.manifest_version !== 3) fail("extension/manifest.json must stay on Manifest V3.")
   if (!sameArray(manifest.permissions, ["storage"])) {
-    fail("extension/manifest.json permissions must remain minimal: [\"storage\"].");
+    fail('extension/manifest.json permissions must remain minimal: ["storage"].')
   }
   if (!sameArray(manifest.host_permissions, ["https://www.youtube.com/*"])) {
-    fail("extension/manifest.json host_permissions must remain scoped to https://www.youtube.com/*.");
+    fail(
+      "extension/manifest.json host_permissions must remain scoped to https://www.youtube.com/*.",
+    )
   }
 
-  const csp = manifest.content_security_policy?.extension_pages ?? "";
-  if (!csp.includes("script-src 'self'")) fail("extension_pages CSP must use script-src 'self'.");
-  if (!csp.includes("object-src 'self'")) fail("extension_pages CSP must use object-src 'self'.");
-  for (const forbidden of ["'unsafe-inline'", "'unsafe-eval'", "http:", "https:", "data:", "blob:"]) {
-    if (csp.includes(forbidden)) fail(`extension_pages CSP must not contain ${forbidden}.`);
+  const csp = manifest.content_security_policy?.extension_pages ?? ""
+  if (!csp.includes("script-src 'self'")) fail("extension_pages CSP must use script-src 'self'.")
+  if (!csp.includes("object-src 'self'")) fail("extension_pages CSP must use object-src 'self'.")
+  for (const forbidden of [
+    "'unsafe-inline'",
+    "'unsafe-eval'",
+    "http:",
+    "https:",
+    "data:",
+    "blob:",
+  ]) {
+    if (csp.includes(forbidden)) fail(`extension_pages CSP must not contain ${forbidden}.`)
   }
 
-  const contentScript = manifest.content_scripts?.[0];
+  const contentScript = manifest.content_scripts?.[0]
   if (!contentScript || !sameArray(contentScript.matches, ["https://www.youtube.com/*"])) {
-    fail("content_scripts must remain scoped to https://www.youtube.com/*.");
+    fail("content_scripts must remain scoped to https://www.youtube.com/*.")
   }
-  if (contentScript?.all_frames !== true) fail("content_scripts all_frames must stay explicit.");
+  if (contentScript?.all_frames !== true) fail("content_scripts all_frames must stay explicit.")
 
   // WASM removed: the extension must not expose any web-accessible resources.
-  const webResources = manifest.web_accessible_resources ?? [];
+  const webResources = manifest.web_accessible_resources ?? []
   if (webResources.length !== 0) {
-    fail("web_accessible_resources must be empty (WASM removed; nothing is exposed to pages).");
+    fail("web_accessible_resources must be empty (WASM removed; nothing is exposed to pages).")
   }
 }
 
 function checkExtensionSource() {
-  const files = walk(extensionDir).filter((path) => [".js", ".html", ".json"].includes(extname(path)));
+  const files = walk(extensionDir).filter(path => [".js", ".html", ".json"].includes(extname(path)))
   const forbidden = [
     { re: /\beval\s*\(/g, label: "eval()" },
     { re: /\bnew\s+Function\b/g, label: "new Function" },
@@ -86,74 +97,80 @@ function checkExtensionSource() {
     { re: /\bdocument\.write\s*\(/g, label: "document.write()" },
     { re: /\bimportScripts\s*\(/g, label: "importScripts()" },
     { re: /<script[^>]+src=["']https?:\/\//gi, label: "remote script tag" },
-    { re: /<link[^>]+href=["']https?:\/\//gi, label: "remote stylesheet tag" }
-  ];
+    { re: /<link[^>]+href=["']https?:\/\//gi, label: "remote stylesheet tag" },
+  ]
 
   for (const file of files) {
-    const text = readFileSync(file, "utf8");
+    const text = readFileSync(file, "utf8")
     for (const rule of forbidden) {
       for (const match of text.matchAll(rule.re)) {
-        fail(`${rel(file)}:${lineNumber(text, match.index ?? 0)} uses ${rule.label}.`);
+        fail(`${rel(file)}:${lineNumber(text, match.index ?? 0)} uses ${rule.label}.`)
       }
     }
 
     // Allow the SVG XML namespace constant (used by createElementNS, never fetched).
-    const remoteUrl = /https?:\/\/(?!www\.youtube\.com\/\*|www\.w3\.org\/2000\/svg)/g;
+    const remoteUrl = /https?:\/\/(?!www\.youtube\.com\/\*|www\.w3\.org\/2000\/svg)/g
     for (const match of text.matchAll(remoteUrl)) {
-      fail(`${rel(file)}:${lineNumber(text, match.index ?? 0)} contains a remote URL.`);
+      fail(`${rel(file)}:${lineNumber(text, match.index ?? 0)} contains a remote URL.`)
     }
 
     // WASM removed: no fetch() is allowed anywhere in the extension.
     for (const match of text.matchAll(/\bfetch\s*\(/g)) {
-      fail(`${rel(file)}:${lineNumber(text, match.index ?? 0)} uses fetch() (not allowed).`);
+      fail(`${rel(file)}:${lineNumber(text, match.index ?? 0)} uses fetch() (not allowed).`)
     }
   }
 }
 
 function checkPackagePolicy() {
-  const pkg = readJson(resolve(root, "package.json"));
-  const lock = readJson(resolve(root, "package-lock.json"));
-  if (pkg.private !== true) fail("package.json must remain private to prevent accidental npm publish.");
-  if (lock.lockfileVersion !== 3) fail("package-lock.json must use lockfileVersion 3.");
+  const pkg = readJson(resolve(root, "package.json"))
+  const lock = readJson(resolve(root, "package-lock.json"))
+  if (pkg.private !== true)
+    fail("package.json must remain private to prevent accidental npm publish.")
+  if (lock.lockfileVersion !== 3) fail("package-lock.json must use lockfileVersion 3.")
 
-  for (const section of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"]) {
+  for (const section of [
+    "dependencies",
+    "devDependencies",
+    "optionalDependencies",
+    "peerDependencies",
+  ]) {
     for (const [name, spec] of Object.entries(pkg[section] ?? {})) {
       if (/^[~^*]|x|\|\||[<>]/.test(spec)) {
-        fail(`package.json ${section}.${name} must be pinned exactly, found ${spec}.`);
+        fail(`package.json ${section}.${name} must be pinned exactly, found ${spec}.`)
       }
     }
   }
 
-  const rootLock = lock.packages?.[""] ?? {};
+  const rootLock = lock.packages?.[""] ?? {}
   for (const [name, spec] of Object.entries(rootLock.devDependencies ?? {})) {
     if (pkg.devDependencies?.[name] !== spec) {
-      fail(`package-lock root devDependency ${name} (${spec}) does not match package.json.`);
+      fail(`package-lock root devDependency ${name} (${spec}) does not match package.json.`)
     }
   }
 
   for (const [path, meta] of Object.entries(lock.packages ?? {})) {
-    if (!path || !path.startsWith("node_modules/")) continue;
-    if (!meta.integrity) fail(`package-lock entry ${path} is missing integrity.`);
+    if (!path || !path.startsWith("node_modules/")) continue
+    if (!meta.integrity) fail(`package-lock entry ${path} is missing integrity.`)
     if (!meta.resolved?.startsWith("https://registry.npmjs.org/")) {
-      fail(`package-lock entry ${path} must resolve from the npm registry.`);
+      fail(`package-lock entry ${path} must resolve from the npm registry.`)
     }
     if (meta.hasInstallScript && !meta.optional) {
-      fail(`package-lock entry ${path} has a lifecycle install script.`);
+      fail(`package-lock entry ${path} has a lifecycle install script.`)
     } else if (meta.hasInstallScript) {
-      warn(`optional dependency ${path} has an install script; keep it optional and dev-only.`);
+      warn(`optional dependency ${path} has an install script; keep it optional and dev-only.`)
     }
   }
 }
 
-checkManifest();
-checkExtensionSource();
-checkPackagePolicy();
+checkManifest()
+checkExtensionSource()
+checkPackagePolicy()
 
-for (const message of warnings) console.warn(`WARN ${message}`);
+for (const message of warnings) console.warn(`WARN ${message}`)
 
 if (failures.length > 0) {
-  for (const message of failures) console.error(`FAIL ${message}`);
-  process.exit(1);
+  for (const message of failures) console.error(`FAIL ${message}`)
+  process.exit(1)
 }
 
-console.log("security policy check ok");
+console.log("security policy check ok")

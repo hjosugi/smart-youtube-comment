@@ -14,17 +14,17 @@
 // continuation onto one upstream call (IP-ban mitigation, NOT a quota win — see
 // ARCHITECTURE.md §9.1). There is no in-flight coalescing.
 
-import { resolveLiveChat, pollLiveChat } from "./innertube.js";
+import { resolveLiveChat, pollLiveChat } from "./innertube.js"
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
   "Access-Control-Max-Age": "86400", // no per-poll preflight (device uses safelisted headers)
-};
+}
 
-const VIDEO_ID_RE = /^[\w-]{11}$/;
-const MAX_CONT_LEN = 8192;
+const VIDEO_ID_RE = /^[\w-]{11}$/
+const MAX_CONT_LEN = 8192
 
 // ---- pure helpers -----------------------------------------------------------
 
@@ -32,82 +32,85 @@ const json = (body, status = 200, headers = {}) =>
   new Response(JSON.stringify(body), {
     status,
     headers: { "Content-Type": "application/json", ...CORS, ...headers },
-  });
+  })
 
 const withHeader = (resp, key, value) => {
-  const r = new Response(resp.body, resp);
-  r.headers.set(key, value);
-  return r;
-};
+  const r = new Response(resp.body, resp)
+  r.headers.set(key, value)
+  return r
+}
 
-const readParams = (url) => ({
+const readParams = url => ({
   cont: url.searchParams.get("cont"),
   video: url.searchParams.get("video"),
   offset: url.searchParams.has("offset") ? Number(url.searchParams.get("offset")) : null,
-});
+})
 
 // Returns an error message, or null when the params are acceptable.
 const validate = ({ cont, video, offset }) => {
-  if (cont != null && cont.length > MAX_CONT_LEN) return "cont too long";
-  if (offset != null && !Number.isFinite(offset)) return "invalid offset";
-  if (!cont && !video) return "missing video or cont";
-  if (!cont && !VIDEO_ID_RE.test(video)) return "invalid video id";
-  return null;
-};
+  if (cont != null && cont.length > MAX_CONT_LEN) return "cont too long"
+  if (offset != null && !Number.isFinite(offset)) return "invalid offset"
+  if (!cont && !video) return "missing video or cont"
+  if (!cont && !VIDEO_ID_RE.test(video)) return "invalid video id"
+  return null
+}
 
 // Map an upstream error to a client response (never leak internals).
-const errorResponse = (e) => {
-  const status = Number(e?.status) === 429 ? 429 : 502;
-  return json({ error: status === 429 ? "rate limited upstream" : "upstream error" }, status);
-};
+const errorResponse = e => {
+  const status = Number(e?.status) === 429 ? 429 : 502
+  return json({ error: status === 429 ? "rate limited upstream" : "upstream error" }, status)
+}
 
 // ---- effectful pieces -------------------------------------------------------
 
 // Resolve (?video=) or poll (?cont=) -> envelope, or null if there is no chat.
 const fetchEnvelope = async ({ cont, video, offset }) => {
   if (cont) {
-    return pollLiveChat(cont, offset != null ? { replay: true, offsetMs: offset } : {});
+    return pollLiveChat(cont, offset != null ? { replay: true, offsetMs: offset } : {})
   }
-  const resolved = await resolveLiveChat(video);
-  if (!resolved?.continuation) return null;
-  const opts = resolved.isReplay ? { replay: true, offsetMs: offset ?? 0 } : {};
-  return pollLiveChat(resolved.continuation, opts);
-};
+  const resolved = await resolveLiveChat(video)
+  if (!resolved?.continuation) return null
+  const opts = resolved.isReplay ? { replay: true, offsetMs: offset ?? 0 } : {}
+  return pollLiveChat(resolved.continuation, opts)
+}
 
 // Return the envelope as JSON and (unless terminal) store it for the poll window.
 const cacheable = (cache, key, ctx, result) => {
-  const ttl = Math.max(1, Math.floor((result.timeoutMs ?? 1000) / 1000));
-  const resp = json(result, 200, { "Cache-Control": `public, s-maxage=${ttl}`, "X-SYC-Cache": "MISS" });
-  if (!result.ended) ctx.waitUntil(cache.put(key, resp.clone()));
-  return resp;
-};
+  const ttl = Math.max(1, Math.floor((result.timeoutMs ?? 1000) / 1000))
+  const resp = json(result, 200, {
+    "Cache-Control": `public, s-maxage=${ttl}`,
+    "X-SYC-Cache": "MISS",
+  })
+  if (!result.ended) ctx.waitUntil(cache.put(key, resp.clone()))
+  return resp
+}
 
 const handle = async (request, ctx) => {
-  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
-  if (request.method !== "GET") return json({ error: "method not allowed" }, 405);
+  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS })
+  if (request.method !== "GET") return json({ error: "method not allowed" }, 405)
 
-  const url = new URL(request.url);
-  if (url.pathname !== "/api/livechat") return json({ error: "not found" }, 404);
+  const url = new URL(request.url)
+  if (url.pathname !== "/api/livechat") return json({ error: "not found" }, 404)
 
-  const params = readParams(url);
-  const invalid = validate(params);
-  if (invalid) return json({ error: invalid }, 400);
+  const params = readParams(url)
+  const invalid = validate(params)
+  if (invalid) return json({ error: invalid }, 400)
 
-  const cache = caches.default;
-  const cacheKey = new Request(url.toString(), { method: "GET" });
-  const cached = await cache.match(cacheKey);
-  if (cached) return withHeader(cached, "X-SYC-Cache", "HIT");
+  const cache = caches.default
+  const cacheKey = new Request(url.toString(), { method: "GET" })
+  const cached = await cache.match(cacheKey)
+  if (cached) return withHeader(cached, "X-SYC-Cache", "HIT")
 
   try {
-    const result = await fetchEnvelope(params);
-    if (!result) return json({ error: "no live chat (not live or chat disabled)" }, 404);
-    return cacheable(cache, cacheKey, ctx, result);
+    const result = await fetchEnvelope(params)
+    if (!result) return json({ error: "no live chat (not live or chat disabled)" }, 404)
+    return cacheable(cache, cacheKey, ctx, result)
   } catch (e) {
-    console.error("livechat relay error:", e?.status ?? "", e?.message ?? e);
-    return errorResponse(e);
+    console.error("livechat relay error:", e?.status ?? "", e?.message ?? e)
+    return errorResponse(e)
   }
-};
+}
 
 export default {
   fetch: (request, env, ctx) => handle(request, ctx),
-};
+}

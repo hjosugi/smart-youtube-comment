@@ -15,13 +15,29 @@ const JA = {
   listToggle: "コメント一覧 表示/非表示",
   help: "使い方",
   helpItems: [
-    ["URLを入れて再生", "YouTube のライブ配信、または録画（チャットリプレイ有り）の URL/動画ID を入れて「再生」。URL の &t= で開始位置も指定できます。"],
+    [
+      "URLを入れて再生",
+      "YouTube のライブ配信、または録画（チャットリプレイ有り）の URL/動画ID を入れて「再生」。URL の &t= で開始位置も指定できます。",
+    ],
     ["弾幕 / コメント一覧", "💬 で弾幕、📋 で動画下のコメント一覧を個別にオン/オフ。"],
-    ["動画操作", "動画をタップで再生/一時停止。下のバーをドラッグでシーク。シークすると その位置のコメントを取り直します。"],
+    [
+      "動画操作",
+      "動画をタップで再生/一時停止。下のバーをドラッグでシーク。シークすると その位置のコメントを取り直します。",
+    ],
     ["設定", "⚙ で速度・文字サイズ・表示数・NG ユーザー/ワードなどを調整（自動保存）。"],
-    ["メモ", "背景再生は不可（前面で視聴する前提）。非表示中はコメント取得を止めて無料枠を節約します。"],
+    [
+      "メモ",
+      "背景再生は不可（前面で視聴する前提）。非表示中はコメント取得を止めて無料枠を節約します。",
+    ],
   ],
-  groups: { General: "全般", Display: "表示", Speed: "速度", Performance: "パフォーマンス", Layout: "レイアウト", Behavior: "挙動" },
+  groups: {
+    General: "全般",
+    Display: "表示",
+    Speed: "速度",
+    Performance: "パフォーマンス",
+    Layout: "レイアウト",
+    Behavior: "挙動",
+  },
   status: {
     idle: "待機",
     loading: "読み込み中…",
@@ -62,11 +78,11 @@ const JA = {
     dedup: "重複を間引く",
     dedupThreshold: "重複判定の厳しさ",
   },
-};
+}
 
-const locale = (typeof navigator !== "undefined" ? navigator.language : "en") || "en";
-export const lang = locale.toLowerCase().startsWith("ja") ? "ja" : "en";
-const D = lang === "ja" ? JA : {};
+const locale = (typeof navigator !== "undefined" ? navigator.language : "en") || "en"
+export const lang = locale.toLowerCase().startsWith("ja") ? "ja" : "en"
+const D = lang === "ja" ? JA : {}
 
 export const T = {
   play: D.play ?? "Play",
@@ -82,14 +98,26 @@ export const T = {
   listToggle: D.listToggle ?? "Toggle comment list",
   help: D.help ?? "Help",
   helpItems: D.helpItems ?? [
-    ["Paste a URL & play", "Enter a YouTube live or VOD-with-replay-chat URL/ID and press Play. A &t= in the URL sets the start time."],
-    ["Danmaku / list", "💬 toggles the flying danmaku, 📋 the comment list below the video — independently."],
-    ["Player", "Tap the video to play/pause. Drag the bar to seek; seeking re-fetches chat at that position."],
+    [
+      "Paste a URL & play",
+      "Enter a YouTube live or VOD-with-replay-chat URL/ID and press Play. A &t= in the URL sets the start time.",
+    ],
+    [
+      "Danmaku / list",
+      "💬 toggles the flying danmaku, 📋 the comment list below the video — independently.",
+    ],
+    [
+      "Player",
+      "Tap the video to play/pause. Drag the bar to seek; seeking re-fetches chat at that position.",
+    ],
     ["Settings", "⚙ adjusts speed, font size, density, NG users/words, etc. (auto-saved)."],
-    ["Notes", "No background playback (foreground viewing). Polling pauses while hidden to save the free tier."],
+    [
+      "Notes",
+      "No background playback (foreground viewing). Polling pauses while hidden to save the free tier.",
+    ],
   ],
-};
+}
 
-export const groupName = (g) => D.groups?.[g] ?? g;
-export const settingLabel = (key, fallback) => D.labels?.[key] ?? fallback;
-export const statusText = (key) => D.status?.[key] ?? key;
+export const groupName = g => D.groups?.[g] ?? g
+export const settingLabel = (key, fallback) => D.labels?.[key] ?? fallback
+export const statusText = key => D.status?.[key] ?? key

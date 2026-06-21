@@ -3,7 +3,11 @@
 
 const POOL = [
   { text: "888888888888", authorType: "normal", kind: "text" },
-  { text: "this stream is incredible, the production quality keeps getting better", authorType: "member", kind: "text" },
+  {
+    text: "this stream is incredible, the production quality keeps getting better",
+    authorType: "member",
+    kind: "text",
+  },
   { text: "kusa", authorType: "normal", kind: "text" },
   { text: "Thank you for the amazing content today!", authorType: "moderator", kind: "text" },
   { text: "🎉🎉🎉", authorType: "normal", kind: "text" },
@@ -19,22 +23,25 @@ const POOL = [
     kind: "text",
     parts: [
       { t: "love this " },
-      { u: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC", a: ":emote:" },
+      {
+        u: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
+        a: ":emote:",
+      },
     ],
   },
-];
+]
 
-const makeMessage = (i) => {
-  const base = POOL[i % POOL.length];
-  return { ...base, id: `mock-${i}`, ts: i, author: `@user${i % 37}` };
-};
+const makeMessage = i => {
+  const base = POOL[i % POOL.length]
+  return { ...base, id: `mock-${i}`, ts: i, author: `@user${i % 37}` }
+}
 
 // startMock(onBatch, { ratePerSec, batchEverySec }) -> stop()
 export const startMock = (onBatch, { ratePerSec = 25, batchEverySec = 0.5 } = {}) => {
-  let i = 0;
-  const perBatch = Math.max(1, Math.round(ratePerSec * batchEverySec));
+  let i = 0
+  const perBatch = Math.max(1, Math.round(ratePerSec * batchEverySec))
   const timer = setInterval(() => {
-    onBatch(Array.from({ length: perBatch }, () => makeMessage(i++)));
-  }, batchEverySec * 1000);
-  return () => clearInterval(timer);
-};
+    onBatch(Array.from({ length: perBatch }, () => makeMessage(i++)))
+  }, batchEverySec * 1000)
+  return () => clearInterval(timer)
+}

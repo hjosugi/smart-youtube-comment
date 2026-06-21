@@ -1,0 +1,14 @@
+node_modules
+**/node_modules
+.wrangler
+**/.wrangler
+extension
+bench
+sandbox
+docs
+scorer
+# verbatim/near-verbatim copies from the extension — keep close to upstream
+web/scoring.js
+web/danmaku.js
+web/settings.js
+web/filter.js
