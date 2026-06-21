@@ -18,11 +18,7 @@
   }
 
   // Kick off loading a message's emoji images so they are ready when rendered.
-  const preload = parts => {
-    for (const part of parts ?? []) {
-      if (part?.u) get(part.u)
-    }
-  }
+  const preload = parts => (parts ?? []).filter(p => p.u).forEach(p => get(p.u))
 
   globalThis.SYCEmoji = { get, preload }
 })()

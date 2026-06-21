@@ -232,10 +232,8 @@ const fromRenderer = (kind, amount) => r => {
   let text = partsText(parts)
   if (!text && kind === "paid") text = amount ?? "" // paid sticker / no-comment superchat
 
-  // Always give the renderer something: if there were no runs but we have text
-  // (e.g. a paid amount), wrap it as a single text part.
-  let renderParts = parts
-  if (renderParts.length === 0 && text) renderParts = [{ t: text }]
+  // give the renderer something: real parts, else bare text (e.g. a paid amount), else nothing
+  const renderParts = parts.length ? parts : text ? [{ t: text }] : []
 
   return message({
     id: r.id,
