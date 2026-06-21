@@ -46,6 +46,8 @@ const JA = {
     reconnecting: "再接続中…",
     ended: "配信終了",
     stopped: "停止",
+    failed: "停止",
+    unavailable: "チャットなし（限定/非ライブ）",
     mock: "デモ",
     invalid: "URL/ID が不正です",
   },

@@ -187,6 +187,14 @@ export function createLiveChatClient(options = {}) {
         if (stopped) break
 
         const outcome = await pollOnce(paramsFor(state))
+
+        // 404 = no live chat (chat disabled, not actually live, or members-only).
+        // This is terminal, not a transient blip — stop instead of reconnecting.
+        if (!outcome.ok && outcome.error?.status === 404) {
+          onEnded?.({ reason: "unavailable" })
+          break
+        }
+
         if (outcome.ok && outcome.env.isReplay) replay = true
         const plan = advance(state, outcome)
         state = plan.state

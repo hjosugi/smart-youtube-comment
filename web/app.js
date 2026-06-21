@@ -125,7 +125,7 @@ const startLive = async (videoId, relay, startSeconds = 0) => {
     onMessages,
     onState: ({ healthy, failures, replay }) =>
       setStatus(healthy || failures < 2 ? (replay ? "replay" : "live") : "reconnecting"),
-    onEnded: ({ reason }) => setStatus(reason === "ended" ? "ended" : "stopped"),
+    onEnded: ({ reason }) => setStatus(reason),
   })
 
   stop = () => {
