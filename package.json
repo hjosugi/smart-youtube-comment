@@ -28,8 +28,6 @@
     "sandbox:serve:bun": "bun scripts/serve-sandbox.mjs",
     "version:set": "node scripts/set-version.mjs",
     "version:set:bun": "bun scripts/set-version.mjs",
-    "build": "npm run security",
-    "build:bun": "bun run security:bun",
     "test:ext": "node bench/e2e/extension.mjs",
     "test:ext:bun": "bun bench/e2e/extension.mjs"
   },
