@@ -3,7 +3,7 @@
 // Usage: node web/test/chat-client-live.mjs <relayBase> [videoId] [runSeconds]
 // If videoId is omitted, finds a currently-live one via the worker oracle.
 
-import { createLiveChatClient } from "../chat-client.js"
+import { createLiveChatClient } from "../chat-client.ts"
 import { resolveContinuation, pollLiveChat } from "../../worker/src/innertube.js"
 
 const CLIENT = { clientName: "WEB", clientVersion: "2.20240814.00.00" }

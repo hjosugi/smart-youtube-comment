@@ -1,26 +1,15 @@
-// Service Worker — caches the static app shell for instant load / home-screen
+// Service Worker — caches the built app shell for instant load / home-screen
 // launch. The live-chat API and all cross-origin requests (YouTube, the relay)
 // are NEVER cached: chat must always be fresh. See ARCHITECTURE.md §8.
+// (web/dist is the deployed output: app.js is the bundled module graph; the rest
+// are the classic <script> globals + static assets.)
 
-const CACHE = "syc-shell-v2"
+const CACHE = "syc-shell-v3"
 const SHELL = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
-  "./config.js",
-  "./pipeline.js",
-  "./player.js",
-  "./mock.js",
-  "./lifecycle.js",
-  "./perf.js",
-  "./playback.js",
-  "./videoctl.js",
-  "./commentlist.js",
-  "./ui.js",
-  "./controls.js",
-  "./chat-client.js",
-  "./i18n.js",
   "./store.js",
   "./settings.js",
   "./filter.js",
@@ -56,7 +45,7 @@ self.addEventListener("fetch", e => {
   if (e.request.method !== "GET" || url.origin !== self.location.origin) return
   if (url.pathname.includes("/api/livechat")) return
   // Stale-while-revalidate: serve cache instantly, refresh in the background so a
-  // new deploy is picked up on the next load (no manual cache-busting needed).
+  // new deploy is picked up on the next load.
   e.respondWith(
     caches.open(CACHE).then(async cache => {
       const cached = await cache.match(e.request)

@@ -2,13 +2,13 @@
 // onInput(key, value) on change. One small builder per control type, picked from a
 // table; inputs carry data-key so tests/code can target them.
 
-const el = (tag, props = {}, kids = []) => {
+const el = (tag: string, props: any = {}, kids: any[] = []): any => {
   const node = Object.assign(document.createElement(tag), props)
   for (const k of kids) node.append(k)
   return node
 }
 
-const row = (label, control, extra) =>
+const row = (label: string, control: any, extra?: any): any =>
   el("label", { className: "ctl" }, [
     el("span", { className: "ctl-label", textContent: label }),
     control,
@@ -16,7 +16,7 @@ const row = (label, control, extra) =>
   ])
 
 // Tag an input with its setting key so tests/code can target it.
-const tag = (input, key) => {
+const tag = (input: any, key: string): any => {
   input.dataset.key = key
   return input
 }

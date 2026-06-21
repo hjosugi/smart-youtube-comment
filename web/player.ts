@@ -1,13 +1,14 @@
 // YouTube IFrame Player — effect boundary. Loads the API once and resolves a
 // player instance. Kept tiny; Wake Lock / Media Session live in their own module.
 
-let apiPromise = null
+let apiPromise: Promise<any> | null = null
 
-const loadApi = () => {
+const loadApi = (): Promise<any> => {
   if (globalThis.YT?.Player) return Promise.resolve(globalThis.YT)
-  apiPromise ??= new Promise(resolve => {
-    const prev = globalThis.onYouTubeIframeAPIReady
-    globalThis.onYouTubeIframeAPIReady = () => {
+  apiPromise ??= new Promise<any>(resolve => {
+    const g = globalThis as any
+    const prev = g.onYouTubeIframeAPIReady
+    g.onYouTubeIframeAPIReady = () => {
       prev?.()
       resolve(globalThis.YT)
     }
@@ -21,11 +22,22 @@ const loadApi = () => {
 // Replace the element #elementId with a player for videoId; resolve when ready.
 // onState(stateName) fires on playback changes ("playing" | "paused" | "ended"),
 // letting the caller suspend chat polling when not actively watching.
-const STATE = { 1: "playing", 2: "paused", 0: "ended", 5: "paused", 3: "playing" }
+const STATE: Record<number, string> = {
+  1: "playing",
+  2: "paused",
+  0: "ended",
+  5: "paused",
+  3: "playing",
+}
 
-export const mountPlayer = async (elementId, videoId, onState, startSeconds = 0) => {
+export const mountPlayer = async (
+  elementId: string,
+  videoId: string,
+  onState?: (state: string) => void,
+  startSeconds = 0,
+): Promise<any> => {
   const YT = await loadApi()
-  return new Promise(resolve => {
+  return new Promise<any>(resolve => {
     const player = new YT.Player(elementId, {
       videoId,
       playerVars: {
@@ -38,7 +50,7 @@ export const mountPlayer = async (elementId, videoId, onState, startSeconds = 0)
       },
       events: {
         onReady: () => resolve(player),
-        onStateChange: e => onState?.(STATE[e.data] ?? "playing"),
+        onStateChange: (e: any) => onState?.(STATE[e.data] ?? "playing"),
       },
     })
   })

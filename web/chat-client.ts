@@ -88,15 +88,15 @@ const buildUrl = (base, { cont, video, offset }) => {
 }
 
 export function createLiveChatClient(options = {}) {
-  const cfg = { ...DEFAULTS, ...options }
+  const cfg: any = { ...DEFAULTS, ...options }
   const advance = step(cfg)
   const applyJitter = jitter(cfg.jitterRatio, cfg.random)
   let stopped = false
   let paused = false
-  let wake = null // resolve fn for the paused gate
-  let inflight = null
+  let wake: any = null // resolve fn for the paused gate
+  let inflight: any = null
 
-  const waitWhilePaused = () => (paused ? new Promise(r => (wake = r)) : Promise.resolve())
+  const waitWhilePaused = () => (paused ? new Promise<void>(r => (wake = r)) : Promise.resolve())
   const releasePause = () => {
     const w = wake
     wake = null
@@ -104,10 +104,10 @@ export function createLiveChatClient(options = {}) {
   }
 
   // Interruptible inter-poll wait so refresh() (e.g. on a seek) can poll now.
-  let napTimer = null
-  let napResolve = null
+  let napTimer: any = null
+  let napResolve: any = null
   const nap = ms =>
-    new Promise(resolve => {
+    new Promise<void>(resolve => {
       napResolve = resolve
       napTimer = setTimeout(() => {
         napTimer = null
@@ -130,7 +130,7 @@ export function createLiveChatClient(options = {}) {
     })
     const body = await res.json().catch(() => ({}))
     if (!res.ok) {
-      const err = new Error(body?.error || `HTTP ${res.status}`)
+      const err: any = new Error(body?.error || `HTTP ${res.status}`)
       err.status = res.status
       throw err
     }
@@ -142,7 +142,7 @@ export function createLiveChatClient(options = {}) {
     const timer = setTimeout(() => inflight.abort(), cfg.requestTimeoutMs)
     try {
       return { ok: true, env: await fetchEnvelope(params, inflight.signal) }
-    } catch (error) {
+    } catch (error: any) {
       return { ok: false, error }
     } finally {
       clearTimeout(timer)
@@ -170,14 +170,18 @@ export function createLiveChatClient(options = {}) {
       inflight?.abort()
     },
 
-    async start(videoId, handlers = {}) {
+    async start(videoId: string, handlers: any = {}) {
       const { onMessages, onState, onError, onEnded } = handlers
       stopped = false
-      let state = { cont: null, failures: 0, quiet: 0 }
+      let state: { cont: string | null; failures: number; quiet: number } = {
+        cont: null,
+        failures: 0,
+        quiet: 0,
+      }
       let replay = false // latched the first time the relay reports a VOD
 
-      const paramsFor = s => {
-        const p = s.cont ? { cont: s.cont } : { video: videoId }
+      const paramsFor = (s: typeof state): any => {
+        const p: any = s.cont ? { cont: s.cont } : { video: videoId }
         if (replay) p.offset = Math.max(0, Math.floor(cfg.getOffsetMs?.() ?? 0))
         return p
       }

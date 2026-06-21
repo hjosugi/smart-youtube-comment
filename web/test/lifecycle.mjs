@@ -1,7 +1,7 @@
 // Pure test: the lifecycle helpers degrade gracefully when the APIs are absent
 // (as in Node — no wakeLock, no MediaMetadata). They must never throw.
 
-import { createWakeLock, setMediaSession } from "../lifecycle.js"
+import { createWakeLock, setMediaSession } from "../lifecycle.ts"
 
 const checks = []
 const assert = (name, cond, extra = "") => checks.push({ name, ok: !!cond, extra })

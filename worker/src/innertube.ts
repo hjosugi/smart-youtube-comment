@@ -5,6 +5,13 @@
 // (normalization + continuation extraction). The IO functions resolve the
 // initial continuation and poll get_live_chat; everything else is data->data.
 // NO scoring/dedupe/render — that is the device's job. Shapes: docs/CONTRACT.md.
+//
+// Raw InnerTube responses are untyped JSON (`any`); the normalized OUTPUT is typed
+// (ChatMessage / PollEnvelope), which is the contract the device depends on.
+
+import type { ChatMessage, Part, PollEnvelope, Kind, AuthorType } from "../../web/types.ts"
+
+type TaggedError = Error & { status: number }
 
 const INNERTUBE_BASE = "https://www.youtube.com/youtubei/v1"
 
@@ -20,7 +27,7 @@ const MIN_TIMEOUT_MS = 250 // floor for the poll interval YouTube hands back
 const DEFAULT_TIMEOUT_MS = 1000
 const MAX_TIMEOUT_MS = 30000 // cap an absurd value so the device can't be parked forever
 
-const sleep = ms => new Promise(r => setTimeout(r, ms))
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 const context = () => ({ context: { client: CLIENT } })
 
 // ---- IO layer ---------------------------------------------------------------
@@ -28,25 +35,27 @@ const context = () => ({ context: { client: CLIENT } })
 // YouTube's InnerTube is reachable from Cloudflare egress IPs but occasionally
 // tarpits a request (it hangs to our timeout) or returns 429/5xx. These are
 // transient and clear on retry; a 4xx is deterministic and is NOT retried.
-const isRetriable = status => status === 504 || status === 429 || (status >= 500 && status < 600)
+const isRetriable = (status: number) =>
+  status === 504 || status === 429 || (status >= 500 && status < 600)
 
 // POST with a per-attempt timeout + bounded, jittered retry (recursive).
-const postWithRetry = async (endpoint, body, attempt = 1) => {
+const postWithRetry = async (endpoint: string, body: unknown, attempt = 1): Promise<any> => {
   try {
     return await postOnce(endpoint, body)
-  } catch (e) {
+  } catch (e: any) {
     if (!isRetriable(e?.status) || attempt >= MAX_ATTEMPTS) throw e
     await sleep(RETRY_BACKOFF_MS * attempt + Math.floor(Math.random() * RETRY_BACKOFF_MS))
     return postWithRetry(endpoint, body, attempt + 1)
   }
 }
 
-const innertubePost = (endpoint, body) => postWithRetry(endpoint, body)
+const innertubePost = (endpoint: string, body: unknown): Promise<any> =>
+  postWithRetry(endpoint, body)
 
 // Single attempt. The timeout covers the WHOLE round-trip (headers AND body —
 // YouTube can tarpit the body). Throws Error tagged with `.status`:
 //   504 = network/timeout, upstream HTTP status, or 502 = non-JSON body.
-async function postOnce(endpoint, body) {
+async function postOnce(endpoint: string, body: unknown): Promise<any> {
   const ac = new AbortController()
   const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS)
   try {
@@ -67,7 +76,7 @@ async function postOnce(endpoint, body) {
         502,
       )
     }
-  } catch (e) {
+  } catch (e: any) {
     if (e?.status) throw e // already-tagged HTTP/non-JSON error — pass through
     throw tagged(
       `InnerTube ${endpoint} fetch failed: ${e?.name === "AbortError" ? "timeout" : e?.message}`,
@@ -78,7 +87,8 @@ async function postOnce(endpoint, body) {
   }
 }
 
-const tagged = (message, status) => Object.assign(new Error(message), { status })
+const tagged = (message: string, status: number): TaggedError =>
+  Object.assign(new Error(message), { status })
 
 // ---- IO entry points --------------------------------------------------------
 
@@ -87,17 +97,19 @@ const REPLAY_POLL_MS = 3000 // replay is paced by playback, not YouTube's timeou
 // A watch page is a "replay" (VOD of a past live) when its chat sub-menu offers
 // replay views or it flags isReplay. Replay chat uses a different endpoint and is
 // seeked by player offset, not advanced by a live continuation.
-const isReplayChat = lc => {
+const isReplayChat = (lc: any): boolean => {
   if (lc?.isReplay === true) return true
-  const titles =
+  const titles: string[] =
     lc?.header?.liveChatHeaderRenderer?.viewSelector?.sortFilterSubMenuRenderer?.subMenuItems?.map(
-      s => s.title,
+      (s: any) => s.title,
     ) ?? []
   return titles.some(t => /replay/i.test(t))
 }
 
 // Resolve the initial continuation. Returns { continuation, isReplay } or null.
-export const resolveLiveChat = async videoId => {
+export const resolveLiveChat = async (
+  videoId: string,
+): Promise<{ continuation: string | null; isReplay: boolean } | null> => {
   const data = await innertubePost("next", { ...context(), videoId })
   const lc = data?.contents?.twoColumnWatchNextResults?.conversationBar?.liveChatRenderer
   if (!lc) return null
@@ -105,7 +117,7 @@ export const resolveLiveChat = async videoId => {
 }
 
 // Back-compat helper (probe / tests / loadtest): just the token.
-export const resolveContinuation = async videoId =>
+export const resolveContinuation = async (videoId: string): Promise<string | null> =>
   (await resolveLiveChat(videoId))?.continuation ?? null
 
 // Poll one batch. opts.replay (+ opts.offsetMs) switches to replay mode.
@@ -113,16 +125,19 @@ export const resolveContinuation = async videoId =>
 // continuation=null) when the stream is over so the device stops polling.
 // Replay: messages carry `offsetMs` (their video timestamp); the same continuation
 // is reused and the next offset comes from the player.
-export const pollLiveChat = async (continuation, opts = {}) => {
+export const pollLiveChat = async (
+  continuation: string,
+  opts: { replay?: boolean; offsetMs?: number } = {},
+): Promise<PollEnvelope> => {
   if (opts.replay) return pollReplay(continuation, opts.offsetMs ?? 0)
   const data = await innertubePost("live_chat/get_live_chat", { ...context(), continuation })
   const lc = data?.continuationContents?.liveChatContinuation
-  const messages = (lc?.actions ?? []).map(parseAction).filter(Boolean)
+  const messages = (lc?.actions ?? []).map(parseAction).filter(Boolean) as ChatMessage[]
   const { token, timeoutMs } = extractContinuation(lc?.continuations)
   return { messages, continuation: token, timeoutMs, ended: !token, isReplay: false }
 }
 
-const pollReplay = async (continuation, offsetMs) => {
+const pollReplay = async (continuation: string, offsetMs: number): Promise<PollEnvelope> => {
   const data = await innertubePost("live_chat/get_live_chat_replay", {
     ...context(),
     continuation,
@@ -131,21 +146,21 @@ const pollReplay = async (continuation, offsetMs) => {
   const lc = data?.continuationContents?.liveChatContinuation
   const messages = (lc?.actions ?? [])
     .flatMap(replayItems)
-    .map(({ action, off }) => {
+    .map(({ action, off }: { action: any; off: number }) => {
       const m = parseAction(action)
       return m && { ...m, offsetMs: off }
     })
-    .filter(Boolean)
+    .filter(Boolean) as ChatMessage[]
   // Reuse the input continuation — replay seeks by offset on every poll.
   return { messages, continuation, timeoutMs: REPLAY_POLL_MS, ended: false, isReplay: true }
 }
 
 // Unwrap a replayChatItemAction into its inner add/replace actions + video offset.
-const replayItems = a => {
+const replayItems = (a: any): { action: any; off: number }[] => {
   const r = a.replayChatItemAction
   if (!r) return []
   const off = Number(r.videoOffsetTimeMsec ?? 0)
-  return (r.actions ?? []).map(action => ({ action, off }))
+  return (r.actions ?? []).map((action: any) => ({ action, off }))
 }
 
 // ---- pure: continuation extraction -----------------------------------------
@@ -157,27 +172,29 @@ const CONT_DATA_KEYS = [
   "liveChatReplayContinuationData",
 ]
 
-const pickContData = (c = {}) => CONT_DATA_KEYS.map(k => c[k]).find(Boolean) ?? {}
+const pickContData = (c: any = {}): any => CONT_DATA_KEYS.map(k => c[k]).find(Boolean) ?? {}
 
-const clampTimeout = ms =>
+const clampTimeout = (ms: number): number =>
   !Number.isFinite(ms) || ms < MIN_TIMEOUT_MS ? DEFAULT_TIMEOUT_MS : Math.min(ms, MAX_TIMEOUT_MS)
 
-const extractContinuation = (continuations = []) => {
+const extractContinuation = (
+  continuations: any[] = [],
+): { token: string | null; timeoutMs: number } => {
   const d = pickContData(continuations[0])
   return { token: d.continuation ?? null, timeoutMs: clampTimeout(Number(d.timeoutMs)) }
 }
 
 // ---- pure: normalization ----------------------------------------------------
 
-const msToTs = usec => (usec ? Math.floor(Number(usec) / 1000) : 0)
+const msToTs = (usec: any): number => (usec ? Math.floor(Number(usec) / 1000) : 0)
 
 // Split a message node into renderable parts: { t: text } | { u: emojiUrl, a: label }.
 // Standard emojis become unicode text (emojiId); custom/member emojis become image
 // parts (so the device can render the actual member emoji, not its ":shortcut:").
-const runsToParts = node => {
+const runsToParts = (node: any): Part[] => {
   if (!node) return []
   if (node.simpleText) return [{ t: node.simpleText }]
-  const parts = []
+  const parts: Part[] = []
   for (const run of node.runs ?? []) {
     if (run.text != null) {
       parts.push({ t: run.text })
@@ -198,12 +215,12 @@ const runsToParts = node => {
   return parts
 }
 
-const partsText = parts => parts.map(p => p.t ?? p.a ?? "").join("")
+const partsText = (parts: Part[]): string => parts.map(p => p.t ?? p.a ?? "").join("")
 
-const runsToText = node => partsText(runsToParts(node))
+const runsToText = (node: any): string => partsText(runsToParts(node))
 
 // owner > moderator > member > normal (member badge has a custom thumbnail, no iconType)
-const authorTypeFromBadges = (badges = []) => {
+const authorTypeFromBadges = (badges: any[] = []): AuthorType => {
   const renderers = badges.map(b => b.liveChatAuthorBadgeRenderer)
   if (renderers.some(b => b?.icon?.iconType === "OWNER")) return "owner"
   if (renderers.some(b => b?.icon?.iconType === "MODERATOR")) return "moderator"
@@ -211,7 +228,27 @@ const authorTypeFromBadges = (badges = []) => {
   return "normal"
 }
 
-const message = ({ id, ts, kind, author, authorType, text, parts, amount }) => ({
+interface MessageInput {
+  id?: string
+  ts: number
+  kind: Kind
+  author?: string
+  authorType: AuthorType
+  text: string
+  parts?: Part[]
+  amount?: string | null
+}
+
+const message = ({
+  id,
+  ts,
+  kind,
+  author,
+  authorType,
+  text,
+  parts,
+  amount,
+}: MessageInput): ChatMessage => ({
   id: id ?? "",
   ts,
   kind,
@@ -223,32 +260,34 @@ const message = ({ id, ts, kind, author, authorType, text, parts, amount }) => (
   amount: amount ?? null,
 })
 
-const amountOf = r => r.purchaseAmountText?.simpleText ?? null
+const amountOf = (r: any): string | null => r.purchaseAmountText?.simpleText ?? null
 
 // A standard author/timestamp/message renderer -> ChatMessage. Paid items often
 // carry money but no comment, so fall back to the amount (the renderer needs text).
-const fromRenderer = (kind, amount) => r => {
-  const parts = runsToParts(r.message ?? r.headerSubtext)
-  let text = partsText(parts)
-  if (!text && kind === "paid") text = amount ?? "" // paid sticker / no-comment superchat
+const fromRenderer =
+  (kind: Kind, amount: string | null) =>
+  (r: any): ChatMessage => {
+    const parts = runsToParts(r.message ?? r.headerSubtext)
+    let text = partsText(parts)
+    if (!text && kind === "paid") text = amount ?? "" // paid sticker / no-comment superchat
 
-  // give the renderer something: real parts, else bare text (e.g. a paid amount), else nothing
-  const renderParts = parts.length ? parts : text ? [{ t: text }] : []
+    // give the renderer something: real parts, else bare text (e.g. a paid amount), else nothing
+    const renderParts = parts.length ? parts : text ? [{ t: text }] : []
 
-  return message({
-    id: r.id,
-    ts: msToTs(r.timestampUsec),
-    kind,
-    author: r.authorName?.simpleText,
-    authorType: authorTypeFromBadges(r.authorBadges),
-    text,
-    parts: renderParts,
-    amount,
-  })
-}
+    return message({
+      id: r.id,
+      ts: msToTs(r.timestampUsec),
+      kind,
+      author: r.authorName?.simpleText,
+      authorType: authorTypeFromBadges(r.authorBadges),
+      text,
+      parts: renderParts,
+      amount,
+    })
+  }
 
 // "X gifted N memberships" — text lives under the header, not message/headerSubtext.
-const fromSponsorship = r => {
+const fromSponsorship = (r: any): ChatMessage => {
   const h = r.header?.liveChatSponsorshipsHeaderRenderer
   const parts = runsToParts(h?.primaryText)
   return message({
@@ -265,7 +304,7 @@ const fromSponsorship = r => {
 
 // Declarative renderer dispatch. Unknown/placeholder/redemption renderers map to
 // nothing and are dropped by the .filter(Boolean) in pollLiveChat.
-const RENDERERS = {
+const RENDERERS: Record<string, (r: any) => ChatMessage> = {
   liveChatTextMessageRenderer: fromRenderer("text", null),
   liveChatPaidMessageRenderer: r => fromRenderer("paid", amountOf(r))(r),
   liveChatPaidStickerRenderer: r => fromRenderer("paid", amountOf(r))(r),
@@ -273,13 +312,13 @@ const RENDERERS = {
   liveChatSponsorshipsGiftPurchaseAnnouncementRenderer: fromSponsorship,
 }
 
-const parseItem = (item = {}) => {
+const parseItem = (item: any = {}): ChatMessage | null => {
   const key = Object.keys(item).find(k => k in RENDERERS)
   return key ? RENDERERS[key](item[key]) : null
 }
 
 // A message arrives directly, or as a replacement for an earlier placeholder.
-const parseAction = action => {
+const parseAction = (action: any): ChatMessage | null => {
   const item = action?.addChatItemAction?.item ?? action?.replaceChatItemAction?.replacementItem
   return item ? parseItem(item) : null
 }

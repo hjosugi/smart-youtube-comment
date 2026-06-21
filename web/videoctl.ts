@@ -13,7 +13,7 @@ export const fmtTime = secs => {
   return h ? `${h}:${String(m % 60).padStart(2, "0")}:${sec}` : `${m}:${sec}`
 }
 
-const el = (tag, cls, props = {}) =>
+const el = (tag: string, cls: string, props: any = {}): any =>
   Object.assign(document.createElement(tag), { className: cls, ...props })
 
 const ICON_PLAY =
@@ -34,7 +34,7 @@ export const mountControls = (stage, player, { hideMs = 3500 } = {}) => {
 
   const isPlaying = () => player.getPlayerState?.() === PLAYING
   const duration = () => player.getDuration?.() || 0
-  let hideTimer = null
+  let hideTimer: any = null
   let scrubbing = false
 
   const setIcon = () => (playBtn.innerHTML = isPlaying() ? ICON_PAUSE : ICON_PLAY)

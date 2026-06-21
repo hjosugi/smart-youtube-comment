@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "syc-livechat-relay",
-  "main": "src/index.js",
+  "main": "src/index.ts",
   "compatibility_date": "2026-06-20",
   "observability": {
     "enabled": true

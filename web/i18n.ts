@@ -84,7 +84,7 @@ const JA = {
 
 const locale = (typeof navigator !== "undefined" ? navigator.language : "en") || "en"
 export const lang = locale.toLowerCase().startsWith("ja") ? "ja" : "en"
-const D = lang === "ja" ? JA : {}
+const D: any = lang === "ja" ? JA : {}
 
 export const T = {
   play: D.play ?? "Play",

@@ -1,50 +1,51 @@
 // Thin orchestrator: wires player + chat source + scoring + danmaku + list +
 // settings + help. All real logic lives in the small modules it composes.
 
-import { readParams, parseInput } from "./config.js"
-import { makeRenderer } from "./pipeline.js"
-import { makeFate, isSeek } from "./playback.js"
-import { mountPlayer } from "./player.js"
-import { startMock } from "./mock.js"
-import { createWakeLock, setMediaSession } from "./lifecycle.js"
-import { mountSettings, mountHelp } from "./ui.js"
-import { mountPerfHud } from "./perf.js"
-import { mountControls } from "./videoctl.js"
-import { createCommentList } from "./commentlist.js"
-import { createLiveChatClient } from "./chat-client.js"
-import { T, statusText } from "./i18n.js"
+import { readParams, parseInput } from "./config.ts"
+import { makeRenderer } from "./pipeline.ts"
+import { makeFate, isSeek } from "./playback.ts"
+import { mountPlayer } from "./player.ts"
+import { startMock } from "./mock.ts"
+import { createWakeLock, setMediaSession } from "./lifecycle.ts"
+import { mountSettings, mountHelp } from "./ui.ts"
+import { mountPerfHud } from "./perf.ts"
+import { mountControls, fmtTime } from "./videoctl.ts"
+import { createCommentList } from "./commentlist.ts"
+import { createLiveChatClient } from "./chat-client.ts"
+import { T, statusText } from "./i18n.ts"
+import type { ChatMessage } from "./types.ts"
 
 const { createFallbackScorer, buildRenderPlan } = globalThis.SYCScoring
 const { DanmakuOverlay } = globalThis.SYCDanmaku
 const settings = globalThis.SYCSettings
 const filter = globalThis.SYCFilter
 
-const $ = id => document.getElementById(id)
-const setStatus = key => ($("status").textContent = statusText(key))
+// DOM access is glue — `$` returns `any` so element-shape details stay out of the way.
+const $ = (id: string): any => document.getElementById(id)
+const setStatus = (key: string) => ($("status").textContent = statusText(key))
 
 const overlay = new DanmakuOverlay()
 const list = createCommentList($("list"))
 const render = makeRenderer(createFallbackScorer(), buildRenderPlan)
 
-let cfg = settings.DEFAULTS
-const applySettings = s => {
+let cfg: Record<string, any> = settings.DEFAULTS
+const applySettings = (s: Record<string, any>) => {
   cfg = s
   overlay.setConfig(settings.toEngineConfig(s))
   list.setVisible(s.listEnabled)
 }
 
-let playbackMs = () => Infinity
+let playbackMs = (): number => Infinity
 
 // --- message pipeline: gate once, fan out to danmaku (scored) + list (raw) ---
-const seen = new Set()
-const remember = id => {
+const seen = new Set<string>()
+const remember = (id: string) => {
   if (seen.size > 4000) seen.clear()
   seen.add(id)
 }
-const fate = makeFate({ seen, shouldDrop: (a, t) => filter.shouldDrop(a, t) })
+const fate = makeFate({ seen, shouldDrop: (a: string, t: string) => filter.shouldDrop(a, t) })
 
-let lastNow = 0
-const onMessages = msgs => {
+const onMessages = (msgs: ChatMessage[]) => {
   const now = playbackMs()
   for (const m of msgs) {
     const f = fate(m, now)
@@ -63,8 +64,8 @@ const onMessages = msgs => {
 // --- sources ---
 const wakeLock = createWakeLock()
 let stop = () => {}
-let activeVideo = null // currently-playing id; re-submitting it must not restart
-let seekActive = null // seek the active player (used on same-video re-submit)
+let activeVideo: string | null = null // currently-playing id; re-submitting must not restart
+let seekActive: ((s: number) => void) | null = null // seek the active player on same-video re-submit
 
 const startMockMode = () => {
   overlay.attach($("stage"))
@@ -77,7 +78,7 @@ const startMockMode = () => {
   }
 }
 
-const startLive = async (videoId, relay, startSeconds = 0) => {
+const startLive = async (videoId: string, relay: string, startSeconds = 0) => {
   stop()
   activeVideo = videoId
   seen.clear()
@@ -85,17 +86,17 @@ const startLive = async (videoId, relay, startSeconds = 0) => {
   const client = createLiveChatClient({ base: relay, getOffsetMs: () => playbackMs() })
 
   let playing = false
-  const player = await mountPlayer(
+  const player: any = await mountPlayer(
     "player",
     videoId,
-    state => {
+    (state: string) => {
       playing = state === "playing"
       playing ? client.resume() : client.pause()
     },
     startSeconds,
   )
   playbackMs = () => (player.getCurrentTime?.() ?? 0) * 1000
-  seekActive = s => player.seekTo?.(s, true)
+  seekActive = (s: number) => player.seekTo?.(s, true)
 
   // Seek detection: on a scrub, clear both views, forget shown ids, re-fetch now.
   let lastT = playbackMs()
@@ -123,9 +124,9 @@ const startLive = async (videoId, relay, startSeconds = 0) => {
 
   client.start(videoId, {
     onMessages,
-    onState: ({ healthy, failures, replay }) =>
+    onState: ({ healthy, failures, replay }: any) =>
       setStatus(healthy || failures < 2 ? (replay ? "replay" : "live") : "reconnecting"),
-    onEnded: ({ reason }) => setStatus(reason),
+    onEnded: ({ reason }: any) => setStatus(reason),
   })
 
   stop = () => {
@@ -156,7 +157,7 @@ $("listToggle").addEventListener("click", () =>
 )
 
 // --- launch form: same video re-submit seeks (no restart); honor &t= start ---
-$("launch").addEventListener("submit", e => {
+$("launch").addEventListener("submit", (e: Event) => {
   e.preventDefault()
   const { video, start } = parseInput($("video").value)
   if (!video) return setStatus("invalid")
@@ -187,7 +188,7 @@ if ("serviceWorker" in navigator) {
   localizeChrome()
   applySettings(await settings.load())
   await filter.load()
-  settings.onChange(s => {
+  settings.onChange((s: Record<string, any>) => {
     applySettings(s)
     reflectToggles()
   })
@@ -201,5 +202,12 @@ if ("serviceWorker" in navigator) {
   else if (params.video) startLive(params.video, params.relay, params.start)
 })()
 
-// Exposed for tests / debugging.
-globalThis.SYCApp = { overlay, list, startMockMode, startLive, stop: () => stop() }
+// Exposed for tests / debugging (the bundle hides individual modules).
+globalThis.SYCApp = {
+  overlay,
+  list,
+  startMockMode,
+  startLive,
+  stop: () => stop(),
+  videoctl: { mountControls, fmtTime },
+}

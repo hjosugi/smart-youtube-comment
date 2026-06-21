@@ -2,8 +2,8 @@
 // help panel. Localized via i18n. Drives SYCSettings.save / SYCFilter.save; the
 // app subscribes to onChange for live preview. See ARCHITECTURE.md §8.
 
-import { buildControl, groupBy, el } from "./controls.js"
-import { T, groupName, settingLabel } from "./i18n.js"
+import { buildControl, groupBy, el } from "./controls.ts"
+import { T, groupName, settingLabel } from "./i18n.ts"
 
 const section = title => el("h3", { className: "sheet-h", textContent: title })
 
@@ -56,7 +56,7 @@ const settingsSection = async (settings, sheet) => {
   }
 
   const presets = el("div", { className: "presets" })
-  for (const p of Object.values(settings.SPEED_PRESETS)) {
+  for (const p of Object.values(settings.SPEED_PRESETS) as any[]) {
     const b = el("button", { type: "button", textContent: p.label })
     b.addEventListener("click", () => {
       Object.assign(draft, {

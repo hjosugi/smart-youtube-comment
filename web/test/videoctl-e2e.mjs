@@ -11,11 +11,12 @@ const page = await browser.newPage()
 const errors = []
 page.on("pageerror", e => errors.push(e.message))
 
-// load any same-origin page so we can dynamically import the module
+// boot the app (sets globalThis.SYCApp, which re-exports videoctl for testing)
 await page.goto(`http://localhost:${port}/index.html`, { waitUntil: "load" })
+await page.waitForFunction(() => globalThis.SYCApp?.videoctl)
 
 const r = await page.evaluate(async () => {
-  const { mountControls, fmtTime } = await import("./videoctl.js")
+  const { mountControls, fmtTime } = globalThis.SYCApp.videoctl
 
   const calls = { play: 0, pause: 0, seek: null }
   let state = 2 // paused

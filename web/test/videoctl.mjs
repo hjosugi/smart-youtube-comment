@@ -1,6 +1,6 @@
 // Pure test for the video-control time formatter (no DOM needed at import time).
 
-import { fmtTime } from "../videoctl.js"
+import { fmtTime } from "../videoctl.ts"
 
 const checks = []
 const assert = (name, cond, extra = "") => checks.push({ name, ok: !!cond, extra })

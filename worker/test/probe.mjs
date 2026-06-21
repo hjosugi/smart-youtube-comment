@@ -6,7 +6,7 @@
 // can resolve a live-chat continuation and poll real messages via InnerTube.
 // This is exactly what the Cloudflare Worker will do.
 
-import { resolveContinuation, pollLiveChat } from "../src/innertube.js"
+import { resolveContinuation, pollLiveChat } from "../src/innertube.ts"
 
 function parseVideoId(arg) {
   if (!arg) return null

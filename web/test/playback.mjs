@@ -1,7 +1,7 @@
 // Pure tests for playback gating (makeFate) + seek detection (isSeek).
 // This is the heart of replay/VOD behavior, so it gets exhaustive coverage.
 
-import { makeFate, isSeek } from "../playback.js"
+import { makeFate, isSeek } from "../playback.ts"
 
 const checks = []
 const assert = (name, cond, extra = "") => checks.push({ name, ok: !!cond, extra })

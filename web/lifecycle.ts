@@ -9,7 +9,7 @@ const hasNavigator = typeof navigator !== "undefined"
 // page is hidden, so we re-acquire on returning to the foreground.
 export const createWakeLock = () => {
   const supported = hasNavigator && "wakeLock" in navigator
-  let sentinel = null
+  let sentinel: any = null
 
   const acquire = async () => {
     if (!supported || sentinel) return
@@ -47,7 +47,7 @@ export const createWakeLock = () => {
 
 // Show metadata/controls on the lock screen. (Playback continuation itself is not
 // guaranteed in the IFrame embed — see ARCHITECTURE.md §2.)
-export const setMediaSession = (meta = {}) => {
+export const setMediaSession = (meta: any = {}) => {
   if (!hasNavigator || !("mediaSession" in navigator) || typeof MediaMetadata === "undefined") {
     return false
   }

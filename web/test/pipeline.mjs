@@ -1,7 +1,7 @@
 // Pure test of the message->payload pipeline (no DOM, no danmaku canvas).
 // scoring.js is a browser-free IIFE, safe to import in node; we stub the overlay.
 
-import { makeRenderer, renderBatch } from "../pipeline.js"
+import { makeRenderer, renderBatch } from "../pipeline.ts"
 import "../scoring.js" // sets globalThis.SYCScoring
 
 const { createFallbackScorer, buildRenderPlan } = globalThis.SYCScoring

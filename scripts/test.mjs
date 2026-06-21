@@ -1,8 +1,16 @@
-// Local test runner — runs every suite and reports. Usage: node scripts/test.mjs
+// Local test runner — typecheck, build, then run every suite. Usage: node scripts/test.mjs
 import { execFileSync } from "node:child_process"
 import { join } from "node:path"
 
 const ROOT = new URL("..", import.meta.url).pathname
+
+// Type-check and build the web app (the e2e + manifest suites run against web/dist).
+console.log("── typecheck + build ──")
+execFileSync("npx", ["--yes", "-p", "typescript@5.7.2", "tsc", "--noEmit", "-p", "tsconfig.json"], {
+  cwd: ROOT,
+  stdio: "inherit",
+})
+execFileSync("node", [join(ROOT, "scripts/build-web.mjs")], { cwd: ROOT, stdio: "inherit" })
 
 const SUITES = [
   ["unit", "worker/test/innertube-parse.mjs"],

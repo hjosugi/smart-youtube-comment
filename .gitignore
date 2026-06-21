@@ -6,6 +6,9 @@
 # Cloudflare Worker local state
 .wrangler/
 
+# Built web app (esbuild output)
+/web/dist/
+
 # Release/package outputs
 /.release/
 *.crx

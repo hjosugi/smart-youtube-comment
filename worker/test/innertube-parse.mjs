@@ -2,7 +2,7 @@
 // shaped like real get_live_chat responses and asserts the normalized ChatMessage
 // + continuation extraction. Covers every renderer variant the relay claims.
 
-import { _pure } from "../src/innertube.js"
+import { _pure } from "../src/innertube.ts"
 
 const { parseAction, extractContinuation, authorTypeFromBadges } = _pure
 

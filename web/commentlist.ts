@@ -12,7 +12,7 @@ export const createCommentList = root => {
   root.append(list)
 
   const atBottom = () => list.scrollHeight - list.scrollTop - list.clientHeight < 48
-  const make = (tag, cls, text) => {
+  const make = (tag: string, cls?: string, text?: string): any => {
     const el = document.createElement(tag)
     if (cls) el.className = cls
     if (text != null) el.textContent = text
@@ -47,7 +47,7 @@ export const createCommentList = root => {
       who.style.color = ROLE_COLOR[m.authorType] ?? ROLE_COLOR.normal
       row.append(who, renderText(m))
       list.append(row)
-      while (list.childElementCount > MAX_ROWS) list.firstChild.remove()
+      while (list.childElementCount > MAX_ROWS) list.firstChild?.remove()
       if (stick) list.scrollTop = list.scrollHeight
     },
     clear() {

@@ -1,7 +1,7 @@
 // Pure unit test of the chat-client state machine (`_pure.step`).
 // No fetch, no timers — just data -> data.
 
-import { _pure } from "../chat-client.js"
+import { _pure } from "../chat-client.ts"
 
 // Base cfg with quiet-adaptation OFF (quietThreshold 0 => empty polls are not
 // "quiet"), so cadence assertions are clean. A dedicated block below turns it on.

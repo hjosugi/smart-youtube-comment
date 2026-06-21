@@ -3,12 +3,13 @@
 
 import { readFile, access } from "node:fs/promises"
 
-const WEB = new URL("../", import.meta.url).pathname
+// Verify the BUILT app (web/dist) — run `node scripts/build-web.mjs` first.
+const WEB = new URL("../../web/dist/", import.meta.url).pathname
 const checks = []
 const assert = (name, cond, extra = "") => checks.push({ name, ok: !!cond, extra })
 
 const manifest = JSON.parse(
-  await readFile(new URL("../manifest.webmanifest", import.meta.url), "utf8"),
+  await readFile(new URL("../../web/dist/manifest.webmanifest", import.meta.url), "utf8"),
 )
 assert("name set", manifest.name === "Smart YouTube Comment")
 assert("start_url set", manifest.start_url === "./")
@@ -32,7 +33,7 @@ for (const icon of manifest.icons) {
 }
 
 // the service worker shell only lists files that exist (no broken precache)
-const swSrc = await readFile(new URL("../sw.js", import.meta.url), "utf8")
+const swSrc = await readFile(new URL("../../web/dist/sw.js", import.meta.url), "utf8")
 const shell =
   (swSrc.match(/const SHELL = \[([\s\S]*?)\]/)?.[1] || "")
     .match(/"\.\/[^"]*"/g)
@@ -42,7 +43,7 @@ assert("SHELL parsed", shell.length > 5, `parsed ${shell.length}`)
 for (const rel of shell) {
   let exists = true
   try {
-    await access(new URL(`../${rel}`, import.meta.url))
+    await access(new URL(`../../web/dist/${rel}`, import.meta.url))
   } catch {
     exists = false
   }

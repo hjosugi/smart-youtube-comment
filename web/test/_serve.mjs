@@ -1,9 +1,10 @@
-// Tiny static file server for the web/ dir, shared by the Playwright tests.
+// Tiny static file server for the BUILT web app (web/dist), shared by the
+// Playwright tests. Run `node scripts/build-web.mjs` first.
 import { createServer } from "node:http"
 import { readFile } from "node:fs/promises"
 import { extname, join } from "node:path"
 
-const ROOT = new URL("../../web/", import.meta.url).pathname
+const ROOT = new URL("../../web/dist/", import.meta.url).pathname
 const MIME = {
   ".html": "text/html",
   ".js": "text/javascript",

@@ -6,7 +6,7 @@ import {
   parseInput,
   readParams,
   RELAY_DEFAULT,
-} from "../config.js"
+} from "../config.ts"
 
 const checks = []
 const assert = (name, cond, extra = "") => checks.push({ name, ok: !!cond, extra })

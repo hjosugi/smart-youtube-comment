@@ -6,7 +6,7 @@
 //   4. an `ended` envelope stops the loop
 // No network. jitterRatio:0 for exact assertions.
 
-import { createLiveChatClient } from "../chat-client.js"
+import { createLiveChatClient } from "../chat-client.ts"
 
 function fakeResponse(ok, status, data) {
   return { ok, status, json: async () => data }

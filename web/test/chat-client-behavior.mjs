@@ -2,7 +2,7 @@
 // polling, refresh() polls immediately, and replay mode sends the player offset.
 // Uses a fake fetch that records requests; timing margins kept generous.
 
-import { createLiveChatClient } from "../chat-client.js"
+import { createLiveChatClient } from "../chat-client.ts"
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 const checks = []

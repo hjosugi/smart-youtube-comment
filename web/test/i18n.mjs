@@ -2,7 +2,7 @@
 // evaluates in Japanese mode; verify localized strings + fallbacks.
 
 Object.defineProperty(globalThis, "navigator", { value: { language: "ja-JP" }, configurable: true })
-const { T, settingLabel, groupName, statusText, lang } = await import("../i18n.js")
+const { T, settingLabel, groupName, statusText, lang } = await import("../i18n.ts")
 
 const checks = []
 const assert = (name, cond, extra = "") => checks.push({ name, ok: !!cond, extra })
