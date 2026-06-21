@@ -18,7 +18,9 @@ const initial = await page.evaluate(() => {
   const c = document.querySelector("canvas.syc-danmaku-canvas")
   const data = c.getContext("2d").getImageData(0, 0, c.width, c.height).data
   let lit = 0
-  for (let i = 3; i < data.length; i += 4) if (data[i] > 0) lit++
+  for (let i = 3; i < data.length; i += 4) {
+    if (data[i] > 0) lit++ // count non-transparent pixels (alpha channel)
+  }
   return {
     listRows: document.querySelectorAll(".clist-row").length,
     listVisible: !document.querySelector(".clist").hidden,

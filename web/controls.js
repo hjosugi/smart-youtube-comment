@@ -15,7 +15,11 @@ const row = (label, control, extra) =>
     ...(extra ? [extra] : []),
   ])
 
-const tag = (input, key) => ((input.dataset.key = key), input)
+// Tag an input with its setting key so tests/code can target it.
+const tag = (input, key) => {
+  input.dataset.key = key
+  return input
+}
 
 const range = (spec, value, onInput) => {
   const readout = el("output", { textContent: `${value}${spec.unit ?? ""}` })

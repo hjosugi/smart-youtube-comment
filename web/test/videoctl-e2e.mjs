@@ -23,9 +23,17 @@ const r = await page.evaluate(async () => {
     getPlayerState: () => state,
     getDuration: () => 100,
     getCurrentTime: () => 30,
-    playVideo: () => ((calls.play += 1), (state = 1)),
-    pauseVideo: () => ((calls.pause += 1), (state = 2)),
-    seekTo: s => (calls.seek = s),
+    playVideo: () => {
+      calls.play += 1
+      state = 1
+    },
+    pauseVideo: () => {
+      calls.pause += 1
+      state = 2
+    },
+    seekTo: s => {
+      calls.seek = s
+    },
   }
 
   const stage = document.createElement("div")

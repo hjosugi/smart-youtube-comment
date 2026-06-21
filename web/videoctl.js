@@ -65,7 +65,10 @@ export const mountControls = (stage, player, { hideMs = 3500 } = {}) => {
     scrubbing = false
     show()
   }
-  seek.addEventListener("pointerdown", () => ((scrubbing = true), show()))
+  seek.addEventListener("pointerdown", () => {
+    scrubbing = true
+    show()
+  })
   seek.addEventListener("input", previewSeek)
   seek.addEventListener("change", commitSeek)
   seek.addEventListener("pointerup", commitSeek)

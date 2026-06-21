@@ -20,7 +20,9 @@ const result = await page.evaluate(() => {
   if (!c || !c.width) return { ok: false, reason: "no canvas" }
   const { data } = c.getContext("2d").getImageData(0, 0, c.width, c.height)
   let lit = 0
-  for (let i = 3; i < data.length; i += 4) if (data[i] > 0) lit++
+  for (let i = 3; i < data.length; i += 4) {
+    if (data[i] > 0) lit++ // count non-transparent pixels (alpha channel)
+  }
   return { ok: lit > 0, litPixels: lit, stats: globalThis.SYCApp?.overlay?.stats?.() ?? null }
 })
 

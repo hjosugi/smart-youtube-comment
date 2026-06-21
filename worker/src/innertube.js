@@ -231,6 +231,12 @@ const fromRenderer = (kind, amount) => r => {
   const parts = runsToParts(r.message ?? r.headerSubtext)
   let text = partsText(parts)
   if (!text && kind === "paid") text = amount ?? "" // paid sticker / no-comment superchat
+
+  // Always give the renderer something: if there were no runs but we have text
+  // (e.g. a paid amount), wrap it as a single text part.
+  let renderParts = parts
+  if (renderParts.length === 0 && text) renderParts = [{ t: text }]
+
   return message({
     id: r.id,
     ts: msToTs(r.timestampUsec),
@@ -238,7 +244,7 @@ const fromRenderer = (kind, amount) => r => {
     author: r.authorName?.simpleText,
     authorType: authorTypeFromBadges(r.authorBadges),
     text,
-    parts: parts.length ? parts : text ? [{ t: text }] : [],
+    parts: renderParts,
     amount,
   })
 }
