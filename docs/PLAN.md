@@ -1,18 +1,15 @@
 # Plan
 
-## 2026-06-17
+## Current Architecture
 
-The Rust/WASM scorer has been removed from the active architecture. The
-extension is JavaScript-only because the previous one-message WASM path did not
-improve runtime performance, and scorer time is not the bottleneck.
+The extension is JavaScript-only. Scorer time is not the bottleneck; browser
+rendering and chat extraction are.
 
 ## Current Split
 
 - Claude: `extension/`
 - Shared: `docs/`, release scripts, package scripts
 - Local notes: `.private-discussion/`
-
-There is no active `scorer/` crate.
 
 ## Current Scoring Path
 
@@ -41,11 +38,11 @@ Use these commands:
 - `npm run test:e2e` for renderer performance
 - `npm run test:ext` for real Chromium extension smoke testing
 
-## WASM Reintroduction Gate
+## Scorer Transport Gate
 
-Do not reintroduce Rust/WASM unless all are true:
+Do not add a new scorer transport unless all are true:
 
 1. A batch or stateful scorer exists outside the extension hot path first.
-2. Chrome/V8 benchmarks show a clear end-to-end win over JS.
+2. Chrome/V8 benchmarks show a clear end-to-end win over the JS scorer.
 3. `docs/CONTRACT.md` is updated before the extension depends on the new shape.
 4. Manifest CSP and web-accessible resources are reviewed again.

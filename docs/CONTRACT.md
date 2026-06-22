@@ -17,8 +17,7 @@ Contract version: `2`
 
 ## Current Transport
 
-There is no Rust/WASM scorer. Scoring is JavaScript-only and local-only through
-`extension/scoring.js`.
+Scoring is JavaScript-only and local-only through `extension/scoring.js`.
 
 The hot path is:
 
@@ -143,6 +142,3 @@ Reason tags are stable, kebab-case strings. Existing tags should not be renamed.
 Current tags:
 
 - `fallback-fast`
-
-Historical tags from the removed Rust scorer may appear in old docs or release
-notes, but the current JS scorer does not emit them.

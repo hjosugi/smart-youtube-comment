@@ -163,7 +163,7 @@ writeFileSync(
 - Short/emoji-heavy comments move faster.
 - Longer informative comments move slower.
 - The page remains responsive during busy chat.
-- The extension does not request network code or WASM.
+- The extension does not request network code.
 
 ## If It Fails
 

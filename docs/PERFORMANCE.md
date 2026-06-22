@@ -1,11 +1,7 @@
 # Performance Notes
 
-The project is now JavaScript-only. The previous Rust/WASM scorer was removed
-because the one-message scorer path did not improve the shipped extension, and
-browser extraction/rendering is the practical ceiling.
-
-Historical measurements and the removal rationale are in
-[`PERFORMANCE_RESEARCH_2026-06-17.md`](./PERFORMANCE_RESEARCH_2026-06-17.md).
+The project is JavaScript-only. Scoring is cheap; browser extraction and
+rendering are the practical ceiling.
 
 ## Current Bottleneck
 
@@ -64,7 +60,7 @@ Then open:
 http://127.0.0.1:4173/
 ```
 
-The sandbox uses `extension/scoring.js` directly. It no longer loads WASM.
+The sandbox uses `extension/scoring.js` directly.
 
 ## Known Hot Spots
 
@@ -77,8 +73,8 @@ The sandbox uses `extension/scoring.js` directly. It no longer loads WASM.
 - Lane assignment is currently cheap because lane count is small. If lane count
   grows substantially, use a priority queue over lane free times.
 
-## WASM Reintroduction Gate
+## Scorer Transport Gate
 
-Do not reintroduce Rust/WASM for the current heuristic scorer. Reconsider only if
-a batched or stateful scorer first proves a clear Chrome/V8 end-to-end win and
-the contract/docs are updated before shipping.
+Do not add a new scorer transport for the current heuristic scorer. Reconsider
+only if a batched or stateful scorer first proves a clear Chrome/V8 end-to-end
+win and the contract/docs are updated before shipping.

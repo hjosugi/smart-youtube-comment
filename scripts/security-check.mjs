@@ -78,10 +78,10 @@ function checkManifest() {
   }
   if (contentScript?.all_frames !== true) fail("content_scripts all_frames must stay explicit.")
 
-  // WASM removed: the extension must not expose any web-accessible resources.
+  // The extension must not expose any web-accessible resources.
   const webResources = manifest.web_accessible_resources ?? []
   if (webResources.length !== 0) {
-    fail("web_accessible_resources must be empty (WASM removed; nothing is exposed to pages).")
+    fail("web_accessible_resources must be empty (nothing is exposed to pages).")
   }
 }
 
@@ -114,7 +114,7 @@ function checkExtensionSource() {
       fail(`${rel(file)}:${lineNumber(text, match.index ?? 0)} contains a remote URL.`)
     }
 
-    // WASM removed: no fetch() is allowed anywhere in the extension.
+    // No fetch() is allowed anywhere in the extension.
     for (const match of text.matchAll(/\bfetch\s*\(/g)) {
       fail(`${rel(file)}:${lineNumber(text, match.index ?? 0)} uses fetch() (not allowed).`)
     }

@@ -13,12 +13,11 @@
 
 ## 現在の前提
 
-Rust/WASM scorer は削除済みです。現在は `extension/scoring.js` の JS scorer だけを
-使います。
+現在は `extension/scoring.js` の JS scorer だけを使います。
 
-WASM を戻さないでください。戻す場合は、batch/stateful scorer が Chrome/V8 実測で
-明確に勝つことを先に証明し、`docs/CONTRACT.md` と `docs/PLAN.md` を更新してからに
-してください。
+新しいスコアラのトランスポートを足さないでください。足す場合は、batch/stateful scorer が
+Chrome/V8 実測で明確に勝つことを先に証明し、`docs/CONTRACT.md` と `docs/PLAN.md` を
+更新してからにしてください。
 
 ## Claude の担当領域
 
@@ -76,7 +75,7 @@ extension では以下を禁止してください。
 - remote script / remote stylesheet
 - 不要な remote fetch
 - `data:` / `blob:` / remote origin を CSP に足すこと
-- WASM / `wasm-unsafe-eval` / web-accessible WASM artifact の再追加
+- `web_accessible_resources` を空でなくすること
 
 DOM へ出す文字列は原則 `textContent` を使ってください。YouTube のコメント本文、
 作者名、動画 metadata、ページ上の文言はすべて untrusted input と扱います。
@@ -136,7 +135,7 @@ Chrome 実機では次を確認してください。
 最初に AGENTS.md, docs/CONTRACT.md, docs/PERFORMANCE.md,
 docs/CLAUDE_EXTENSION_INSTRUCTIONS.md を読んでください。
 
-現在は JavaScript-only です。Rust/WASM scorer は削除済みなので戻さないでください。
+現在は JavaScript-only です。新しいスコアラのトランスポートは足さないでください。
 
 今回の目的:
 1. カクつき対策を最優先する。renderer / chat extraction / queue / Long Task を見る。
@@ -150,7 +149,7 @@ docs/CLAUDE_EXTENSION_INSTRUCTIONS.md を読んでください。
 セキュリティ:
 - innerHTML/outerHTML/insertAdjacentHTML/eval/new Function/remote script/remote style を使わない。
 - YouTube のコメント本文・作者名・metadata はすべて untrusted input。DOM 出力は textContent/setAttribute/DOM API を使う。
-- WASM, wasm-unsafe-eval, web_accessible_resources の再追加は禁止。
+- web_accessible_resources は空のままにする。
 - permissions は最小のまま。storage と https://www.youtube.com/* を基本にする。
 - package 依存を増やす場合は exact pin、lockfile integrity、install script なしを守る。
 
