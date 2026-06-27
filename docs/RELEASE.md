@@ -9,8 +9,9 @@ Use three stages:
 1. **Local unpacked release**: load `extension/` directly in Chrome.
 2. **Zip release**: create `.release/smart-youtube-comment-vX.Y.Z.zip` and share
    it with testers who can load unpacked extensions.
-3. **Store release later**: only after real YouTube live-stream smoke tests,
-   stable settings, and basic privacy/release copy are ready.
+3. **Chrome Web Store release**: after the one-time store listing and OAuth
+   setup, upload and publish through `scripts/chrome-webstore.mjs` or GitHub
+   Actions.
 
 The `.release/` directory is ignored by Git. Artifacts are reproducible from
 tracked extension source; there is no Rust/WASM build step.
@@ -82,6 +83,49 @@ The release script automatically creates:
 The zip contains only the extension files listed by `scripts/package-extension.mjs`.
 It must not contain `wasm/comment_scorer.wasm`.
 
+## Chrome Web Store Automation
+
+See `docs/STORE_AUTOMATION.md` for the one-time setup, OAuth details, and CI
+release path.
+
+For the no-thinking manual checklist, use `docs/STORE_RELEASE_RUNBOOK_JA.md`.
+
+Once the GitHub repository secrets are configured, pushing a matching `vX.Y.Z`
+tag runs checks, packages the extension, uploads release artifacts, uploads the
+zip to Chrome Web Store, and submits it for review/publishing.
+
+Preferred CI auth uses a service account plus GitHub OIDC:
+
+```text
+CHROME_WEBSTORE_PUBLISHER_ID
+CHROME_WEBSTORE_EXTENSION_ID
+GCP_WORKLOAD_IDENTITY_PROVIDER
+GCP_SERVICE_ACCOUNT
+```
+
+Refresh-token fallback:
+
+```text
+CHROME_WEBSTORE_PUBLISHER_ID
+CHROME_WEBSTORE_EXTENSION_ID
+CHROME_WEBSTORE_CLIENT_ID
+CHROME_WEBSTORE_CLIENT_SECRET
+CHROME_WEBSTORE_REFRESH_TOKEN
+```
+
+Local one-command store release:
+
+```sh
+npm run release:store
+```
+
+Upload-only and publish-after-upload are split for safer recovery:
+
+```sh
+npm run release:store:upload
+npm run release:store:publish
+```
+
 ## Manual Browser Smoke Test
 
 Before sharing a zip:
@@ -126,17 +170,19 @@ Do not present this as production-ready yet:
 
 - YouTube DOM changes may break extraction
 - performance still needs real busy-stream profiling
-- no Chrome Web Store listing assets or privacy copy yet
+- Chrome Web Store listing assets, privacy copy, and data-use declarations still
+  require one-time dashboard setup
 - no automated real-YouTube smoke test yet
 
 ## Store Release Gate
 
-Defer a store release until these are done:
+Submit store releases only after these are done:
 
 - real-stream smoke test on multiple streams
 - concise privacy note: all scoring/filtering is local and no network calls are
   made by the extension
 - rollback plan for YouTube DOM breakage
+- one-time Chrome Web Store listing and OAuth setup from `docs/STORE_AUTOMATION.md`
 - a tagged Git release matching the manifest version
 
 ## Rollback
@@ -147,7 +193,7 @@ If a release build is bad:
 2. Keep the bad artifact only if needed for debugging.
 3. Fix source.
 4. Bump patch version.
-5. Re-run `npm run release:zip`.
+5. Re-run `npm run release:zip` or `npm run release:store`.
 
 For unpacked testers, ask them to remove the old extension and load the new
 unzipped folder.

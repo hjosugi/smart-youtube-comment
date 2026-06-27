@@ -49,3 +49,17 @@ Do not reintroduce Rust/WASM unless all are true:
 2. Chrome/V8 benchmarks show a clear end-to-end win over JS.
 3. `docs/CONTRACT.md` is updated before the extension depends on the new shape.
 4. Manifest CSP and web-accessible resources are reviewed again.
+
+## Release Automation
+
+Chrome Web Store update publishing is automated through:
+
+- `scripts/chrome-webstore.mjs`
+- `npm run release:store`
+- `.github/workflows/chrome-webstore-release.yml`
+
+The remaining manual work is the one-time Chrome Web Store Developer Dashboard
+setup: item creation, store listing copy/assets, privacy/data-use declarations,
+service-account or OAuth credential setup, and GitHub secret entry. After that,
+a matching `vX.Y.Z` tag can run checks, build the zip, upload it, and submit it
+for review/publishing.

@@ -1,0 +1,130 @@
+name: Chrome Web Store Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Optional version to set before packaging. Prefer committed vX.Y.Z tags for normal releases."
+        required: false
+        type: string
+      publish:
+        description: "Submit the uploaded package for Chrome Web Store review/publishing."
+        required: true
+        default: true
+        type: boolean
+      status_only:
+        description: "Only fetch Chrome Web Store status. Does not package, upload, or publish."
+        required: true
+        default: false
+        type: boolean
+      skip_review:
+        description: "Ask Chrome Web Store to skip review when the item is eligible."
+        required: true
+        default: false
+        type: boolean
+      deploy_percentage:
+        description: "Optional initial rollout percentage, 0-100."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: chrome-webstore-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      CHROME_WEBSTORE_PUBLISHER_ID: ${{ secrets.CHROME_WEBSTORE_PUBLISHER_ID }}
+      CHROME_WEBSTORE_EXTENSION_ID: ${{ secrets.CHROME_WEBSTORE_EXTENSION_ID }}
+      CHROME_WEBSTORE_CLIENT_ID: ${{ secrets.CHROME_WEBSTORE_CLIENT_ID }}
+      CHROME_WEBSTORE_CLIENT_SECRET: ${{ secrets.CHROME_WEBSTORE_CLIENT_SECRET }}
+      CHROME_WEBSTORE_REFRESH_TOKEN: ${{ secrets.CHROME_WEBSTORE_REFRESH_TOKEN }}
+      CHROME_WEBSTORE_ACCESS_TOKEN: ${{ secrets.CHROME_WEBSTORE_ACCESS_TOKEN }}
+      CHROME_WEBSTORE_BLOCK_ON_WARNINGS: "1"
+      CHROME_WEBSTORE_SKIP_REVIEW: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_review || false }}
+      CHROME_WEBSTORE_DEPLOY_PERCENTAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_percentage || '' }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Authenticate to Google Cloud
+        id: google-auth
+        if: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && env.GCP_SERVICE_ACCOUNT != '' }}
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/chromewebstore
+
+      - name: Use short-lived Chrome Web Store access token
+        if: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && env.GCP_SERVICE_ACCOUNT != '' }}
+        env:
+          ACCESS_TOKEN: ${{ steps.google-auth.outputs.access_token }}
+        run: echo "CHROME_WEBSTORE_ACCESS_TOKEN=${ACCESS_TOKEN}" >> "$GITHUB_ENV"
+
+      - name: Set manual version
+        if: ${{ github.event_name == 'workflow_dispatch' && !inputs.status_only && inputs.version != '' }}
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: npm run version:set -- "$RELEASE_VERSION"
+
+      - name: Validate tag version
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs"
+
+          const tag = process.env.GITHUB_REF_NAME.replace(/^v/, "")
+          const pkg = JSON.parse(readFileSync("package.json", "utf8"))
+          const manifest = JSON.parse(readFileSync("extension/manifest.json", "utf8"))
+          if (pkg.version !== tag || manifest.version !== tag) {
+            throw new Error(
+              `Tag v${tag} does not match package.json ${pkg.version} and manifest ${manifest.version}`,
+            )
+          }
+          NODE
+
+      - name: Fetch Chrome Web Store status
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.status_only }}
+        run: npm run release:store:status
+
+      - name: Build release zip
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.status_only }}
+        run: npm run release:zip
+
+      - name: Upload release artifacts
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.status_only }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: chrome-extension-release
+          path: .release/*
+          if-no-files-found: error
+
+      - name: Upload to Chrome Web Store
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.status_only }}
+        run: npm run release:store:upload
+
+      - name: Publish in Chrome Web Store
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.status_only && inputs.publish) }}
+        run: npm run release:store:publish
