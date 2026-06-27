@@ -352,6 +352,7 @@ printf 'https://github.com/%s/%s/actions/workflows/chrome-webstore-release.yml\n
 version: 空欄
 publish: false
 status_only: true
+publish_only: false
 skip_review: false
 deploy_percentage: 空欄
 ```
@@ -362,6 +363,27 @@ deploy_percentage: 空欄
 - `Build release zip` は実行されない
 - `Upload to Chrome Web Store` は実行されない
 - `Publish in Chrome Web Store` は実行されない
+
+## 初回ドラフトを公開提出する
+
+Chrome Web Store Dashboard で最初のzipを手動アップロード済みの場合は、同じ
+versionを再アップロードしない。GitHub Actions の `Run workflow` を押して次で
+実行する。
+
+```text
+version: 空欄
+publish: false
+status_only: false
+publish_only: true
+skip_review: false
+deploy_percentage: 空欄
+```
+
+成功条件:
+
+- `Publish existing Chrome Web Store draft` が成功
+- `Build release zip` は実行されない
+- `Upload to Chrome Web Store` は実行されない
 
 ## 毎回の通常リリース
 
@@ -405,6 +427,7 @@ GitHub Actions の `Run workflow` を押して次で実行する。
 version: 空欄
 publish: false
 status_only: false
+publish_only: false
 skip_review: false
 deploy_percentage: 空欄
 ```
@@ -415,6 +438,7 @@ deploy_percentage: 空欄
 version: 空欄
 publish: true
 status_only: false
+publish_only: false
 skip_review: false
 deploy_percentage: 空欄
 ```
