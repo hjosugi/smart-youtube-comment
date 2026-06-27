@@ -1,5 +1,6 @@
 // Local test runner — typecheck, build, then run every suite. Usage: node scripts/test.mjs
 import { execFileSync } from "node:child_process"
+import { existsSync } from "node:fs"
 import { join } from "node:path"
 
 const ROOT = new URL("..", import.meta.url).pathname
@@ -11,6 +12,20 @@ execFileSync("npx", ["--yes", "-p", "typescript@5.7.2", "tsc", "--noEmit", "-p",
   stdio: "inherit",
 })
 execFileSync("node", [join(ROOT, "scripts/build-web.mjs")], { cwd: ROOT, stdio: "inherit" })
+
+// The e2e group drives a real browser via Playwright. That's an optional dev/CI
+// dependency (npm i -D playwright + npx playwright install chromium). When it's
+// not installed we SKIP the e2e suites instead of reporting spurious failures.
+let e2eSkip = ""
+try {
+  const { chromium } = await import("playwright")
+  const exe = chromium.executablePath()
+  if (!exe || !existsSync(exe)) {
+    e2eSkip = "chromium not installed (run: npx playwright install chromium)"
+  }
+} catch {
+  e2eSkip = "playwright not installed (run: npm i -D playwright && npx playwright install chromium)"
+}
 
 const SUITES = [
   ["unit", "worker/test/innertube-parse.mjs"],
@@ -34,6 +49,7 @@ const SUITES = [
 
 let pass = 0
 let fail = 0
+let skip = 0
 let group = ""
 for (const [g, suite] of SUITES) {
   if (g !== group) {
@@ -41,6 +57,11 @@ for (const [g, suite] of SUITES) {
     console.log(`\n──── ${g.toUpperCase()} ────`)
   }
   const name = suite.replace(/^.*\//, "")
+  if (g === "e2e" && e2eSkip) {
+    console.log(`⏭  ${name}  (skipped: ${e2eSkip})`)
+    skip++
+    continue
+  }
   try {
     const out = execFileSync("node", [join(ROOT, suite)], { encoding: "utf8" })
     const tail = out.match(/\((\d+) (?:assertions|checks)\)/)
@@ -53,5 +74,5 @@ for (const [g, suite] of SUITES) {
   }
 }
 
-console.log(`\n════ ${pass} passed, ${fail} failed ════`)
+console.log(`\n════ ${pass} passed, ${fail} failed${skip ? `, ${skip} skipped` : ""} ════`)
 process.exit(fail ? 1 : 0)

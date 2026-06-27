@@ -46,8 +46,7 @@ The gate fails if:
 ## Manual Review Checklist
 
 - Keep executable JS and CSS inside `extension/`.
-- Do not add CDN scripts, remote stylesheets, remote WASM, or runtime-downloaded
-  logic.
+- Do not add CDN scripts, remote stylesheets, or runtime-downloaded logic.
 - Prefer `textContent`, `createElement`, `createElementNS`, and fixed CSS text
   over HTML string insertion.
 - Treat YouTube chat text, author names, video metadata, and page text as

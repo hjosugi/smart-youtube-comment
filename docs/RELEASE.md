@@ -14,7 +14,7 @@ Use three stages:
    Actions.
 
 The `.release/` directory is ignored by Git. Artifacts are reproducible from
-tracked extension source; there is no Rust/WASM build step.
+tracked extension source; there is no build step.
 
 ## Versioning
 
@@ -81,7 +81,6 @@ The release script automatically creates:
 - `.release/smart-youtube-comment-vX.Y.Z-tester-install.md`
 
 The zip contains only the extension files listed by `scripts/package-extension.mjs`.
-It must not contain `wasm/comment_scorer.wasm`.
 
 ## Chrome Web Store Automation
 

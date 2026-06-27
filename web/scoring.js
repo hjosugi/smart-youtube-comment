@@ -10,9 +10,8 @@
   const TIER_NAME = ["fast", "normal", "slow"];
   const FALLBACK_DURATIONS = [5000, 6000, 8000];
 
-  // WASM scorer removed (2026-06-17): on the live contract path it measured
-  // SLOWER than this JS scorer (JSON marshalling across the JS<->wasm boundary
-  // dominated), and scoring is never the bottleneck. JS is the single scorer.
+  // Scoring is JavaScript-only and runs locally in the content script. It is
+  // never the live-chat bottleneck (rendering and extraction are).
 
   function createFallbackScorer() {
     const recent = [];

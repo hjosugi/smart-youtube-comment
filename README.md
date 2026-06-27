@@ -20,9 +20,8 @@ Implemented:
 - release zip packaging
 - security/supply-chain checks
 
-Rust/WASM was removed because the shipped one-message WASM path did not improve
-runtime performance. Browser extraction and rendering are the practical
-bottlenecks now.
+Browser extraction and rendering are the practical bottlenecks, so scoring is
+kept small and local.
 
 ## How It Works
 
@@ -36,7 +35,7 @@ The extension runs `extension/content.js` in every YouTube frame.
    frame.
 6. The top frame renders comments over the YouTube player.
 
-The extension does not fetch remote code and does not use WASM.
+The extension does not fetch remote code.
 
 ## Requirements
 
