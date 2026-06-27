@@ -5,6 +5,7 @@
 // rendering, no storage — that all stays on the device. See ARCHITECTURE.md.
 //
 // Routes:
+//   GET /health                             -> lightweight worker health
 //   GET /api/livechat?video=<id>             -> resolve + first poll
 //   GET /api/livechat?cont=<token>           -> next live poll
 //   GET /api/livechat?cont=<token>&offset=ms -> next replay (VOD) poll at offset
@@ -106,6 +107,13 @@ const handle = async (request: Request, ctx: ExecutionContext): Promise<Response
   if (request.method !== "GET") return json({ error: "method not allowed" }, 405)
 
   const url = new URL(request.url)
+  if (url.pathname === "/health") {
+    return json({
+      status: "ok",
+      service: "syc-livechat-relay",
+      timestamp: new Date().toISOString(),
+    })
+  }
   if (url.pathname !== "/api/livechat") return json({ error: "not found" }, 404)
 
   const params = readParams(url)
