@@ -228,3 +228,7 @@ Scoring is intentionally small and local. The next wins are in:
 - keeping `maxActive=2000` responsive through admission control
 
 More notes are in [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
+
+## License
+
+0BSD. You can use, copy, modify, and distribute this project for almost any purpose.
