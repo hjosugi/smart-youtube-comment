@@ -89,6 +89,21 @@ npm run test:ext
 `SYC_REQUIRE_EXTENSION_E2E=1` is set. To make `npm test` fail instead of
 skipping missing Chromium, set `SYC_REQUIRE_E2E=1`.
 
+## Worker Relay
+
+The Cloudflare Worker under `worker/` relays YouTube InnerTube live-chat calls.
+It defaults to the checked-in WEB client version, but production can override it
+without a code change:
+
+```sh
+wrangler deploy --var INNERTUBE_CLIENT_VERSION:2.20260705.00.00
+```
+
+`GET /health` returns the effective and default InnerTube client versions.
+`GET /health?deep=1&video=<11-char-id>` runs a canary `next` probe with the same
+effective client version; use it from an external scheduled monitor or Cloudflare
+Cron Trigger to detect client-version rejection before viewers hit it.
+
 ## Local Sandbox
 
 Run:

@@ -68,6 +68,7 @@ test("health exposes version metadata and optional upstream canary", async () =>
   assert.equal(shallowBody.service, "syc-livechat-relay")
   assert.equal(shallowBody.version, "1.2.3")
   assert.equal(shallowBody.innerTubeClientVersion, "2.20240814.00.00")
+  assert.equal(shallowBody.defaultInnerTubeClientVersion, "2.20240814.00.00")
   assert.equal(shallowBody.timestamp, "2026-07-05T00:00:00.000Z")
   assert.equal("upstream" in shallowBody, false)
 
@@ -85,6 +86,22 @@ test("health exposes version metadata and optional upstream canary", async () =>
     ok: true,
     result: { continuation: "abc123def45", isReplay: false },
   })
+
+  let probedConfig
+  const override = await handle(
+    req("/health?deep=1&video=abc123def45"),
+    { INNERTUBE_CLIENT_VERSION: "2.20260705.00.00" },
+    ctx(),
+    {
+      healthProbe: async (_videoId, config) => {
+        probedConfig = config
+        return { ok: true }
+      },
+    },
+  )
+  const overrideBody = await readJson(override)
+  assert.equal(overrideBody.innerTubeClientVersion, "2.20260705.00.00")
+  assert.equal(probedConfig.clientVersion, "2.20260705.00.00")
 })
 
 test("validation rejects malformed video, continuation, and offset before upstream", async () => {
@@ -109,22 +126,30 @@ test("cache stores live non-terminal responses and returns HIT on repeat", async
   const cache = new MemoryCache()
   const runtime = ctx()
   let calls = 0
+  let clientConfig
   const deps = {
     cache,
-    fetchEnvelope: async params => {
+    fetchEnvelope: async (params, config) => {
       calls += 1
+      clientConfig = config
       assert.equal(params.cont, "START")
       assert.equal(params.offset, null)
       return envelope()
     },
   }
 
-  const first = await handle(req("/api/livechat?cont=START"), {}, runtime, deps)
+  const first = await handle(
+    req("/api/livechat?cont=START"),
+    { INNERTUBE_CLIENT_VERSION: "2.20260705.00.00" },
+    runtime,
+    deps,
+  )
   assert.equal(first.status, 200)
   assert.equal(first.headers.get("X-SYC-Cache"), "MISS")
   assert.equal(first.headers.get("Cache-Control"), "public, s-maxage=1")
   await Promise.all(runtime.waits)
   assert.equal(cache.puts, 1)
+  assert.equal(clientConfig.clientVersion, "2.20260705.00.00")
 
   const second = await handle(req("/api/livechat?cont=START"), {}, ctx(), deps)
   assert.equal(second.status, 200)

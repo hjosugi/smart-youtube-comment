@@ -142,6 +142,40 @@ test("resolveLiveChat extracts continuation and localized replay state", async (
   assert.equal(calls[0].body.context.client.gl, "US")
 })
 
+test("InnerTube requests can override the WEB client version", async () => {
+  const calls = mockFetch(call => {
+    if (call.url.pathname.endsWith("/next")) {
+      return jsonResponse({
+        contents: {
+          twoColumnWatchNextResults: {
+            conversationBar: {
+              liveChatRenderer: {
+                continuations: [
+                  { timedContinuationData: { continuation: "INITIAL", timeoutMs: 2500 } },
+                ],
+              },
+            },
+          },
+        },
+      })
+    }
+    return jsonResponse({
+      continuationContents: {
+        liveChatContinuation: {
+          actions: [],
+          continuations: [{ timedContinuationData: { continuation: "NEXT", timeoutMs: 1500 } }],
+        },
+      },
+    })
+  })
+
+  await resolveLiveChat("abc123def45", { clientVersion: "2.20260705.00.00" })
+  await pollLiveChat("INITIAL", {}, { clientVersion: "2.20260705.00.00" })
+
+  assert.equal(calls[0].body.context.client.clientVersion, "2.20260705.00.00")
+  assert.equal(calls[1].body.context.client.clientVersion, "2.20260705.00.00")
+})
+
 test("resolveLiveChat returns null when a watch page has no chat renderer", async () => {
   mockFetch(() => jsonResponse({ contents: { twoColumnWatchNextResults: {} } }))
 

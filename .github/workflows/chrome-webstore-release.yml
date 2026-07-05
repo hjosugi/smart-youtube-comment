@@ -80,6 +80,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install worker dependencies
+        run: npm --prefix worker ci
+
       - name: Install Chromium
         run: npx playwright install chromium
 

@@ -16,7 +16,13 @@
 // NOT a quota win — see ARCHITECTURE.md §9.1). A small in-isolate in-flight map
 // also collapses cold-key bursts before cache population.
 
-import { INNERTUBE_CLIENT_VERSION, resolveLiveChat, pollLiveChat } from "./innertube.ts"
+import {
+  DEFAULT_INNERTUBE_CLIENT_VERSION,
+  getInnerTubeClient,
+  resolveLiveChat,
+  pollLiveChat,
+  type InnerTubeClientConfig,
+} from "./innertube.ts"
 import type { PollEnvelope } from "../../web/types.ts"
 
 interface Env {
@@ -24,6 +30,7 @@ interface Env {
   COMMIT_SHA?: string
   SOURCE_VERSION?: string
   HEALTHCHECK_VIDEO_ID?: string
+  INNERTUBE_CLIENT_VERSION?: string
 }
 
 interface Params {
@@ -34,8 +41,8 @@ interface Params {
 
 interface HandlerDeps {
   cache?: Cache
-  fetchEnvelope?: (params: Params) => Promise<PollEnvelope | null>
-  healthProbe?: (videoId: string) => Promise<unknown>
+  fetchEnvelope?: (params: Params, config: InnerTubeClientConfig) => Promise<PollEnvelope | null>
+  healthProbe?: (videoId: string, config: InnerTubeClientConfig) => Promise<unknown>
   inflight?: Map<string, Promise<Response>>
   logError?: (...args: unknown[]) => void
   now?: () => Date
@@ -97,6 +104,13 @@ const cacheKeyFor = (url: URL, params: Params): Request => {
   return new Request(normalized.toString(), { method: "GET" })
 }
 
+const innerTubeConfigFromEnv = (env: Env): InnerTubeClientConfig => ({
+  clientVersion: env.INNERTUBE_CLIENT_VERSION,
+})
+
+const effectiveInnerTubeClientVersion = (env: Env): string =>
+  getInnerTubeClient(innerTubeConfigFromEnv(env)).clientVersion
+
 // Map an upstream error to a client response (never leak internals).
 const errorResponse = (e: any, params: Params): Response => {
   const upstreamStatus = Number(e?.status)
@@ -114,14 +128,17 @@ const errorResponse = (e: any, params: Params): Response => {
 // ---- effectful pieces -------------------------------------------------------
 
 // Resolve (?video=) or poll (?cont=) -> envelope, or null if there is no chat.
-const fetchEnvelope = async ({ cont, video, offset }: Params): Promise<PollEnvelope | null> => {
+const fetchEnvelope = async (
+  { cont, video, offset }: Params,
+  config: InnerTubeClientConfig,
+): Promise<PollEnvelope | null> => {
   if (cont) {
-    return pollLiveChat(cont, offset != null ? { replay: true, offsetMs: offset } : {})
+    return pollLiveChat(cont, offset != null ? { replay: true, offsetMs: offset } : {}, config)
   }
-  const resolved = await resolveLiveChat(video ?? "")
+  const resolved = await resolveLiveChat(video ?? "", config)
   if (!resolved?.continuation) return null
   const opts = resolved.isReplay ? { replay: true, offsetMs: offset ?? 0 } : {}
-  return pollLiveChat(resolved.continuation, opts)
+  return pollLiveChat(resolved.continuation, opts, config)
 }
 
 const versionFromEnv = (env: Env): string =>
@@ -132,7 +149,8 @@ const healthBody = async (url: URL, env: Env, deps: HandlerDeps) => {
     status: "ok",
     service: "syc-livechat-relay",
     version: versionFromEnv(env),
-    innerTubeClientVersion: INNERTUBE_CLIENT_VERSION,
+    innerTubeClientVersion: effectiveInnerTubeClientVersion(env),
+    defaultInnerTubeClientVersion: DEFAULT_INNERTUBE_CLIENT_VERSION,
     timestamp: (deps.now ?? (() => new Date()))().toISOString(),
   }
 
@@ -149,8 +167,11 @@ const healthBody = async (url: URL, env: Env, deps: HandlerDeps) => {
   }
 
   try {
-    const probe = deps.healthProbe ?? ((videoId: string) => resolveLiveChat(videoId))
-    body.upstream = { checked: true, ok: true, result: await probe(canaryVideoId) }
+    const config = innerTubeConfigFromEnv(env)
+    const probe =
+      deps.healthProbe ??
+      ((videoId: string, cfg: InnerTubeClientConfig) => resolveLiveChat(videoId, cfg))
+    body.upstream = { checked: true, ok: true, result: await probe(canaryVideoId, config) }
   } catch (e: any) {
     body.status = "degraded"
     body.upstream = { checked: true, ok: false, status: e?.status ?? null }
@@ -208,6 +229,7 @@ export const handle = async (
   const params = readParams(url)
   const invalid = validate(params)
   if (invalid) return json({ error: invalid }, 400)
+  const innerTubeConfig = innerTubeConfigFromEnv(env)
 
   const cache: Cache = deps.cache ?? caches.default
   const cacheKey = cacheKeyFor(url, params)
@@ -221,7 +243,7 @@ export const handle = async (
 
   const pending = (async () => {
     try {
-      const result = await (deps.fetchEnvelope ?? fetchEnvelope)(params)
+      const result = await (deps.fetchEnvelope ?? fetchEnvelope)(params, innerTubeConfig)
       if (!result) return json({ error: "no live chat (not live or chat disabled)" }, 404)
       return cacheable(cache, cacheKey, ctx, result)
     } catch (e: any) {
@@ -251,4 +273,5 @@ export const _test = {
   healthBody,
   cacheable,
   errorResponse,
+  effectiveInnerTubeClientVersion,
 }

@@ -16,13 +16,17 @@ type TaggedError = Error & { status: number }
 const INNERTUBE_BASE = "https://www.youtube.com/youtubei/v1"
 
 // Public WEB client identity. No API key required when a valid context is POSTed.
+export const DEFAULT_INNERTUBE_CLIENT_VERSION = "2.20240814.00.00"
 export const INNERTUBE_CLIENT = {
   clientName: "WEB",
-  clientVersion: "2.20240814.00.00",
+  clientVersion: DEFAULT_INNERTUBE_CLIENT_VERSION,
   hl: "en",
   gl: "US",
 }
-export const INNERTUBE_CLIENT_VERSION = INNERTUBE_CLIENT.clientVersion
+
+export interface InnerTubeClientConfig {
+  clientVersion?: string
+}
 
 const FETCH_TIMEOUT_MS = 3500 // per-attempt bound; a hung request aborts and is retried
 const MAX_ATTEMPTS = 2 // total tries (1 + 1 retry): absorb a SINGLE blip, keep worst-case
@@ -34,7 +38,14 @@ const DEFAULT_TIMEOUT_MS = 1000
 const MAX_TIMEOUT_MS = 30000 // cap an absurd value so the device can't be parked forever
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
-const context = () => ({ context: { client: INNERTUBE_CLIENT } })
+export const getInnerTubeClient = (config: InnerTubeClientConfig = {}) => ({
+  ...INNERTUBE_CLIENT,
+  clientVersion: config.clientVersion?.trim() || DEFAULT_INNERTUBE_CLIENT_VERSION,
+})
+
+const context = (config: InnerTubeClientConfig = {}) => ({
+  context: { client: getInnerTubeClient(config) },
+})
 
 // ---- IO layer ---------------------------------------------------------------
 
@@ -125,8 +136,9 @@ const isReplayChat = (lc: any): boolean => {
 // Resolve the initial continuation. Returns { continuation, isReplay } or null.
 export const resolveLiveChat = async (
   videoId: string,
+  config: InnerTubeClientConfig = {},
 ): Promise<{ continuation: string | null; isReplay: boolean } | null> => {
-  const data = await postWithRetry("next", { ...context(), videoId })
+  const data = await postWithRetry("next", { ...context(config), videoId })
   const lc = data?.contents?.twoColumnWatchNextResults?.conversationBar?.liveChatRenderer
   if (!lc) return null
   return { continuation: extractContinuation(lc.continuations).token, isReplay: isReplayChat(lc) }
@@ -144,18 +156,23 @@ export const resolveContinuation = async (videoId: string): Promise<string | nul
 export const pollLiveChat = async (
   continuation: string,
   opts: { replay?: boolean; offsetMs?: number } = {},
+  config: InnerTubeClientConfig = {},
 ): Promise<PollEnvelope> => {
-  if (opts.replay) return pollReplay(continuation, opts.offsetMs ?? 0)
-  const data = await postWithRetry("live_chat/get_live_chat", { ...context(), continuation })
+  if (opts.replay) return pollReplay(continuation, opts.offsetMs ?? 0, config)
+  const data = await postWithRetry("live_chat/get_live_chat", { ...context(config), continuation })
   const lc = data?.continuationContents?.liveChatContinuation
   const messages = (lc?.actions ?? []).map(parseAction).filter(Boolean) as ChatMessage[]
   const { token, timeoutMs } = extractContinuation(lc?.continuations)
   return { messages, continuation: token, timeoutMs, ended: !token, isReplay: false }
 }
 
-const pollReplay = async (continuation: string, offsetMs: number): Promise<PollEnvelope> => {
+const pollReplay = async (
+  continuation: string,
+  offsetMs: number,
+  config: InnerTubeClientConfig,
+): Promise<PollEnvelope> => {
   const data = await postWithRetry("live_chat/get_live_chat_replay", {
-    ...context(),
+    ...context(config),
     continuation,
     currentPlayerState: { playerOffsetMs: String(Math.max(0, Math.floor(offsetMs))) },
   })
