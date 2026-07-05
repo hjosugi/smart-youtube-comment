@@ -13,7 +13,8 @@
   //   * near-duplicate drop — keep variety (serves communication quality)
 
   const SYCScoring = globalThis.SYCScoring ?? {};
-  const tokenSignature = SYCScoring.tokenSignature;
+  const signatureDistance = SYCScoring.signatureDistance;
+  const textSignature = SYCScoring.textSignature;
 
   const DEFAULTS = {
     maxActive: 2000,      // hard ceiling on concurrent sprites
@@ -50,17 +51,6 @@
   const MIN_CAP_FRAME_MS = 50;
 
   const clamp = (min, max, v) => (v < min ? min : v > max ? max : v);
-
-  function popcount(v) {
-    v -= (v >>> 1) & 0x55555555;
-    v = (v & 0x33333333) + ((v >>> 2) & 0x33333333);
-    return (((v + (v >>> 4)) & 0x0f0f0f0f) * 0x01010101) >>> 24;
-  }
-
-  function tokensForSig(text) {
-    const norm = text.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
-    return norm.match(/[\p{L}\p{N}]+/gu) ?? [norm];
-  }
 
   function truncateText(text, maxChars) {
     const chars = [...String(text || "")];
@@ -192,11 +182,11 @@
       const text = truncateText(payload.text, this.cfg.maxTextChars);
       const safePayload = text === payload.text ? payload : Object.assign({}, payload, { text });
 
-      if (this.cfg.dedup && tokenSignature) {
-        const sig = tokenSignature(tokensForSig(safePayload.text)) | 0;
+      if (this.cfg.dedup && textSignature && signatureDistance) {
+        const sig = textSignature(safePayload.text) | 0;
         const rec = this.recent, n = this.recentLen, th = this.cfg.simThreshold;
         for (let i = 0; i < n; i++) {
-          if (popcount((sig ^ rec[i]) >>> 0) <= th) { this.dropped++; return false; }
+          if (signatureDistance(sig, rec[i]) <= th) { this.dropped++; return false; }
         }
         rec[this.recentPos] = sig;
         this.recentPos = (this.recentPos + 1) % rec.length;

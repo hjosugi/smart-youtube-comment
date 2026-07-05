@@ -9,6 +9,8 @@ declare global {
   var SYCScoring: {
     createFallbackScorer(): { score(input: ScoreInput | string): ScoreResult }
     buildRenderPlan(text: string, result: ScoreResult): RenderPlan | null
+    signatureDistance(a: number, b: number): number
+    textSignature(text: string): number
     tokenSignature(values: Iterable<string>): number
     clamp01(v: number): number
     TIER: Record<string, number>

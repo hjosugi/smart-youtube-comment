@@ -127,14 +127,24 @@ import { clamp01 } from "./math.js";
     return hash >>> 0;
   }
 
+  function textSignature(text) {
+    const normalized = normalizeText(String(text ?? ""));
+    const tokens = tokenize(normalized);
+    return tokenSignature(tokens.length > 0 ? tokens : [...normalized]);
+  }
+
   function estimateNovelty(signature, recent) {
     if (recent.length === 0) return 1;
     let bestDistance = 32;
     for (const previous of recent) {
-      const distance = popCount32(signature ^ previous);
+      const distance = signatureDistance(signature, previous);
       if (distance < bestDistance) bestDistance = distance;
     }
     return bestDistance / 32;
+  }
+
+  function signatureDistance(a, b) {
+    return popCount32((a ^ b) >>> 0);
   }
 
   function popCount32(value) {
@@ -167,6 +177,8 @@ import { clamp01 } from "./math.js";
     buildRenderPlan,
     clamp01,
     createFallbackScorer,
+    signatureDistance,
+    textSignature,
     tokenSignature
   };
 })();
