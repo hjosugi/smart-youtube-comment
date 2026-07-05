@@ -6,9 +6,7 @@
   // Localized UI strings (content scripts can use chrome.i18n).
   const t = (name, fallback) => chrome.i18n?.getMessage(name) || fallback;
 
-  const seenKeys = new Set();
-  const seenKeyQueue = [];
-  const MAX_SEEN_KEYS = 3000;
+  let processedChatNodes = new WeakSet();
   const MAX_TEXT_LENGTH = 500;
   const MAX_AUTHOR_LENGTH = 80;
   const VALID_KINDS = new Set(["text", "paid", "membership"]);
@@ -369,18 +367,17 @@
 
   async function processChatNode(node) {
     if (!isUserChatMessageNode(node)) return;
+    if (processedChatNodes.has(node)) return;
 
     const text = sanitizeText(extractMessageText(node), MAX_TEXT_LENGTH);
     if (!text) return;
+    processedChatNodes.add(node);
 
     const author = sanitizeText(extractText(node, "#author-name"), MAX_AUTHOR_LENGTH);
     const kind = extractKind(node);
     const authorType = extractAuthorType(node);
     if (isOfficialChatText({ author, text, kind })) return;
     if (globalThis.SYCFilter?.shouldDrop(author, text)) return;
-    const key = `${kind}:${authorType}:${author}:${text}`;
-    if (seenKeys.has(key)) return;
-    rememberKey(key);
 
     const scorer = getScorer();
     const result = scorer.score({ text, authorType, kind });
@@ -402,14 +399,6 @@
         createdAt: Date.now()
       }
     });
-  }
-
-  function rememberKey(key) {
-    seenKeys.add(key);
-    seenKeyQueue.push(key);
-    while (seenKeyQueue.length > MAX_SEEN_KEYS) {
-      seenKeys.delete(seenKeyQueue.shift());
-    }
   }
 
   function extractKind(node) {
@@ -494,9 +483,11 @@
       isOfficialChatText,
       isUserChatMessageNode,
       processChatNode,
+      resetProcessedNodes() {
+        processedChatNodes = new WeakSet();
+      },
       resetSeenKeys() {
-        seenKeys.clear();
-        seenKeyQueue.length = 0;
+        processedChatNodes = new WeakSet();
       }
     };
   }

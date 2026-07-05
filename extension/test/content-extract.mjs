@@ -164,27 +164,31 @@ assert.equal(helpers.isOfficialChatText({ author: "YouTube", text: "hello", kind
 assert.equal(helpers.isOfficialChatText({ author: "Alice", text: "welcome to live chat", kind: "text" }), true)
 assert.equal(helpers.isOfficialChatText({ author: "Alice", text: "normal comment", kind: "text" }), false)
 
-helpers.resetSeenKeys()
-await helpers.processChatNode(makeChatRenderer({ textValue: "hello world", author: "Alice" }))
+helpers.resetProcessedNodes()
+const firstAliceMessage = makeChatRenderer({ textValue: "hello world", author: "Alice" })
+await helpers.processChatNode(firstAliceMessage)
 assert.equal(sandbox.sentMessages.length, 1)
 assert.equal(sandbox.sentMessages[0].payload.text, "hello world")
 assert.equal(sandbox.sentMessages[0].payload.author, "Alice")
 assert.equal(sandbox.sentMessages[0].payload.authorType, "normal")
 
-await helpers.processChatNode(makeChatRenderer({ textValue: "hello world", author: "Alice" }))
+await helpers.processChatNode(firstAliceMessage)
 assert.equal(sandbox.sentMessages.length, 1)
+
+await helpers.processChatNode(makeChatRenderer({ textValue: "hello world", author: "Alice" }))
+assert.equal(sandbox.sentMessages.length, 2)
 
 await helpers.processChatNode(makeChatRenderer({ textValue: "welcome to live chat", author: "Alice" }))
-assert.equal(sandbox.sentMessages.length, 1)
+assert.equal(sandbox.sentMessages.length, 2)
 
-helpers.resetSeenKeys()
+helpers.resetProcessedNodes()
 await helpers.processChatNode(makeChatRenderer({
   textValue: `  ${"x".repeat(620)}  `,
   author: "  Bob\nName  ",
 }))
-assert.equal(sandbox.sentMessages.length, 2)
-assert.equal(sandbox.sentMessages[1].payload.text.length, 500)
-assert.equal(sandbox.sentMessages[1].payload.author, "Bob Name")
-assert.equal(sandbox.sentMessages[1].payload.kind, "text")
+assert.equal(sandbox.sentMessages.length, 3)
+assert.equal(sandbox.sentMessages[2].payload.text.length, 500)
+assert.equal(sandbox.sentMessages[2].payload.author, "Bob Name")
+assert.equal(sandbox.sentMessages[2].payload.kind, "text")
 
-console.log("content-extract ok (18 assertions)")
+console.log("content-extract ok (19 assertions)")
