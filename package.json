@@ -45,7 +45,7 @@
     "esbuild": "0.28.1",
     "playwright": "1.60.0",
     "prettier": "3.9.4",
-    "typescript": "5.7.2",
+    "typescript": "6.0.3",
     "wrangler": "4.107.0"
   }
 }
