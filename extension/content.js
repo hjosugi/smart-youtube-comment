@@ -296,8 +296,8 @@
   // --- Chat extraction (all frames) -----------------------------------------
 
   function initChatExtractor() {
-    globalThis.SYCFilter?.load();
-    globalThis.SYCFilter?.onChange();
+    const filterReady = Promise.resolve(globalThis.SYCFilter?.load?.()).catch(() => {});
+    globalThis.SYCFilter?.onChange?.();
     let observer = null;
     let observedRoot = null;
 
@@ -347,12 +347,16 @@
       }
     };
 
-    observe();
-    scan();
-    window.setInterval(() => {
+    const start = () => {
       observe();
       scan();
-    }, 2500);
+      window.setInterval(() => {
+        observe();
+        scan();
+      }, 2500);
+    };
+
+    filterReady.then(start);
   }
 
   const MESSAGE_SELECTOR =

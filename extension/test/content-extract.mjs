@@ -130,6 +130,90 @@ const loadHelpers = () => {
   return { helpers: sandbox.globalThis.__SYCContentTest, sandbox }
 }
 
+const loadLiveChatStartup = () => {
+  let releaseFilter
+  let filterLoaded = false
+  let filterLoadStarted = false
+  const blockedNode = makeChatRenderer({ textValue: "blocked word", author: "Alice" })
+  const intervals = []
+  const sandbox = {
+    Element: function Element() {},
+    MutationObserver: class {
+      observe() {}
+      disconnect() {}
+    },
+    globalThis: null,
+    chrome: {
+      i18n: { getMessage: () => "" },
+      runtime: {
+        lastError: null,
+        sendMessage(message, callback) {
+          sandbox.sentMessages.push(message)
+          callback?.()
+        },
+      },
+    },
+    document: {
+      documentElement: { isConnected: true },
+      querySelector() {
+        return null
+      },
+      querySelectorAll() {
+        return [blockedNode]
+      },
+    },
+    location: { pathname: "/live_chat" },
+    Promise,
+    sentMessages: [],
+    window: {
+      setInterval(callback, delay) {
+        intervals.push({ callback, delay })
+        return intervals.length
+      },
+    },
+  }
+  sandbox.globalThis = sandbox
+  sandbox.window.top = {}
+  sandbox.globalThis.SYCScoring = {
+    buildRenderPlan: result => ({
+      tier: 1,
+      durationMs: 7500,
+      score: result.score ?? 0,
+      emphasis: result.emphasis ?? 0,
+      reasons: result.reasons ?? [],
+    }),
+    createFallbackScorer: () => ({ score: () => ({ score: 0.7, emphasis: 0.2, reasons: ["test"] }) }),
+  }
+  sandbox.globalThis.SYCFilter = {
+    load() {
+      filterLoadStarted = true
+      return new Promise(resolve => {
+        releaseFilter = () => {
+          filterLoaded = true
+          resolve()
+        }
+      })
+    },
+    onChange() {},
+    shouldDrop(_author, textValue) {
+      return filterLoaded && textValue.includes("blocked")
+    },
+  }
+
+  runInNewContext(readFileSync(resolve("extension/content.js"), "utf8"), sandbox, {
+    filename: "extension/content.js",
+  })
+
+  return {
+    get filterLoadStarted() {
+      return filterLoadStarted
+    },
+    intervals,
+    releaseFilter,
+    sandbox,
+  }
+}
+
 const { helpers, sandbox } = loadHelpers()
 
 {
@@ -191,4 +275,17 @@ assert.equal(sandbox.sentMessages[2].payload.text.length, 500)
 assert.equal(sandbox.sentMessages[2].payload.author, "Bob Name")
 assert.equal(sandbox.sentMessages[2].payload.kind, "text")
 
-console.log("content-extract ok (19 assertions)")
+{
+  const startup = loadLiveChatStartup()
+  assert.equal(startup.filterLoadStarted, true)
+  assert.equal(startup.sandbox.sentMessages.length, 0)
+  assert.equal(startup.intervals.length, 0)
+  startup.releaseFilter()
+  await Promise.resolve()
+  await Promise.resolve()
+  assert.equal(startup.sandbox.sentMessages.length, 0)
+  assert.equal(startup.intervals.length, 1)
+  assert.equal(startup.intervals[0].delay, 2500)
+}
+
+console.log("content-extract ok (25 assertions)")
