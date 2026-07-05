@@ -116,6 +116,28 @@ const assertRasterCacheInvalidation = (label, Overlay, rasterize) => {
   assert.equal(overlay.cache.size, 0, `${label}: geometry changes should clear cached bitmaps`)
 }
 
+const assertResizeGating = (label, Overlay) => {
+  const overlay = new Overlay({ dpr: 1, lineHeight: 24, topPct: 0.08, bottomPct: 0.14 })
+  overlay.canvas = makeCanvas()
+  overlay.player = { getBoundingClientRect: () => ({ width: 320, height: 180 }) }
+  let resizes = 0
+  overlay._resize = () => {
+    resizes += 1
+  }
+
+  overlay.setConfig({ opacity: 0.5 })
+  assert.equal(resizes, 0, `${label}: visual-only changes should not resize canvas`)
+
+  overlay.setConfig({ maxActive: 300 })
+  assert.equal(resizes, 0, `${label}: throughput-only changes should not resize canvas`)
+
+  overlay.setConfig({ lineHeight: 32 })
+  assert.equal(resizes, 1, `${label}: lane geometry changes should resize canvas`)
+
+  overlay.setConfig({ dpr: 1.5 })
+  assert.equal(resizes, 2, `${label}: dpr changes should resize canvas`)
+}
+
 const assertRendererDefaultsMatchSettings = (label, rendererDefaults, settings) => {
   const engineDefaults = settings.toEngineConfig(settings.DEFAULTS)
   const rendererEngineDefaults = Object.fromEntries(
@@ -291,6 +313,7 @@ assertLruCache("web", webOverlay, (overlay, text) =>
 assertRasterCacheInvalidation("web", webOverlay, (overlay, text) =>
   overlay._rasterize([{ t: text }], "#fff", 24, false),
 )
+assertResizeGating("web", webOverlay)
 
 const {
   Overlay: extensionOverlay,
@@ -310,5 +333,6 @@ assertLruCache("extension", extensionOverlay, (overlay, text) =>
 assertRasterCacheInvalidation("extension", extensionOverlay, (overlay, text) =>
   overlay._rasterize(text, "#fff", 24, false),
 )
+assertResizeGating("extension", extensionOverlay)
 
-console.log("danmaku ok (62 assertions)")
+console.log("danmaku ok (70 assertions)")

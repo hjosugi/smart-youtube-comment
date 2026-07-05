@@ -56,6 +56,7 @@
     "textColor",
     "roleColors"
   ];
+  const GEOMETRY_CONFIG_KEYS = ["dpr", "lineHeight", "topPct", "bottomPct"];
 
   const COLORS = { owner: "#ffca28", moderator: "#5e9bff", member: "#7CFC8C", normal: "#ffffff" };
   const AUTHOR_BOOST = { owner: 0.40, moderator: 0.25, member: 0.10, normal: 0 };
@@ -160,10 +161,13 @@
       const shouldClearRasterCache = RASTER_CONFIG_KEYS.some((key) =>
         partial[key] != null && partial[key] !== this.cfg[key]
       );
+      const shouldResize = GEOMETRY_CONFIG_KEYS.some((key) =>
+        partial[key] != null && partial[key] !== this.cfg[key]
+      );
       Object.assign(this.cfg, partial);
       if (shouldClearRasterCache) this.cache.clear();
       if (partial.maxActive != null || partial.minActive != null) this._updateDynamicCap();
-      if (this.canvas) this._resize();
+      if (this.canvas && shouldResize) this._resize();
     }
 
     _updateDynamicCap() {

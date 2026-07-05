@@ -23,9 +23,17 @@ const range = (spec, value, onInput) => {
     el("input", { type: "range", min: spec.min, max: spec.max, step: spec.step ?? 1, value }),
     spec.key,
   )
-  input.addEventListener("input", () => {
+  const read = () => Number(input.value)
+  const updateReadout = () => {
     readout.textContent = `${input.value}${spec.unit ?? ""}`
-    onInput(spec.key, Number(input.value))
+  }
+  input.addEventListener("input", () => {
+    updateReadout()
+    onInput(spec.key, read(), false)
+  })
+  input.addEventListener("change", () => {
+    updateReadout()
+    onInput(spec.key, read(), true)
   })
   return row(spec.label, input, readout)
 }
@@ -38,7 +46,8 @@ const bool = (spec, value, onInput) => {
 
 const color = (spec, value, onInput) => {
   const input = tag(el("input", { type: "color", value }), spec.key)
-  input.addEventListener("input", () => onInput(spec.key, input.value))
+  input.addEventListener("input", () => onInput(spec.key, input.value, false))
+  input.addEventListener("change", () => onInput(spec.key, input.value, true))
   return row(spec.label, input)
 }
 

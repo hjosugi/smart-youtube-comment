@@ -34,10 +34,23 @@ const sheetWith = (button, root, title) => {
 
 const settingsSection = async (settings, sheet) => {
   const draft = { ...(await settings.load()) }
+  let saveTimer: ReturnType<typeof setTimeout> | null = null
   settings.onChange(next => Object.assign(draft, next))
-  const onInput = (key, v) => {
+  const persist = () => {
+    if (saveTimer) clearTimeout(saveTimer)
+    saveTimer = null
+    return settings.save({ ...draft })
+  }
+  const schedulePersist = () => {
+    if (saveTimer) clearTimeout(saveTimer)
+    saveTimer = setTimeout(() => {
+      saveTimer = null
+      settings.save({ ...draft })
+    }, 150)
+  }
+  const onInput = (key, v, commit = true) => {
     draft[key] = v
-    settings.save({ ...draft })
+    commit ? persist() : schedulePersist()
   }
 
   const body = el("div", { className: "ctls" })

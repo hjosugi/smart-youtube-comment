@@ -22,13 +22,29 @@ await page.waitForSelector('[data-key="speedPct"]', { timeout: 4000 })
 
 // schema-driven: several known controls exist
 const controlKeys = await page.$$eval("[data-key]", els => els.map(e => e.dataset.key))
+await page.evaluate(() => {
+  const originalSet = chrome.storage.local.set.bind(chrome.storage.local)
+  let settingsWrites = 0
+  chrome.storage.local.set = async obj => {
+    if (Object.prototype.hasOwnProperty.call(obj, "syc:settings")) settingsWrites += 1
+    return originalSet(obj)
+  }
+  globalThis.__settingsWrites = () => settingsWrites
+})
 
-// change scroll speed to 200% and dispatch input (live preview + save)
+// Dragging a slider emits noisy input events; persistence should debounce them.
 await page.$eval('[data-key="speedPct"]', el => {
+  el.value = "160"
+  el.dispatchEvent(new Event("input", { bubbles: true }))
+  el.value = "180"
+  el.dispatchEvent(new Event("input", { bubbles: true }))
   el.value = "200"
   el.dispatchEvent(new Event("input", { bubbles: true }))
 })
+await page.waitForTimeout(75)
+const writesDuringDrag = await page.evaluate(() => globalThis.__settingsWrites())
 await page.waitForTimeout(200)
+const writesAfterDebounce = await page.evaluate(() => globalThis.__settingsWrites())
 
 const after = await page.evaluate(() => ({
   durationScale: globalThis.SYCApp?.overlay?.cfg?.durationScale,
@@ -58,6 +74,8 @@ const checks = [
     ["speedPct", "opacity", "maxActive"].every(k => controlKeys.includes(k)),
   ],
   ["speed 200% -> durationScale 0.5 (live)", Math.abs((after.durationScale ?? 0) - 0.5) < 1e-9],
+  ["range input does not persist immediately while dragging", writesDuringDrag === 0],
+  ["range input coalesces to one debounced save", writesAfterDebounce === 1],
   ["speedPct persisted to localStorage", after.saved === 200],
   ["sheet save preserves top-bar overlay toggle", after.savedEnabled === false],
   ["top-bar overlay toggle stays reflected", after.togglePressed === "false"],
