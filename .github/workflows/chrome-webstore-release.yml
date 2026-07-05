@@ -2,6 +2,8 @@ name: Chrome Web Store Release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*"
   workflow_dispatch:
@@ -30,6 +32,11 @@ on:
         required: true
         default: false
         type: boolean
+      dry_run:
+        description: "Validate package and print intended Chrome Web Store operations without network calls."
+        required: true
+        default: false
+        type: boolean
       deploy_percentage:
         description: "Optional initial rollout percentage, 0-100."
         required: false
@@ -55,6 +62,7 @@ jobs:
       CHROME_WEBSTORE_ACCESS_TOKEN: ${{ secrets.CHROME_WEBSTORE_ACCESS_TOKEN }}
       CHROME_WEBSTORE_BLOCK_ON_WARNINGS: "1"
       CHROME_WEBSTORE_SKIP_REVIEW: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_review || false }}
+      CHROME_WEBSTORE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
       CHROME_WEBSTORE_DEPLOY_PERCENTAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_percentage || '' }}
       GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
       GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
@@ -74,7 +82,7 @@ jobs:
 
       - name: Authenticate to Google Cloud
         id: google-auth
-        if: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && env.GCP_SERVICE_ACCOUNT != '' }}
+        if: ${{ (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)) && env.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && env.GCP_SERVICE_ACCOUNT != '' }}
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
@@ -83,7 +91,7 @@ jobs:
           access_token_scopes: https://www.googleapis.com/auth/chromewebstore
 
       - name: Use short-lived Chrome Web Store access token
-        if: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && env.GCP_SERVICE_ACCOUNT != '' }}
+        if: ${{ (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)) && env.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && env.GCP_SERVICE_ACCOUNT != '' }}
         env:
           ACCESS_TOKEN: ${{ steps.google-auth.outputs.access_token }}
         run: echo "CHROME_WEBSTORE_ACCESS_TOKEN=${ACCESS_TOKEN}" >> "$GITHUB_ENV"
@@ -131,9 +139,9 @@ jobs:
           if-no-files-found: error
 
       - name: Upload to Chrome Web Store
-        if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.status_only && !inputs.publish_only) }}
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && !inputs.status_only && !inputs.publish_only) }}
         run: npm run release:store:upload
 
       - name: Publish in Chrome Web Store
-        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.status_only && !inputs.publish_only && inputs.publish) }}
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && !inputs.status_only && !inputs.publish_only && inputs.publish) }}
         run: npm run release:store:publish
