@@ -10,28 +10,42 @@ const hasNavigator = typeof navigator !== "undefined"
 export const createWakeLock = () => {
   const supported = hasNavigator && "wakeLock" in navigator
   let sentinel: any = null
+  let pending = false
+  let wanted = false
 
   const acquire = async () => {
-    if (!supported || sentinel) return
+    wanted = true
+    if (!supported || sentinel || pending) return
+    pending = true
     try {
-      sentinel = await navigator.wakeLock.request("screen")
-      sentinel.addEventListener?.("release", () => (sentinel = null))
+      const next = await navigator.wakeLock.request("screen")
+      if (!wanted) {
+        await next.release?.()
+        return
+      }
+      sentinel = next
+      sentinel.addEventListener?.("release", () => {
+        if (sentinel === next) sentinel = null
+      })
     } catch {
       sentinel = null
+    } finally {
+      pending = false
     }
   }
 
   const release = async () => {
+    wanted = false
+    const current = sentinel
+    sentinel = null
     try {
-      await sentinel?.release?.()
-    } finally {
-      sentinel = null
-    }
+      await current?.release?.()
+    } catch {}
   }
 
   if (typeof document !== "undefined") {
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") acquire()
+      if (wanted && document.visibilityState === "visible") acquire()
     })
   }
 

@@ -79,6 +79,7 @@ const startMockMode = () => {
     stopMock()
     overlay.detach()
     list.clear()
+    setStatus("stopped")
   }
 }
 
@@ -145,6 +146,7 @@ const startLive = async (videoId: string, relay: string, startSeconds = 0) => {
     activeVideo = null
     seekActive = null
     player.destroy?.()
+    setStatus("stopped")
   }
 }
 

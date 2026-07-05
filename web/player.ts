@@ -50,7 +50,7 @@ export const mountPlayer = async (
       },
       events: {
         onReady: () => resolve(player),
-        onStateChange: (e: any) => onState?.(STATE[e.data] ?? "playing"),
+        onStateChange: (e: any) => onState?.(STATE[e.data] ?? "paused"),
       },
     })
   })

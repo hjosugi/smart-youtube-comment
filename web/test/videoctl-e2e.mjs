@@ -98,7 +98,7 @@ await page.waitForFunction(() => globalThis.SYCApp?.videoctl)
 const r = await page.evaluate(async () => {
   const { mountControls, fmtTime } = globalThis.SYCApp.videoctl
 
-  const calls = { play: 0, pause: 0, seek: null }
+  const calls = { play: 0, pause: 0, seek: [] }
   let state = 2 // paused
   const player = {
     getPlayerState: () => state,
@@ -112,9 +112,7 @@ const r = await page.evaluate(async () => {
       calls.pause += 1
       state = 2
     },
-    seekTo: s => {
-      calls.seek = s
-    },
+    seekTo: s => calls.seek.push(s),
   }
 
   const stage = document.createElement("div")
@@ -138,7 +136,13 @@ const r = await page.evaluate(async () => {
   const seek = stage.querySelector(".vctl-seek")
   seek.value = "500"
   seek.dispatchEvent(new Event("change", { bubbles: true }))
-  out.seekSeeks = calls.seek === 50 // 500/1000 * duration(100)
+  out.seekSeeks = calls.seek.length === 1 && calls.seek[0] === 50 // 500/1000 * duration(100)
+
+  seek.value = "250"
+  seek.dispatchEvent(new Event("pointerdown", { bubbles: true }))
+  seek.dispatchEvent(new Event("pointerup", { bubbles: true }))
+  seek.dispatchEvent(new Event("change", { bubbles: true }))
+  out.pointerSeekOnce = calls.seek.length === 2 && calls.seek[1] === 25
 
   unmount()
   out.unmounted = !stage.querySelector(".vctl")
@@ -175,7 +179,14 @@ const pausedAfter = apiCalls
 await page.evaluate(() => globalThis.__sycEmitPlayerState(1))
 await waitFor(() => apiCalls > pausedAfter, 2500)
 const playingAfter = apiCalls
+
+await page.evaluate(() => globalThis.__sycEmitPlayerState(-1))
+const unknownAt = apiCalls
+await new Promise(r => setTimeout(r, 950))
+const unknownAfter = apiCalls
+
 await page.evaluate(() => globalThis.SYCApp.stop())
+const stoppedStatus = await page.textContent("#status")
 
 await browser.close()
 close()
@@ -187,12 +198,15 @@ const checks = [
   ["tap toggles pause", r.tapPauses],
   ["play button toggles", r.btnToggles],
   ["seek bar seeks", r.seekSeeks],
+  ["pointer seek commits once", r.pointerSeekOnce],
   ["teardown removes overlay", r.unmounted],
   ["live client starts polling", afterStart >= 1],
   ["visibilitychange hidden pauses polling", hiddenAfter === hiddenAt],
   ["visibilitychange visible resumes polling", visibleAfter > hiddenAfter],
   ["player paused state pauses polling", pausedAfter === pausedAt],
   ["player playing state resumes polling", playingAfter > pausedAfter],
+  ["unknown player state pauses polling", unknownAfter === unknownAt],
+  ["stop updates status", stoppedStatus === "stopped" || stoppedStatus === "停止"],
   ["no page errors", errors.length === 0],
 ]
 
@@ -214,6 +228,9 @@ if (!ok) {
       pausedAt,
       pausedAfter,
       playingAfter,
+      unknownAt,
+      unknownAfter,
+      stoppedStatus,
     }),
     errors,
   )

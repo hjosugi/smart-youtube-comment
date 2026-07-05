@@ -36,6 +36,7 @@ export const mountControls = (stage, player, { hideMs = 3500 } = {}) => {
   const duration = () => player.getDuration?.() || 0
   let hideTimer: any = null
   let scrubbing = false
+  let lastCommittedSeek: { key: string; at: number } | null = null
 
   const setIcon = () => (playBtn.innerHTML = isPlaying() ? ICON_PAUSE : ICON_PLAY)
   const show = () => {
@@ -61,7 +62,17 @@ export const mountControls = (stage, player, { hideMs = 3500 } = {}) => {
   // Scrub: drag the seek bar, commit on release.
   const previewSeek = () => (cur.textContent = fmtTime((seek.value / 1000) * duration()))
   const commitSeek = () => {
-    player.seekTo?.((seek.value / 1000) * duration(), true)
+    const d = duration()
+    const commitKey = `${seek.value}:${d}`
+    const now = performance.now()
+    if (
+      !lastCommittedSeek ||
+      commitKey !== lastCommittedSeek.key ||
+      now - lastCommittedSeek.at > 250
+    ) {
+      player.seekTo?.((seek.value / 1000) * d, true)
+      lastCommittedSeek = { key: commitKey, at: now }
+    }
     scrubbing = false
     show()
   }
@@ -72,6 +83,10 @@ export const mountControls = (stage, player, { hideMs = 3500 } = {}) => {
   seek.addEventListener("input", previewSeek)
   seek.addEventListener("change", commitSeek)
   seek.addEventListener("pointerup", commitSeek)
+  seek.addEventListener("pointercancel", () => {
+    scrubbing = false
+    show()
+  })
 
   const tick = setInterval(() => {
     setIcon()
