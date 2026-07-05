@@ -88,6 +88,22 @@ const assertLruCache = (label, Overlay, rasterize) => {
   assert.equal(hasCacheText(overlay.cache, "gamma"), true, `${label}: new bitmap should be cached`)
 }
 
+const assertDprCacheInvalidation = (label, Overlay, rasterize) => {
+  const overlay = new Overlay({ cacheMax: 4, dpr: 1, dedup: false })
+
+  rasterize(overlay, "scale")
+  assert.equal(overlay.cache.size, 1, `${label}: first bitmap should be cached`)
+
+  overlay.setConfig({ dpr: 2 })
+  assert.equal(overlay.cache.size, 0, `${label}: dpr changes should clear cached bitmaps`)
+
+  rasterize(overlay, "scale")
+  assert.equal(overlay.cache.size, 1, `${label}: new dpr bitmap should be cached`)
+
+  overlay.setConfig({ dpr: 2 })
+  assert.equal(overlay.cache.size, 1, `${label}: unchanged dpr should keep cached bitmaps`)
+}
+
 const assertScoringHelpers = (label, scoring) => {
   const normalized = scoring.textSignature("Ｆｏｏ　BAR!!!")
   const sameTokens = scoring.textSignature("foo bar")
@@ -231,6 +247,9 @@ assertAdaptiveCap("web", webOverlay)
 assertLruCache("web", webOverlay, (overlay, text) =>
   overlay._rasterize([{ t: text }], "#fff", 24, false),
 )
+assertDprCacheInvalidation("web", webOverlay, (overlay, text) =>
+  overlay._rasterize([{ t: text }], "#fff", 24, false),
+)
 
 const {
   Overlay: extensionOverlay,
@@ -244,5 +263,8 @@ assertAdaptiveCap("extension", extensionOverlay)
 assertLruCache("extension", extensionOverlay, (overlay, text) =>
   overlay._rasterize(text, "#fff", 24, false),
 )
+assertDprCacheInvalidation("extension", extensionOverlay, (overlay, text) =>
+  overlay._rasterize(text, "#fff", 24, false),
+)
 
-console.log("danmaku ok (44 assertions)")
+console.log("danmaku ok (52 assertions)")

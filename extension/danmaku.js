@@ -145,7 +145,9 @@
     }
 
     setConfig(partial) {
+      const previousDpr = this.cfg.dpr;
       Object.assign(this.cfg, partial);
+      if (partial.dpr != null && partial.dpr !== previousDpr) this.cache.clear();
       if (partial.maxActive != null || partial.minActive != null) this._updateDynamicCap();
       if (this.canvas) this._resize();
     }
