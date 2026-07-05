@@ -136,6 +136,7 @@ jobs:
         with:
           name: chrome-extension-release
           path: .release/*
+          include-hidden-files: true
           if-no-files-found: error
 
       - name: Upload to Chrome Web Store
