@@ -53,7 +53,9 @@ function checkManifest() {
     fail('extension/manifest.json permissions must remain minimal: ["storage"].')
   }
   if ("host_permissions" in manifest) {
-    fail("extension/manifest.json must not request host_permissions; content_scripts.matches scopes injection.")
+    fail(
+      "extension/manifest.json must not request host_permissions; content_scripts.matches scopes injection.",
+    )
   }
 
   const csp = manifest.content_security_policy?.extension_pages ?? ""
