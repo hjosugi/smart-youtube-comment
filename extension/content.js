@@ -451,18 +451,46 @@
 
   function extractMessageText(node) {
     const message = node.querySelector("#message");
-    if (message) return normalizeDisplayText(message.textContent || "");
+    if (message) return normalizeDisplayText(extractDisplayText(message));
 
     const body = node.querySelector("#message-container, #content, #card");
-    return normalizeDisplayText(body?.textContent || "");
+    return normalizeDisplayText(body ? extractDisplayText(body) : "");
   }
 
   function extractText(node, selector) {
     return normalizeDisplayText(node.querySelector(selector)?.textContent || "");
   }
 
+  function extractDisplayText(root) {
+    const pieces = [];
+    const visit = (node) => {
+      if (!node) return;
+      if (node.nodeType === 3) {
+        pieces.push(node.textContent || "");
+        return;
+      }
+      if (node.nodeType !== 1) return;
+      const tag = String(node.localName || node.tagName || "").toLowerCase();
+      if (tag === "img") {
+        pieces.push(node.getAttribute?.("alt") || node.getAttribute?.("aria-label") || "");
+        return;
+      }
+      for (const child of node.childNodes || []) visit(child);
+    };
+    visit(root);
+    return pieces.join("");
+  }
+
   function normalizeDisplayText(text) {
     return text.replace(/\s+/g, " ").trim();
+  }
+
+  if (globalThis.__SYC_TEST__) {
+    globalThis.__SYCContentTest = {
+      extractMessageText,
+      extractDisplayText,
+      normalizeDisplayText
+    };
   }
 
   if (isTopFrame()) initRenderer();
