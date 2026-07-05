@@ -107,6 +107,50 @@ globalThis.fetch = async url => {
   assert("stop halts polling", calls.length - atStop <= 1, `grew by ${calls.length - atStop}`)
 }
 
+// --- stale continuation 410 immediately re-resolves from videoId ---
+{
+  calls = []
+  const responses = [
+    { ok: true, status: 200, body: { messages: [], continuation: "stale", timeoutMs: 20 } },
+    { ok: false, status: 410, body: { error: "stale continuation", reResolve: true } },
+    { ok: true, status: 200, body: { messages: [], continuation: null, ended: true } },
+  ]
+  globalThis.fetch = async url => {
+    const u = url instanceof URL ? url : new URL(url)
+    calls.push({
+      cont: u.searchParams.get("cont"),
+      video: u.searchParams.get("video"),
+      offset: u.searchParams.get("offset"),
+    })
+    const response = responses.shift()
+    return { ok: response.ok, status: response.status, json: async () => response.body }
+  }
+
+  const errors = []
+  let endedReason = null
+  const c = createLiveChatClient({
+    base: "http://x",
+    minIntervalMs: 20,
+    quietThreshold: 0,
+    jitterRatio: 0,
+    reResolveAfter: 99,
+  })
+  await c.start("VIDEOIDXXXX", {
+    onError: (e, n) => errors.push({ status: e.status, n }),
+    onEnded: info => (endedReason = info.reason),
+  })
+  assert(
+    "410 stale continuation re-resolves immediately",
+    calls.map(x => (x.cont ? "cont" : x.video ? "video" : "none")).join(",") === "video,cont,video",
+    JSON.stringify(calls),
+  )
+  assert(
+    "410 stale continuation reports one error",
+    errors.length === 1 && errors[0].status === 410,
+  )
+  assert("410 recovery reaches terminal envelope", endedReason === "ended", String(endedReason))
+}
+
 let allOk = true
 for (const c of checks) {
   console.log(`${c.ok ? "✅" : "❌"} ${c.name}${c.ok ? "" : "  -> " + c.extra}`)

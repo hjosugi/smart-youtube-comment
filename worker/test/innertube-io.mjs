@@ -84,6 +84,16 @@ test("postWithRetry does not retry deterministic 4xx failures", async () => {
   assert.equal(calls.length, 1)
 })
 
+test("postWithRetry does not retry upstream rate-limit responses", async () => {
+  const calls = mockFetch(() => textResponse("rate limited", { status: 429 }))
+
+  await assert.rejects(_test.postWithRetry("next", {}), error => {
+    assert.equal(error.status, 429)
+    return true
+  })
+  assert.equal(calls.length, 1)
+})
+
 test("postWithRetry stops after the configured transient retry budget", async () => {
   Math.random = () => 0
   const calls = mockFetch(() => textResponse("bad gateway", { status: 502 }))

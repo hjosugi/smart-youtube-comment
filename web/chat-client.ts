@@ -132,6 +132,7 @@ export function createLiveChatClient(options = {}) {
     if (!res.ok) {
       const err: any = new Error(body?.error || `HTTP ${res.status}`)
       err.status = res.status
+      err.reResolve = body?.reResolve === true
       throw err
     }
     return body
@@ -197,6 +198,11 @@ export function createLiveChatClient(options = {}) {
         if (!outcome.ok && outcome.error?.status === 404) {
           onEnded?.({ reason: "unavailable" })
           break
+        }
+        if (!outcome.ok && (outcome.error?.status === 410 || outcome.error?.reResolve)) {
+          onError?.(outcome.error, state.failures + 1)
+          state = { cont: null, failures: 0, quiet: state.quiet }
+          continue
         }
 
         if (outcome.ok && outcome.env.isReplay) replay = true

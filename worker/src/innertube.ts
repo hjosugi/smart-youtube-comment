@@ -35,9 +35,9 @@ const context = () => ({ context: { client: INNERTUBE_CLIENT } })
 
 // YouTube's InnerTube is reachable from Cloudflare egress IPs but occasionally
 // tarpits a request (it hangs to our timeout) or returns 429/5xx. These are
-// transient and clear on retry; a 4xx is deterministic and is NOT retried.
-const isRetriable = (status: number) =>
-  status === 504 || status === 429 || (status >= 500 && status < 600)
+// transient and clear on retry; 4xx/429 are deterministic client/upstream-rate
+// signals and are NOT retried by the Worker.
+const isRetriable = (status: number) => status === 504 || (status >= 500 && status < 600)
 
 // POST with a per-attempt timeout + bounded, jittered retry (recursive).
 const postWithRetry = async (endpoint: string, body: unknown, attempt = 1): Promise<any> => {
@@ -181,13 +181,16 @@ const CONT_DATA_KEYS = [
 
 const pickContData = (c: any = {}): any => CONT_DATA_KEYS.map(k => c[k]).find(Boolean) ?? {}
 
+const pickContinuationData = (continuations: any[] = []): any =>
+  continuations.map(pickContData).find(d => d.continuation != null || d.timeoutMs != null) ?? {}
+
 const clampTimeout = (ms: number): number =>
   !Number.isFinite(ms) ? DEFAULT_TIMEOUT_MS : Math.max(MIN_TIMEOUT_MS, Math.min(ms, MAX_TIMEOUT_MS))
 
 const extractContinuation = (
   continuations: any[] = [],
 ): { token: string | null; timeoutMs: number } => {
-  const d = pickContData(continuations[0])
+  const d = pickContinuationData(continuations)
   return { token: d.continuation ?? null, timeoutMs: clampTimeout(Number(d.timeoutMs)) }
 }
 

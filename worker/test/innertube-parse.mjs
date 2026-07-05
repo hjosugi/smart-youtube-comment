@@ -187,6 +187,13 @@ test("continuation extraction preserves precedence and clamps timeout boundaries
       .timeoutMs,
     999,
   )
+  assert.deepEqual(
+    extractContinuation([
+      { unknownContinuationData: { continuation: "ignored", timeoutMs: 1 } },
+      { reloadContinuationData: { continuation: "I", timeoutMs: 2000 } },
+    ]),
+    { token: "I", timeoutMs: 2000 },
+  )
 })
 
 test("replay chat detection covers flags, English titles, and localized titles", () => {

@@ -11,9 +11,10 @@
 //   GET /api/livechat?cont=<token>&offset=ms -> next replay (VOD) poll at offset
 // Response: { messages, continuation, timeoutMs, ended, isReplay }
 //
-// Edge cache (s-maxage = timeoutMs) collapses post-population polls of the same
-// continuation onto one upstream call (IP-ban mitigation, NOT a quota win — see
-// ARCHITECTURE.md §9.1). There is no in-flight coalescing.
+// Edge cache (s-maxage = floor(timeoutMs / 1000)) collapses post-population
+// polls of the same normalized key onto one upstream call (IP-ban mitigation,
+// NOT a quota win — see ARCHITECTURE.md §9.1). A small in-isolate in-flight map
+// also collapses cold-key bursts before cache population.
 
 import { INNERTUBE_CLIENT_VERSION, resolveLiveChat, pollLiveChat } from "./innertube.ts"
 import type { PollEnvelope } from "../../web/types.ts"
@@ -39,6 +40,7 @@ interface HandlerDeps {
   cache?: Cache
   fetchEnvelope?: (params: Params) => Promise<PollEnvelope | null>
   healthProbe?: (videoId: string) => Promise<unknown>
+  inflight?: Map<string, Promise<Response>>
   logError?: (...args: unknown[]) => void
   now?: () => Date
 }
@@ -53,6 +55,9 @@ const CORS: Record<string, string> = {
 const VIDEO_ID_RE = /^[\w-]{11}$/
 const CONTINUATION_RE = /^[A-Za-z0-9_-][A-Za-z0-9._=-]*$/
 const MAX_CONT_LEN = 8192
+const REPLAY_CACHE_BUCKET_MS = 3000
+const NEGATIVE_CACHE_TTL_SECONDS = 1
+const inflightResponses = new Map<string, Promise<Response>>()
 
 // ---- pure helpers -----------------------------------------------------------
 
@@ -84,10 +89,30 @@ const validate = ({ cont, video, offset }: Params): string | null => {
   return null
 }
 
+const normalizeOffset = (offset: number): number =>
+  Math.floor(Math.max(0, offset) / REPLAY_CACHE_BUCKET_MS) * REPLAY_CACHE_BUCKET_MS
+
+const cacheKeyFor = (url: URL, params: Params): Request => {
+  const normalized = new URL(url.origin + url.pathname)
+  if (params.cont) normalized.searchParams.set("cont", params.cont)
+  else if (params.video) normalized.searchParams.set("video", params.video)
+  if (params.offset != null)
+    normalized.searchParams.set("offset", String(normalizeOffset(params.offset)))
+  return new Request(normalized.toString(), { method: "GET" })
+}
+
 // Map an upstream error to a client response (never leak internals).
-const errorResponse = (e: any): Response => {
-  const status = Number(e?.status) === 429 ? 429 : 502
-  return json({ error: status === 429 ? "rate limited upstream" : "upstream error" }, status)
+const errorResponse = (e: any, params: Params): Response => {
+  const upstreamStatus = Number(e?.status)
+  const headers = {
+    "Cache-Control": `public, s-maxage=${NEGATIVE_CACHE_TTL_SECONDS}`,
+    "X-SYC-Cache": "NEGATIVE",
+  }
+  if (upstreamStatus === 429) return json({ error: "rate limited upstream" }, 429, headers)
+  if (params.cont && upstreamStatus >= 400 && upstreamStatus < 500) {
+    return json({ error: "stale continuation", reResolve: true }, 410, headers)
+  }
+  return json({ error: "upstream error" }, 502, headers)
 }
 
 // ---- effectful pieces -------------------------------------------------------
@@ -159,6 +184,16 @@ const cacheable = (
   return resp
 }
 
+const cacheNegative = (
+  cache: Cache,
+  key: Request,
+  ctx: ExecutionContext,
+  response: Response,
+): Response => {
+  ctx.waitUntil(cache.put(key, response.clone()))
+  return response
+}
+
 export const handle = async (
   request: Request,
   env: Env,
@@ -179,17 +214,30 @@ export const handle = async (
   if (invalid) return json({ error: invalid }, 400)
 
   const cache: Cache = deps.cache ?? (caches as any).default
-  const cacheKey = new Request(url.toString(), { method: "GET" })
+  const cacheKey = cacheKeyFor(url, params)
   const cached = await cache.match(cacheKey)
   if (cached) return withHeader(cached, "X-SYC-Cache", "HIT")
 
+  const inflight = deps.inflight ?? inflightResponses
+  const inflightKey = cacheKey.url
+  const existing = inflight.get(inflightKey)
+  if (existing) return withHeader((await existing).clone(), "X-SYC-Inflight", "HIT")
+
+  const pending = (async () => {
+    try {
+      const result = await (deps.fetchEnvelope ?? fetchEnvelope)(params)
+      if (!result) return json({ error: "no live chat (not live or chat disabled)" }, 404)
+      return cacheable(cache, cacheKey, ctx, result)
+    } catch (e: any) {
+      ;(deps.logError ?? console.error)("livechat relay error:", e?.status ?? "", e?.message ?? e)
+      return cacheNegative(cache, cacheKey, ctx, errorResponse(e, params))
+    }
+  })()
+  inflight.set(inflightKey, pending)
   try {
-    const result = await (deps.fetchEnvelope ?? fetchEnvelope)(params)
-    if (!result) return json({ error: "no live chat (not live or chat disabled)" }, 404)
-    return cacheable(cache, cacheKey, ctx, result)
-  } catch (e: any) {
-    ;(deps.logError ?? console.error)("livechat relay error:", e?.status ?? "", e?.message ?? e)
-    return errorResponse(e)
+    return (await pending).clone()
+  } finally {
+    inflight.delete(inflightKey)
   }
 }
 
@@ -200,6 +248,8 @@ export default {
 export const _test = {
   validate,
   readParams,
+  cacheKeyFor,
+  normalizeOffset,
   healthBody,
   cacheable,
   errorResponse,

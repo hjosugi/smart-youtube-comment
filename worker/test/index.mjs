@@ -132,6 +132,55 @@ test("cache stores live non-terminal responses and returns HIT on repeat", async
   assert.equal(calls, 1)
 })
 
+test("cache keys ignore unrelated params and bucket replay offsets", async () => {
+  const cache = new MemoryCache()
+  const runtime = ctx()
+  let calls = 0
+  const deps = {
+    cache,
+    fetchEnvelope: async params => {
+      calls += 1
+      assert.equal(params.cont, "START")
+      assert.equal(params.offset, 3201)
+      return envelope({ timeoutMs: 3000 })
+    },
+  }
+
+  const first = await handle(req("/api/livechat?_=a&offset=3201&cont=START"), {}, runtime, deps)
+  assert.equal(first.headers.get("X-SYC-Cache"), "MISS")
+  await Promise.all(runtime.waits)
+
+  const second = await handle(req("/api/livechat?cont=START&offset=3999&_=b"), {}, ctx(), deps)
+  assert.equal(second.headers.get("X-SYC-Cache"), "HIT")
+  assert.equal(calls, 1)
+})
+
+test("cold requests for the same normalized key share one in-flight upstream call", async () => {
+  const cache = new MemoryCache()
+  const inflight = new Map()
+  let calls = 0
+  let release
+  const gate = new Promise(resolve => (release = resolve))
+  const deps = {
+    cache,
+    inflight,
+    fetchEnvelope: async () => {
+      calls += 1
+      await gate
+      return envelope({ timeoutMs: 3000 })
+    },
+  }
+
+  const a = handle(req("/api/livechat?cont=BURST&offset=6100"), {}, ctx(), deps)
+  const b = handle(req("/api/livechat?offset=6999&cont=BURST&_ignored=1"), {}, ctx(), deps)
+  release()
+  const [first, second] = await Promise.all([a, b])
+  assert.equal(first.status, 200)
+  assert.equal(second.status, 200)
+  assert.equal(second.headers.get("X-SYC-Inflight"), "HIT")
+  assert.equal(calls, 1)
+})
+
 test("sub-second and terminal envelopes are not cached", async () => {
   const subSecondCache = new MemoryCache()
   const subSecondCtx = ctx()
@@ -158,10 +207,14 @@ test("sub-second and terminal envelopes are not cached", async () => {
 
 test("upstream failures map to sanitized client errors", async () => {
   const logs = []
-  const response = await handle(req("/api/livechat?cont=NEXT"), {}, ctx(), {
-    cache: new MemoryCache(),
+  const cache = new MemoryCache()
+  const runtime = ctx()
+  let calls = 0
+  const response = await handle(req("/api/livechat?cont=NEXT"), {}, runtime, {
+    cache,
     logError: (...args) => logs.push(args),
     fetchEnvelope: async () => {
+      calls += 1
       throw Object.assign(new Error("InnerTube body should stay server-side"), { status: 429 })
     },
   })
@@ -169,4 +222,30 @@ test("upstream failures map to sanitized client errors", async () => {
   assert.equal(response.status, 429)
   assert.deepEqual(await readJson(response), { error: "rate limited upstream" })
   assert.equal(logs.length, 1)
+  assert.equal(response.headers.get("X-SYC-Cache"), "NEGATIVE")
+  await Promise.all(runtime.waits)
+
+  const cached = await handle(req("/api/livechat?cont=NEXT&_ignored=1"), {}, ctx(), {
+    cache,
+    fetchEnvelope: async () => {
+      calls += 1
+      return envelope()
+    },
+  })
+  assert.equal(cached.status, 429)
+  assert.equal(cached.headers.get("X-SYC-Cache"), "HIT")
+  assert.equal(calls, 1)
+})
+
+test("upstream continuation 4xx maps to immediate re-resolve signal", async () => {
+  const response = await handle(req("/api/livechat?cont=STALE"), {}, ctx(), {
+    cache: new MemoryCache(),
+    logError: () => {},
+    fetchEnvelope: async () => {
+      throw Object.assign(new Error("gone"), { status: 404 })
+    },
+  })
+
+  assert.equal(response.status, 410)
+  assert.deepEqual(await readJson(response), { error: "stale continuation", reResolve: true })
 })
