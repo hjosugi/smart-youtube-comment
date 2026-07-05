@@ -46,6 +46,8 @@
 
   const COLORS = { owner: "#ffca28", moderator: "#5e9bff", member: "#7CFC8C", normal: "#ffffff" };
   const AUTHOR_BOOST = { owner: 0.40, moderator: 0.25, member: 0.10, normal: 0 };
+  const TARGET_FRAME_MS = 1000 / 60;
+  const MIN_CAP_FRAME_MS = 50;
 
   const clamp = (min, max, v) => (v < min ? min : v > max ? max : v);
 
@@ -143,8 +145,15 @@
 
     setConfig(partial) {
       Object.assign(this.cfg, partial);
-      if (partial.maxActive != null) this.dynamicCap = Math.min(this.dynamicCap, this.cfg.maxActive);
+      if (partial.maxActive != null || partial.minActive != null) this._updateDynamicCap();
       if (this.canvas) this._resize();
+    }
+
+    _updateDynamicCap() {
+      const max = Math.max(0, Math.floor(this.cfg.maxActive));
+      const min = Math.floor(clamp(0, max, this.cfg.minActive));
+      const load = clamp(0, 1, (this.frameEMA - TARGET_FRAME_MS) / (MIN_CAP_FRAME_MS - TARGET_FRAME_MS));
+      this.dynamicCap = Math.round(max - (max - min) * load);
     }
 
     stats() {
@@ -312,7 +321,7 @@
       const ow = this.cfg.outlineWidth ?? 3;
       const oa = this.cfg.outlineAlpha ?? 0.85;
       const key = `${fontPx}|${weight}|${ow}|${oa}|${glow ? 1 : 0}|${color}|${family}|${text}`;
-      const hit = this.cache.get(key);
+      const hit = this._cacheGet(key);
       if (hit) return hit;
       const font = `${weight} ${fontPx}px ${family}`;
       if (!this.measure) this.measure = document.createElement("canvas").getContext("2d");
@@ -340,11 +349,24 @@
       o.fillText(text, pad, h / 2);
 
       const entry = { bmp: oc, w, h };
+      this._cacheSet(key, entry);
+      return entry;
+    }
+
+    _cacheGet(key) {
+      const hit = this.cache.get(key);
+      if (hit) {
+        this.cache.delete(key);
+        this.cache.set(key, hit);
+      }
+      return hit;
+    }
+
+    _cacheSet(key, entry) {
       if (this.cache.size >= this.cfg.cacheMax) {
-        this.cache.delete(this.cache.keys().next().value); // drop oldest
+        this.cache.delete(this.cache.keys().next().value); // drop least recently used
       }
       this.cache.set(key, entry);
-      return entry;
     }
 
     _loop(ts) {
@@ -357,7 +379,7 @@
       this.frameSamplePos = (this.frameSamplePos + 1) % fs.length;
       if (this.frameSampleLen < fs.length) this.frameSampleLen++;
 
-      this.dynamicCap = this.cfg.maxActive;
+      this._updateDynamicCap();
       this._drainPending();
 
       const ctx = this.ctx, dpr = this.cfg.dpr, arr = this.active, next = this.nextActive;

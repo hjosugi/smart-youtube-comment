@@ -48,6 +48,8 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
   };
 
   const AUTHOR_BOOST = { owner: 0.40, moderator: 0.25, member: 0.10, normal: 0 };
+  const TARGET_FRAME_MS = 1000 / 60;
+  const MIN_CAP_FRAME_MS = 50;
 
   function popcount(v) {
     v -= (v >>> 1) & 0x55555555;
@@ -153,8 +155,15 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
 
     setConfig(partial) {
       Object.assign(this.cfg, partial);
-      if (partial.maxActive != null) this.dynamicCap = Math.min(this.dynamicCap, this.cfg.maxActive);
+      if (partial.maxActive != null || partial.minActive != null) this._updateDynamicCap();
       if (this.canvas) this._resize();
+    }
+
+    _updateDynamicCap() {
+      const max = Math.max(0, Math.floor(this.cfg.maxActive));
+      const min = Math.floor(clamp(0, max, this.cfg.minActive));
+      const load = clamp(0, 1, (this.frameEMA - TARGET_FRAME_MS) / (MIN_CAP_FRAME_MS - TARGET_FRAME_MS));
+      this.dynamicCap = Math.round(max - (max - min) * load);
     }
 
     stats() {
@@ -328,7 +337,7 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
       const oa = this.cfg.outlineAlpha ?? 0.85;
       const sig = parts.map((p) => (p.u ? "" + p.u : p.t)).join("");
       const key = `${fontPx}|${weight}|${ow}|${oa}|${glow ? 1 : 0}|${color}|${family}|${sig}`;
-      const hit = this.cache.get(key);
+      const hit = this._cacheGet(key);
       if (hit) return hit;
 
       const font = `${weight} ${fontPx}px ${family}`;
@@ -385,12 +394,25 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
 
       const entry = { bmp: oc, w, h };
       if (allReady) {
-        if (this.cache.size >= this.cfg.cacheMax) {
-          this.cache.delete(this.cache.keys().next().value); // drop oldest
-        }
-        this.cache.set(key, entry);
+        this._cacheSet(key, entry);
       }
       return entry;
+    }
+
+    _cacheGet(key) {
+      const hit = this.cache.get(key);
+      if (hit) {
+        this.cache.delete(key);
+        this.cache.set(key, hit);
+      }
+      return hit;
+    }
+
+    _cacheSet(key, entry) {
+      if (this.cache.size >= this.cfg.cacheMax) {
+        this.cache.delete(this.cache.keys().next().value); // drop least recently used
+      }
+      this.cache.set(key, entry);
     }
 
     _loop(ts) {
@@ -403,7 +425,7 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
       this.frameSamplePos = (this.frameSamplePos + 1) % fs.length;
       if (this.frameSampleLen < fs.length) this.frameSampleLen++;
 
-      this.dynamicCap = this.cfg.maxActive;
+      this._updateDynamicCap();
       this._drainPending();
 
       const ctx = this.ctx, dpr = this.cfg.dpr, arr = this.active, next = this.nextActive;
