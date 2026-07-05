@@ -36,6 +36,7 @@ const SUITES = [
   ["unit", "worker/test/innertube-io.mjs"],
   ["unit", "extension/test/background.mjs"],
   ["unit", "extension/test/content-extract.mjs"],
+  ["unit", "extension/test/options.mjs"],
   ["unit", "extension/test/settings-filter.mjs"],
   ["unit", "web/test/playback.mjs"],
   ["unit", "web/test/config.mjs"],

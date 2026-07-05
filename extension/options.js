@@ -159,7 +159,6 @@
         for (const [k, v] of Object.entries(vals)) setters[k]?.(v);
         updatePreview();
         scheduleSave();
-        setStatus("opt_saved", "Saved");
       }));
     }
     insertBeforeActions(bar);
