@@ -20,10 +20,10 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
   const textSignature = SYCScoring.textSignature;
 
   const DEFAULTS = {
-    maxActive: 2000,      // hard ceiling on concurrent sprites
+    maxActive: 250,       // hard ceiling on concurrent sprites
     minActive: 80,        // adaptive floor (weak machines still usable)
-    fontPx: 24,
-    lineHeight: 30,       // lane height incl. gap
+    fontPx: 18,
+    lineHeight: 24,       // lane height incl. gap
     topPct: 0.08,         // keep top 8% clear
     bottomPct: 0.14,      // keep bottom 14% clear (controls)
     gapPx: 28,            // min horizontal gap between same-lane comments
@@ -32,7 +32,7 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
     recentMax: 400,
     lengthSpread: true,   // gently widen scorer timing by length
     durationScale: 1,     // user speed multiplier (0.5=2x faster .. 2=2x slower)
-    tierDurations: null,  // [fastMs, normalMs, slowMs] from settings; null => payload.durationMs
+    tierDurations: [6000, 7500, 10000],
     opacity: 1,           // global comment opacity (0.2–1.0)
     textColor: "#ffffff", // base comment color for normal authors
     roleColors: true,     // owner/mod/member use role colors; else textColor
@@ -40,12 +40,12 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
     fontWeight: 700,      // 100..900
     outlineWidth: 3,      // text outline px (0 = none)
     outlineAlpha: 0.85,   // outline opacity 0..1
-    spreadStrength: 0.5,  // how strongly length affects speed (0..1)
+    spreadStrength: 0.35, // how strongly length affects speed (0..1)
     cacheMax: 900,        // max cached bitmaps
-    maxQueue: 2400,       // pending comments waiting for rasterization
-    spawnPerFrame: 10,    // cap expensive canvas text rasterization per frame
+    maxQueue: 1000,       // pending comments waiting for rasterization
+    spawnPerFrame: 6,     // cap expensive canvas text rasterization per frame
     maxTextChars: 260,    // prevent giant one-off bitmaps from stalling video
-    dpr: Math.min(self.devicePixelRatio || 1, 1.5)
+    dpr: Math.max(0.5, Math.min(2, (self.devicePixelRatio || 1) * 0.6))
   };
 
   const AUTHOR_BOOST = { owner: 0.40, moderator: 0.25, member: 0.10, normal: 0 };

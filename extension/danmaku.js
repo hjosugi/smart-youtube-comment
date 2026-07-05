@@ -24,12 +24,12 @@
     topPct: 0.08,         // keep top 8% clear
     bottomPct: 0.14,      // keep bottom 14% clear (controls)
     gapPx: 28,            // min horizontal gap between same-lane comments
-    dedup: true,          // drop near-duplicates of recently shown comments
+    dedup: false,         // drop near-duplicates of recently shown comments
     simThreshold: 3,      // Hamming distance <= this => near-duplicate
     recentMax: 400,
     lengthSpread: true,   // gently widen scorer timing by length
     durationScale: 1,     // user speed multiplier (0.5=2x faster .. 2=2x slower)
-    tierDurations: null,  // [fastMs, normalMs, slowMs] from settings; null => payload.durationMs
+    tierDurations: [6000, 7500, 10000],
     opacity: 1,           // global comment opacity (0.2–1.0)
     textColor: "#ffffff", // base comment color for normal authors
     roleColors: true,     // owner/mod/member use role colors; else textColor
@@ -37,12 +37,12 @@
     fontWeight: 700,      // 100..900
     outlineWidth: 3,      // text outline px (0 = none)
     outlineAlpha: 0.85,   // outline opacity 0..1
-    spreadStrength: 0.5,  // how strongly length affects speed (0..1)
+    spreadStrength: 0.35, // how strongly length affects speed (0..1)
     cacheMax: 900,        // max cached bitmaps
     maxQueue: 2400,       // pending comments waiting for rasterization
     spawnPerFrame: 10,    // cap expensive canvas text rasterization per frame
     maxTextChars: 260,    // prevent giant one-off bitmaps from stalling video
-    dpr: Math.min(self.devicePixelRatio || 1, 1.5)
+    dpr: Math.max(0.5, Math.min(2, (self.devicePixelRatio || 1) * 0.75))
   };
 
   const COLORS = { owner: "#ffca28", moderator: "#5e9bff", member: "#7CFC8C", normal: "#ffffff" };

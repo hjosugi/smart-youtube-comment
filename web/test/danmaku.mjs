@@ -104,6 +104,19 @@ const assertDprCacheInvalidation = (label, Overlay, rasterize) => {
   assert.equal(overlay.cache.size, 1, `${label}: unchanged dpr should keep cached bitmaps`)
 }
 
+const assertRendererDefaultsMatchSettings = (label, rendererDefaults, settings) => {
+  const engineDefaults = settings.toEngineConfig(settings.DEFAULTS)
+  const rendererEngineDefaults = Object.fromEntries(
+    Object.keys(engineDefaults).map(key => [key, rendererDefaults[key]]),
+  )
+
+  assert.equal(
+    JSON.stringify(rendererEngineDefaults),
+    JSON.stringify(engineDefaults),
+    `${label}: renderer DEFAULTS should match settings-derived engine defaults`,
+  )
+}
+
 const assertScoringHelpers = (label, scoring) => {
   const normalized = scoring.textSignature("Ｆｏｏ　BAR!!!")
   const sameTokens = scoring.textSignature("foo bar")
@@ -187,15 +200,19 @@ const loadWebOverlay = async () => {
   globalThis.requestAnimationFrame = () => 1
   globalThis.cancelAnimationFrame = () => {}
   delete globalThis.SYCScoring
+  delete globalThis.SYCSettings
   delete globalThis.SYCDanmaku
 
   const stamp = Date.now()
   await import(new URL(`../scoring.js?test=${stamp}`, import.meta.url))
+  await import(new URL(`../settings.js?test=${stamp}`, import.meta.url))
   await import(new URL(`../danmaku.js?test=${stamp}`, import.meta.url))
   return {
     Overlay: globalThis.SYCDanmaku.DanmakuOverlay,
+    defaults: globalThis.SYCDanmaku.DEFAULTS,
     observerCounters,
     scoring: globalThis.SYCScoring,
+    settings: globalThis.SYCSettings,
   }
 }
 
@@ -222,6 +239,13 @@ const loadExtensionOverlay = () => {
     },
   )
   runInNewContext(
+    readFileSync(new URL("../../extension/settings.js", import.meta.url), "utf8"),
+    sandbox,
+    {
+      filename: "extension/settings.js",
+    },
+  )
+  runInNewContext(
     readFileSync(new URL("../../extension/danmaku.js", import.meta.url), "utf8"),
     sandbox,
     {
@@ -230,16 +254,21 @@ const loadExtensionOverlay = () => {
   )
   return {
     Overlay: sandbox.globalThis.SYCDanmaku.DanmakuOverlay,
+    defaults: sandbox.globalThis.SYCDanmaku.DEFAULTS,
     observerCounters,
     scoring: sandbox.globalThis.SYCScoring,
+    settings: sandbox.globalThis.SYCSettings,
   }
 }
 
 const {
   Overlay: webOverlay,
+  defaults: webDefaults,
   observerCounters: webObserverCounters,
   scoring: webScoring,
+  settings: webSettings,
 } = await loadWebOverlay()
+assertRendererDefaultsMatchSettings("web", webDefaults, webSettings)
 assertScoringHelpers("web", webScoring)
 assertDedup("web", webOverlay)
 assertLongTaskObserverLifecycle("web", webOverlay, webObserverCounters)
@@ -253,9 +282,12 @@ assertDprCacheInvalidation("web", webOverlay, (overlay, text) =>
 
 const {
   Overlay: extensionOverlay,
+  defaults: extensionDefaults,
   observerCounters: extensionObserverCounters,
   scoring: extensionScoring,
+  settings: extensionSettings,
 } = loadExtensionOverlay()
+assertRendererDefaultsMatchSettings("extension", extensionDefaults, extensionSettings)
 assertScoringHelpers("extension", extensionScoring)
 assertDedup("extension", extensionOverlay)
 assertLongTaskObserverLifecycle("extension", extensionOverlay, extensionObserverCounters)
@@ -267,4 +299,4 @@ assertDprCacheInvalidation("extension", extensionOverlay, (overlay, text) =>
   overlay._rasterize(text, "#fff", 24, false),
 )
 
-console.log("danmaku ok (52 assertions)")
+console.log("danmaku ok (54 assertions)")
