@@ -28,6 +28,16 @@ The scorer runs locally in the content script and performs no network calls.
 
 ## Performance Work
 
+Status as of the current implementation:
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| Dev frame/long-task diagnostics | Done | `danmaku.js` exposes frame p50/p95/p99, FPS, active count, cache size, and long-task counters through `stats()`. |
+| Renderer queue/ring-buffer hotspots | Done | Pending comments use `pendingHead` compaction instead of `Array.shift()`, and spawn work is budgeted per frame. |
+| Configurable maxActive with interactivity guard | Done | `maxActive`, `maxQueue`, and `spawnPerFrame` are settings-backed; spawn budget falls under high frame EMA. |
+| Chat observation after player replacement | Partial | Lifecycle and chat-client tests cover reconnection behavior, but real YouTube DOM replacement remains a manual smoke item. |
+| Official guide/warning filtering | Done | Extension extraction tests cover official-message filtering and sanitized render payloads. |
+
 The next performance work should focus on the browser path:
 
 1. Add dev-only long-task and frame p95/p99 diagnostics.

@@ -19,6 +19,14 @@ Comment scoring, filtering, and rendering run on the user's device. Chat text,
 author names, block lists, and settings are not sent to the developer or to an
 external server.
 
+## Web App Relay
+
+The standalone web app can request live-chat data through a configured relay
+endpoint. In that mode the relay receives the YouTube video ID, live/replay
+continuation tokens, and polling offsets needed to fetch the next chat batch.
+Do not point `?relay=` at a relay you do not trust. The default extension path
+does not use this relay.
+
 ## Storage
 
 The extension uses Chrome extension storage to save user settings and local

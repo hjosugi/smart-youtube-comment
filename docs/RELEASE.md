@@ -60,6 +60,16 @@ npm run test:ext
 `test:ext` opens a real Chromium with the unpacked extension and may require a
 desktop session.
 
+Manual network probes are intentionally not part of `release:check` because
+they depend on real YouTube availability and network behavior:
+
+- `worker/test/probe.mjs`: one-shot relay probe for a known video/live URL.
+- `worker/test/loadtest.mjs`: relay pressure test for latency and retry tuning.
+- `web/test/chat-client-live.mjs`: browser-side live chat client smoke check.
+
+Run them before a release candidate when a valid public video/live URL is
+available. Keep CI deterministic and fixture-backed.
+
 ## Build The Zip
 
 Run:
