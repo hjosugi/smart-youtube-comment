@@ -256,8 +256,16 @@ CF Worker が以下を中継する(クライアントには CORS 制約のため
 
 ### 7.3 端末の最適化
 
-- **モバイル最適化既定値**(`web/settings.js`, extension からの分岐): `maxActive` 250 /
-  `renderScalePct` 60% / `spawnPerFrame` 6。弱い端末はレンダラの適応キャップが更に自動で守る。
+- **デスクトップ拡張既定値**(`extension/settings.js`): `fontPx` 24 / `lineHeight` 30 /
+  `maxActive` 2000 / `maxQueue` 2400 / `spawnPerFrame` 10 / `renderScalePct` 75% /
+  `dedup` off。デスクトップ YouTube タブでは密度と視認性を優先する。
+- **モバイル PWA 既定値**(`web/settings.js`, extension からの分岐): `fontPx` 18 /
+  `lineHeight` 24 / `maxActive` 250 / `maxQueue` 1000 / `spawnPerFrame` 6 /
+  `renderScalePct` 60% / `dedup` on。`listEnabled` は web 専用。弱い端末はレンダラの
+  適応キャップが更に自動で守る。
+- 両 surface の `settings.js` は `SYCSettings.PROFILE` で対象と差分理由を公開し、
+  テストで主要な差分既定値を固定する。`danmaku.js` の renderer `DEFAULTS` は
+  `SYCSettings.toEngineConfig(SYCSettings.DEFAULTS)` と一致するよう回帰テストで守る。
 - **性能 HUD**(`?perf=1`, `web/perf.ts`): fps / active / drop / frameP95 / longTasks を実機表示。
   OffscreenCanvas 等の重い最適化は**この実測で必要性を確認してから**入れる方針(「実測して
   から」原則)。

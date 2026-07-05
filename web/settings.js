@@ -7,6 +7,14 @@ import { clamp } from "./math.js";
   // and the runtime mapping onto the danmaku engine. Consumers read
   // globalThis.SYCSettings. (Same pattern as scoring.js.)
 
+  const PROFILE = Object.freeze({
+    surface: "web",
+    target: "mobile PWA",
+    rationale: "Mobile browsers get lower density and render-scale defaults; extension/ keeps the desktop profile."
+  });
+
+  // Mobile PWA profile. Keep intentional differences from extension/settings.js
+  // in sync with ARCHITECTURE.md §7.3 and the settings tests.
   const SCHEMA = [
     { key: "enabled",      group: "General",     label: "Danmaku (overlay)",      type: "bool",                                   default: true },
     { key: "listEnabled",  group: "General",     label: "Comment list",           type: "bool",                                   default: true },
@@ -156,5 +164,5 @@ import { clamp } from "./math.js";
     relaxed:  { label: "Relaxed (readable)", speedPct: 80,  fastMs: 7000, normalMs: 9000,  slowMs: 12000, spreadStrength: 45 }
   };
 
-  globalThis.SYCSettings = { SCHEMA, DEFAULTS, SPEED_PRESETS, STORAGE_KEY, load, save, onChange, normalize, toEngineConfig };
+  globalThis.SYCSettings = { PROFILE, SCHEMA, DEFAULTS, SPEED_PRESETS, STORAGE_KEY, load, save, onChange, normalize, toEngineConfig };
 })();

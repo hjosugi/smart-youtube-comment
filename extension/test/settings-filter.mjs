@@ -47,6 +47,17 @@ const { sandbox, sync, local } = loadScripts()
 const settings = sandbox.globalThis.SYCSettings
 const filter = sandbox.globalThis.SYCFilter
 
+assert.equal(settings.PROFILE.surface, "extension")
+assert.equal(settings.PROFILE.target, "desktop Chrome extension")
+assert.match(settings.PROFILE.rationale, /Desktop/)
+assert.equal(settings.DEFAULTS.fontPx, 24)
+assert.equal(settings.DEFAULTS.maxActive, 2000)
+assert.equal(settings.DEFAULTS.maxQueue, 2400)
+assert.equal(settings.DEFAULTS.spawnPerFrame, 10)
+assert.equal(settings.DEFAULTS.renderScalePct, 75)
+assert.equal(settings.DEFAULTS.lineHeight, 30)
+assert.equal(settings.DEFAULTS.dedup, false)
+
 await settings.save({
   enabled: "false",
   opacity: 999,
@@ -71,4 +82,4 @@ assert.equal(filter.shouldDrop("ALICE", "hello"), true)
 assert.equal(filter.shouldDrop("carol", "buy spam now"), true)
 assert.equal(filter.shouldDrop("carol", "hello"), false)
 
-console.log("settings-filter ok (13 assertions)")
+console.log("settings-filter ok (24 assertions)")

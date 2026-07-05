@@ -90,6 +90,18 @@ const assert = (name, cond, extra = "") => checks.push({ name, ok: !!cond, extra
 {
   const def = await S.load()
   assert("settings: defaults load", def.speedPct === 100 && def.enabled === true)
+  assert("settings: web profile", S.PROFILE.surface === "web" && S.PROFILE.target === "mobile PWA")
+  assert("settings: web profile rationale", /Mobile/.test(S.PROFILE.rationale))
+  assert(
+    "settings: mobile density defaults",
+    S.DEFAULTS.fontPx === 18 &&
+      S.DEFAULTS.maxActive === 250 &&
+      S.DEFAULTS.maxQueue === 1000 &&
+      S.DEFAULTS.spawnPerFrame === 6 &&
+      S.DEFAULTS.renderScalePct === 60 &&
+      S.DEFAULTS.lineHeight === 24 &&
+      S.DEFAULTS.dedup === true,
+  )
 
   await S.save({ ...def, opacity: 999, speedPct: 33, fontPx: 30 })
   const loaded = await S.load()

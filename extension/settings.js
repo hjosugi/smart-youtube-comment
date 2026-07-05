@@ -7,6 +7,14 @@
   // export-free so Chrome can load it as a content script; consumers read
   // globalThis.SYCSettings. (Same pattern as scoring.js.)
 
+  const PROFILE = Object.freeze({
+    surface: "extension",
+    target: "desktop Chrome extension",
+    rationale: "Desktop tabs can use denser danmaku defaults; web/ keeps a lighter mobile PWA profile."
+  });
+
+  // Desktop profile. Keep intentional differences from web/settings.js in sync
+  // with ARCHITECTURE.md §7.3 and the settings tests.
   const SCHEMA = [
     { key: "enabled",      group: "General",     label: "Overlay enabled",        type: "bool",                                   default: true },
     { key: "hideDefaultChat", group: "General",  label: "Hide YouTube chat while overlay is on", type: "bool",                     default: false },
@@ -161,5 +169,5 @@
     relaxed:  { label: "Relaxed (readable)", speedPct: 80,  fastMs: 7000, normalMs: 9000,  slowMs: 12000, spreadStrength: 45 }
   };
 
-  globalThis.SYCSettings = { SCHEMA, DEFAULTS, SPEED_PRESETS, STORAGE_KEY, load, save, onChange, normalize, toEngineConfig };
+  globalThis.SYCSettings = { PROFILE, SCHEMA, DEFAULTS, SPEED_PRESETS, STORAGE_KEY, load, save, onChange, normalize, toEngineConfig };
 })();
