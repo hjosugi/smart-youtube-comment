@@ -50,6 +50,7 @@ const fate = makeFate({ seen, shouldDrop: (a: string, t: string) => filter.shoul
 
 const onMessages = (msgs: ChatMessage[]) => {
   const now = playbackMs()
+  const listBatch: ChatMessage[] = []
   for (const raw of msgs) {
     const m = sanitizeChatMessage(raw)
     const f = fate(m, now)
@@ -57,12 +58,13 @@ const onMessages = (msgs: ChatMessage[]) => {
     remember(m.id)
     if (f !== "show") continue
     globalThis.SYCEmoji?.preload(m.parts)
-    if (cfg.listEnabled) list.push(m)
+    if (cfg.listEnabled) listBatch.push(m)
     if (cfg.enabled) {
       const payload = render(m)
       if (payload) overlay.push(payload)
     }
   }
+  if (listBatch.length) list.pushMany(listBatch)
 }
 
 // --- sources ---

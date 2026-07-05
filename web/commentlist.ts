@@ -40,15 +40,26 @@ export const createCommentList = root => {
     return span
   }
 
-  return {
+  const renderRow = m => {
+    const row = el("div", { className: m.kind === "paid" ? "clist-row paid" : "clist-row" })
+    const who = el("span", { className: "clist-author", textContent: m.author || "" })
+    who.style.color = AUTHOR_ROLE_COLORS[m.authorType] ?? COMMENT_LIST_DEFAULT_AUTHOR_COLOR
+    row.append(who, renderText(m))
+    return row
+  }
+
+  const api = {
     push(m) {
-      if (!visible || !m || !m.text) return
+      api.pushMany([m])
+    },
+    pushMany(messages) {
+      if (!visible || !messages?.length) return
+      const rows = messages.filter(m => m?.text).map(renderRow)
+      if (!rows.length) return
       const stick = atBottom()
-      const row = el("div", { className: m.kind === "paid" ? "clist-row paid" : "clist-row" })
-      const who = el("span", { className: "clist-author", textContent: m.author || "" })
-      who.style.color = AUTHOR_ROLE_COLORS[m.authorType] ?? COMMENT_LIST_DEFAULT_AUTHOR_COLOR
-      row.append(who, renderText(m))
-      list.append(row)
+      const fragment = document.createDocumentFragment()
+      for (const row of rows) fragment.append(row)
+      list.append(fragment)
       while (list.childElementCount > MAX_ROWS) list.firstChild?.remove()
       if (stick) list.scrollTop = list.scrollHeight
     },
@@ -68,4 +79,5 @@ export const createCommentList = root => {
       return visible
     },
   }
+  return api
 }
