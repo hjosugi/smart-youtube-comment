@@ -1,13 +1,13 @@
-// Unit test for the PURE InnerTube transforms (no network). Feeds fixture actions
-// shaped like real get_live_chat responses and asserts the normalized ChatMessage
-// + continuation extraction. Covers every renderer variant the relay claims.
+// Unit tests for the PURE InnerTube transforms (no network). Feeds fixture
+// actions shaped like real get_live_chat responses and asserts the normalized
+// ChatMessage + continuation extraction.
+
+import test from "node:test"
+import assert from "node:assert/strict"
 
 import { _pure } from "../src/innertube.ts"
 
 const { parseAction, extractContinuation, authorTypeFromBadges } = _pure
-
-const checks = []
-const assert = (name, cond, extra = "") => checks.push({ name, ok: !!cond, extra })
 
 const textRenderer = (over = {}) => ({
   addChatItemAction: {
@@ -23,31 +23,38 @@ const textRenderer = (over = {}) => ({
   },
 })
 
-// --- text message + emoji run reconstruction + ts conversion ---
-{
-  const m = parseAction(textRenderer())
-  assert("text: kind/author", m.kind === "text" && m.author === "@alice")
-  assert("text: emoji shortcut joined", m.text === "hello :wave:", m.text)
-  assert("text: usec->ms", m.ts === 1700000000000, String(m.ts))
-  assert("text: authorColor present (contract)", m.authorColor === null && "authorColor" in m)
-}
+const headerWith = titles => ({
+  header: {
+    liveChatHeaderRenderer: {
+      viewSelector: {
+        sortFilterSubMenuRenderer: { subMenuItems: titles.map(title => ({ title })) },
+      },
+    },
+  },
+})
 
-// --- author badge precedence: owner > moderator > member > normal ---
-{
+test("text messages reconstruct emoji runs and timestamps", () => {
+  const m = parseAction(textRenderer())
+  assert.equal(m.kind, "text")
+  assert.equal(m.author, "@alice")
+  assert.equal(m.text, "hello :wave:")
+  assert.equal(m.ts, 1700000000000)
+  assert.equal(m.authorColor, null)
+  assert.ok("authorColor" in m)
+})
+
+test("author badge precedence is owner > moderator > member > normal", () => {
   const badge = (iconType, custom) => ({
     liveChatAuthorBadgeRenderer: iconType ? { icon: { iconType } } : { customThumbnail: custom },
   })
-  assert("badge owner", authorTypeFromBadges([badge("OWNER"), badge("MODERATOR")]) === "owner")
-  assert(
-    "badge moderator",
-    authorTypeFromBadges([badge("MODERATOR"), badge(null, {})]) === "moderator",
-  )
-  assert("badge member (customThumbnail)", authorTypeFromBadges([badge(null, {})]) === "member")
-  assert("badge normal", authorTypeFromBadges([]) === "normal")
-}
 
-// --- paid: amount captured; empty text falls back to amount ---
-{
+  assert.equal(authorTypeFromBadges([badge("OWNER"), badge("MODERATOR")]), "owner")
+  assert.equal(authorTypeFromBadges([badge("MODERATOR"), badge(null, {})]), "moderator")
+  assert.equal(authorTypeFromBadges([badge(null, {})]), "member")
+  assert.equal(authorTypeFromBadges([]), "normal")
+})
+
+test("paid messages and stickers preserve amount fallback text", () => {
   const paid = parseAction({
     addChatItemAction: {
       item: {
@@ -56,18 +63,15 @@ const textRenderer = (over = {}) => ({
           timestampUsec: "1700000000000000",
           authorName: { simpleText: "@bob" },
           purchaseAmountText: { simpleText: "¥1,000" },
-          // no message -> empty text
         },
       },
     },
   })
-  assert("paid: kind=paid + amount", paid.kind === "paid" && paid.amount === "¥1,000")
-  assert("paid: empty text falls back to amount", paid.text === "¥1,000", paid.text)
-}
+  assert.equal(paid.kind, "paid")
+  assert.equal(paid.amount, "¥1,000")
+  assert.equal(paid.text, "¥1,000")
 
-// --- super sticker (no text body) ---
-{
-  const s = parseAction({
+  const sticker = parseAction({
     addChatItemAction: {
       item: {
         liveChatPaidStickerRenderer: {
@@ -78,15 +82,13 @@ const textRenderer = (over = {}) => ({
       },
     },
   })
-  assert(
-    "sticker: paid + amount fallback text",
-    s.kind === "paid" && s.amount === "$5.00" && s.text === "$5.00",
-  )
-}
+  assert.equal(sticker.kind, "paid")
+  assert.equal(sticker.amount, "$5.00")
+  assert.equal(sticker.text, "$5.00")
+})
 
-// --- membership + headerSubtext text ---
-{
-  const mem = parseAction({
+test("membership and sponsorship renderers normalize text and author", () => {
+  const membership = parseAction({
     addChatItemAction: {
       item: {
         liveChatMembershipItemRenderer: {
@@ -97,14 +99,9 @@ const textRenderer = (over = {}) => ({
       },
     },
   })
-  assert(
-    "membership: kind + header text",
-    mem.kind === "membership" && mem.text === "Member for 3 months",
-  )
-}
+  assert.equal(membership.kind, "membership")
+  assert.equal(membership.text, "Member for 3 months")
 
-// --- sponsorship gift (text under header.primaryText) ---
-{
   const gift = parseAction({
     addChatItemAction: {
       item: {
@@ -120,15 +117,13 @@ const textRenderer = (over = {}) => ({
       },
     },
   })
-  assert(
-    "gift: kind=membership + header author/text",
-    gift.kind === "membership" && gift.author === "@gifter" && gift.text === "gifted 5 memberships",
-  )
-}
+  assert.equal(gift.kind, "membership")
+  assert.equal(gift.author, "@gifter")
+  assert.equal(gift.text, "gifted 5 memberships")
+})
 
-// --- replaceChatItemAction unwraps the replacement renderer ---
-{
-  const r = parseAction({
+test("replacement items unwrap and unknown renderers drop to null", () => {
+  const replacement = parseAction({
     replaceChatItemAction: {
       replacementItem: {
         liveChatTextMessageRenderer: {
@@ -139,74 +134,73 @@ const textRenderer = (over = {}) => ({
       },
     },
   })
-  assert("replace: unwraps replacementItem", r && r.text === "now real")
-}
+  assert.equal(replacement.text, "now real")
 
-// --- unknown / placeholder renderers drop to null ---
-{
-  assert(
-    "placeholder -> null",
+  assert.equal(
     parseAction({
       addChatItemAction: { item: { liveChatPlaceholderItemRenderer: { id: "x" } } },
-    }) === null,
+    }),
+    null,
   )
-  assert(
-    "removal action -> null",
-    parseAction({ markChatItemAsDeletedAction: { targetItemId: "z" } }) === null,
-  )
-}
+  assert.equal(parseAction({ markChatItemAsDeletedAction: { targetItemId: "z" } }), null)
+})
 
-// --- continuation extraction: precedence + timeout clamp ---
-{
-  assert(
-    "cont: invalidation precedence",
+test("continuation extraction preserves precedence and clamps timeout boundaries", () => {
+  assert.equal(
     extractContinuation([{ invalidationContinuationData: { continuation: "A", timeoutMs: 5000 } }])
-      .token === "A",
+      .token,
+    "A",
   )
-  assert(
-    "cont: timed",
+  assert.equal(
     extractContinuation([{ timedContinuationData: { continuation: "B", timeoutMs: 3000 } }])
-      .timeoutMs === 3000,
+      .timeoutMs,
+    3000,
   )
-  assert("cont: empty -> null token", extractContinuation([]).token === null)
-  assert(
-    "cont: NaN timeout clamps to default",
+  assert.equal(extractContinuation([]).token, null)
+  assert.equal(
     extractContinuation([{ reloadContinuationData: { continuation: "C", timeoutMs: "x" } }])
-      .timeoutMs === 1000,
+      .timeoutMs,
+    1000,
   )
-  assert(
-    "cont: huge timeout capped",
+  assert.equal(
     extractContinuation([{ timedContinuationData: { continuation: "D", timeoutMs: 999999 } }])
-      .timeoutMs === 30000,
+      .timeoutMs,
+    30000,
   )
-  assert(
-    "cont: tiny timeout floored to default",
+  assert.equal(
     extractContinuation([{ timedContinuationData: { continuation: "E", timeoutMs: 10 } }])
-      .timeoutMs === 1000,
+      .timeoutMs,
+    1000,
   )
-}
+  assert.equal(
+    extractContinuation([{ timedContinuationData: { continuation: "F", timeoutMs: 250 } }])
+      .timeoutMs,
+    250,
+  )
+  assert.equal(
+    extractContinuation([{ timedContinuationData: { continuation: "G", timeoutMs: 300 } }])
+      .timeoutMs,
+    300,
+  )
+  assert.equal(
+    extractContinuation([{ timedContinuationData: { continuation: "H", timeoutMs: 999 } }])
+      .timeoutMs,
+    999,
+  )
+})
 
-// --- replay (VOD): isReplay detection + replayChatItemAction unwrapping ---
-{
-  const headerWith = titles => ({
-    header: {
-      liveChatHeaderRenderer: {
-        viewSelector: {
-          sortFilterSubMenuRenderer: { subMenuItems: titles.map(title => ({ title })) },
-        },
-      },
-    },
-  })
-  assert(
-    "isReplay: submenu 'replay' titles",
-    _pure.isReplayChat(headerWith(["Top chat replay", "Live chat replay"])) === true,
+test("replay chat detection covers flags, English titles, and localized titles", () => {
+  assert.equal(_pure.isReplayChat(headerWith(["Top chat replay", "Live chat replay"])), true)
+  assert.equal(_pure.isReplayChat(headerWith(["Top chat", "Live chat"])), false)
+  assert.equal(
+    _pure.isReplayChat(headerWith(["上位チャットのリプレイ", "ライブチャットのリプレイ"])),
+    true,
   )
-  assert(
-    "isReplay: live submenu -> false",
-    _pure.isReplayChat(headerWith(["Top chat", "Live chat"])) === false,
-  )
-  assert("isReplay: isReplay flag", _pure.isReplayChat({ isReplay: true }) === true)
+  assert.equal(_pure.isReplayChat(headerWith(["Repetición del chat destacado"])), true)
+  assert.equal(_pure.isReplayChat({ isReplay: true }), true)
+})
 
+test("replay actions unwrap inner actions and preserve video offsets", () => {
   const items = _pure.replayItems({
     replayChatItemAction: {
       videoOffsetTimeMsec: "123456",
@@ -225,56 +219,45 @@ const textRenderer = (over = {}) => ({
       ],
     },
   })
-  assert("replay: unwraps inner action + offset", items.length === 1 && items[0].off === 123456)
-  assert("replay: inner action parses", parseAction(items[0].action)?.text === "vod comment")
-  assert(
-    "replay: non-replay action -> []",
-    _pure.replayItems({ addChatItemAction: {} }).length === 0,
-  )
-}
+  assert.equal(items.length, 1)
+  assert.equal(items[0].off, 123456)
+  assert.equal(parseAction(items[0].action)?.text, "vod comment")
+  assert.equal(_pure.replayItems({ addChatItemAction: {} }).length, 0)
+})
 
-// --- null-safety / malformed input (must never throw, just drop) ---
-{
-  assert("parseAction(null) -> null", parseAction(null) === null)
-  assert("parseAction({}) -> null", parseAction({}) === null)
-  assert("parseItem(undefined) -> null", _pure.parseItem(undefined) === null)
-  assert(
-    "parseItem unknown renderer -> null",
-    _pure.parseItem({ someUnknownRenderer: { id: "x" } }) === null,
-  )
-  assert("runsToText(null) -> ''", _pure.runsToText(null) === "")
-  assert("runsToText simpleText", _pure.runsToText({ simpleText: "hi" }) === "hi")
-  assert(
-    "runsToText mixed runs+emoji",
+test("malformed input is null-safe and normalizes safe defaults", () => {
+  assert.equal(parseAction(null), null)
+  assert.equal(parseAction({}), null)
+  assert.equal(_pure.parseItem(undefined), null)
+  assert.equal(_pure.parseItem({ someUnknownRenderer: { id: "x" } }), null)
+  assert.equal(_pure.runsToText(null), "")
+  assert.equal(_pure.runsToText({ simpleText: "hi" }), "hi")
+  assert.equal(
     _pure.runsToText({
       runs: [{ text: "a" }, { emoji: { shortcuts: [":x:"] } }, { text: "b" }],
-    }) === "a:x:b",
+    }),
+    "a:x:b",
   )
-  assert("authorTypeFromBadges(undefined) -> normal", authorTypeFromBadges(undefined) === "normal")
-  assert("authorTypeFromBadges([]) -> normal", authorTypeFromBadges([]) === "normal")
-  // a text renderer with no message and no author still yields a safe ChatMessage
+  assert.equal(authorTypeFromBadges(undefined), "normal")
+  assert.equal(authorTypeFromBadges([]), "normal")
+
   const bare = parseAction({
     addChatItemAction: { item: { liveChatTextMessageRenderer: { id: "b1" } } },
   })
-  assert(
-    "bare text renderer -> safe defaults",
-    bare.text === "" &&
-      bare.author === "" &&
-      bare.authorType === "normal" &&
-      bare.ts === 0 &&
-      bare.authorColor === null,
-  )
-}
+  assert.equal(bare.text, "")
+  assert.equal(bare.author, "")
+  assert.equal(bare.authorType, "normal")
+  assert.equal(bare.ts, 0)
+  assert.equal(bare.authorColor, null)
+})
 
-// --- emoji parts: standard -> unicode text, custom -> image part ---
-{
+test("emoji parts preserve standard glyphs and custom emoji image parts", () => {
   const rp = _pure.runsToParts
-  assert("parts: text run", JSON.stringify(rp({ runs: [{ text: "hi" }] })) === '[{"t":"hi"}]')
-  assert(
-    "parts: standard emoji -> unicode",
-    JSON.stringify(rp({ runs: [{ emoji: { emojiId: "🥕", shortcuts: [":carrot:"] } }] })) ===
-      '[{"t":"🥕"}]',
-  )
+  assert.deepEqual(rp({ runs: [{ text: "hi" }] }), [{ t: "hi" }])
+  assert.deepEqual(rp({ runs: [{ emoji: { emojiId: "🥕", shortcuts: [":carrot:"] } }] }), [
+    { t: "🥕" },
+  ])
+
   const custom = rp({
     runs: [
       {
@@ -286,17 +269,17 @@ const textRenderer = (over = {}) => ({
       },
     ],
   })
-  assert(
-    "parts: custom emoji -> largest image",
-    custom.length === 1 && custom[0].u === "u2" && custom[0].a === ":x:",
-  )
-  assert(
-    "parts: mixed text+emoji",
-    JSON.stringify(rp({ runs: [{ text: "a " }, { emoji: { emojiId: "😀" } }, { text: " b" }] })) ===
-      '[{"t":"a "},{"t":"😀"},{"t":" b"}]',
-  )
-  assert("parts: simpleText", JSON.stringify(rp({ simpleText: "hello" })) === '[{"t":"hello"}]')
-  assert("parts: null -> []", JSON.stringify(rp(null)) === "[]")
+  assert.equal(custom.length, 1)
+  assert.equal(custom[0].u, "u2")
+  assert.equal(custom[0].a, ":x:")
+
+  assert.deepEqual(rp({ runs: [{ text: "a " }, { emoji: { emojiId: "😀" } }, { text: " b" }] }), [
+    { t: "a " },
+    { t: "😀" },
+    { t: " b" },
+  ])
+  assert.deepEqual(rp({ simpleText: "hello" }), [{ t: "hello" }])
+  assert.deepEqual(rp(null), [])
 
   const m = parseAction({
     addChatItemAction: {
@@ -320,21 +303,6 @@ const textRenderer = (over = {}) => ({
       },
     },
   })
-  assert(
-    "message: parts carry emoji image",
-    m.parts.some(p => p.u === "IMG"),
-  )
-  assert("message: text flattens emoji to label", m.text === "hi :m:")
-}
-
-let allOk = true
-for (const c of checks) {
-  console.log(`${c.ok ? "✅" : "❌"} ${c.name}${c.ok ? "" : "  -> " + c.extra}`)
-  if (!c.ok) allOk = false
-}
-console.log(
-  allOk
-    ? `\nRESULT: ✅ innertube parsing verified (${checks.length} assertions)`
-    : "\nRESULT: ❌ FAILURES",
-)
-process.exit(allOk ? 0 : 1)
+  assert.ok(m.parts.some(p => p.u === "IMG"))
+  assert.equal(m.text, "hi :m:")
+})

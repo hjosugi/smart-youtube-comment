@@ -97,13 +97,26 @@ const REPLAY_POLL_MS = 3000 // replay is paced by playback, not YouTube's timeou
 // A watch page is a "replay" (VOD of a past live) when its chat sub-menu offers
 // replay views or it flags isReplay. Replay chat uses a different endpoint and is
 // seeked by player offset, not advanced by a live continuation.
+const REPLAY_TITLE_PATTERNS = [
+  /replay/i,
+  /リプレイ/,
+  /repetici[oó]n/i,
+  /wiederholung/i,
+  /rediffusion/i,
+  /다시보기/,
+  /重播|回放/,
+]
+
+const isReplayTitle = (title: unknown): boolean =>
+  typeof title === "string" && REPLAY_TITLE_PATTERNS.some(pattern => pattern.test(title))
+
 const isReplayChat = (lc: any): boolean => {
   if (lc?.isReplay === true) return true
   const titles: string[] =
     lc?.header?.liveChatHeaderRenderer?.viewSelector?.sortFilterSubMenuRenderer?.subMenuItems?.map(
       (s: any) => s.title,
     ) ?? []
-  return titles.some(t => /replay/i.test(t))
+  return titles.some(isReplayTitle)
 }
 
 // Resolve the initial continuation. Returns { continuation, isReplay } or null.
