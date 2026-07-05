@@ -11,7 +11,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "probe": "node test/probe.mjs",
-    "test": "node --test test/innertube-parse.mjs"
+    "test": "node --test test/innertube-parse.mjs test/innertube-io.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "4.20260702.1",

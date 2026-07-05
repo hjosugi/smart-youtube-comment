@@ -347,3 +347,8 @@ export const _pure = {
   replayItems,
   isReplayChat,
 }
+
+export const _test = {
+  postOnce,
+  postWithRetry,
+}
