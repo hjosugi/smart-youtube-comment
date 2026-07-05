@@ -21,6 +21,7 @@ const SHELL = [
   "./manifest.webmanifest",
   "./icons/icon.svg",
 ]
+const SHELL_PATHS = new Set(SHELL.map(path => new URL(path, self.location.href).pathname))
 
 self.addEventListener("install", e => {
   e.waitUntil(
@@ -46,14 +47,17 @@ self.addEventListener("fetch", e => {
   // are always live (pass through to the network).
   if (e.request.method !== "GET" || url.origin !== self.location.origin) return
   if (url.pathname.includes("/api/livechat")) return
+  if (!SHELL_PATHS.has(url.pathname)) return
+
+  const cacheKey = new URL(url.pathname, self.location.origin).href
   // Stale-while-revalidate: serve cache instantly, refresh in the background so a
   // new deploy is picked up on the next load.
   e.respondWith(
     caches.open(CACHE).then(async cache => {
-      const cached = await cache.match(e.request)
+      const cached = await cache.match(cacheKey)
       const fresh = fetch(e.request)
         .then(res => {
-          if (res.ok) cache.put(e.request, res.clone())
+          if (res.ok) cache.put(cacheKey, res.clone())
           return res
         })
         .catch(() => cached)

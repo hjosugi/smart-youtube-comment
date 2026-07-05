@@ -17,10 +17,21 @@ let apiCalls = 0
 let crossOriginCalls = 0
 let swrCalls = 0
 let swrVersion = 1
+let shellAssetCalls = 0
+let shellAssetVersion = 1
 
 const { port, close } = await serveWeb({
   handleRequest(req, res) {
     const url = new URL(req.url, `http://${req.headers.host}`)
+    if (url.pathname === "/styles.css") {
+      shellAssetCalls += 1
+      res.writeHead(200, {
+        "Content-Type": "text/css",
+        "Cache-Control": "no-store",
+      })
+      res.end(`/* shell-${shellAssetVersion} */`)
+      return true
+    }
     if (url.pathname === "/api/livechat") {
       apiCalls += 1
       res.writeHead(200, {
@@ -106,20 +117,25 @@ const crossOriginResult = await page.evaluate(
   `http://localhost:${crossOrigin.port}/__cross-origin.txt`,
 )
 
-const swrFirst = await page.evaluate(() => fetch("/__swr.txt").then(r => r.text()))
-swrVersion = 2
-const swrSecond = await page.evaluate(() => fetch("/__swr.txt").then(r => r.text()))
-await waitFor(() => swrCalls >= 2)
-const swrThird = await page.evaluate(async () => {
+const shellFirst = await page.evaluate(() => fetch("/styles.css?v=first").then(r => r.text()))
+shellAssetVersion = 2
+const shellSecond = await page.evaluate(() => fetch("/styles.css?v=second").then(r => r.text()))
+await waitFor(() => shellAssetCalls >= 2)
+const shellThird = await page.evaluate(async () => {
   const deadline = Date.now() + 5000
   let text = ""
   while (Date.now() < deadline) {
-    text = await fetch("/__swr.txt").then(r => r.text())
-    if (text === "swr-2") return text
+    text = await fetch("/styles.css?v=third").then(r => r.text())
+    if (text === "/* shell-2 */") return text
     await new Promise(r => setTimeout(r, 50))
   }
   return text
 })
+
+const swrFirst = await page.evaluate(() => fetch("/__swr.txt").then(r => r.text()))
+swrVersion = 2
+const swrSecond = await page.evaluate(() => fetch("/__swr.txt").then(r => r.text()))
+const swrThird = await page.evaluate(() => fetch("/__swr.txt").then(r => r.text()))
 
 await page.context().setOffline(true)
 const offlineResult = await page.evaluate(async () => {
@@ -147,8 +163,14 @@ const checks = [
   ["API fetches are not cached", apiCalls === 2 && apiResult.join(",") === "1,2"],
   ["cross-origin fetch passes through", crossOriginCalls === 1 && crossOriginResult === "opaque"],
   [
-    "same-origin GET uses stale-while-revalidate",
-    swrFirst === "swr-1" && swrSecond === "swr-1" && swrThird === "swr-2",
+    "shell asset uses stale-while-revalidate without query-key growth",
+    shellFirst === "/* shell-1 */" &&
+      shellSecond === "/* shell-1 */" &&
+      shellThird === "/* shell-2 */",
+  ],
+  [
+    "non-shell same-origin GET bypasses runtime cache",
+    swrFirst === "swr-1" && swrSecond === "swr-2" && swrThird === "swr-2" && swrCalls === 3,
   ],
   [
     "offline shell serves index.html",
@@ -175,6 +197,10 @@ if (!ok) {
       apiResult,
       crossOriginCalls,
       crossOriginResult,
+      shellAssetCalls,
+      shellFirst,
+      shellSecond,
+      shellThird,
       swrCalls,
       swrFirst,
       swrSecond,
