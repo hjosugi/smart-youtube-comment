@@ -4,6 +4,7 @@
 // crossOrigin is set — avoids CORS load failures from yt3.ggpht.
 ;(() => {
   "use strict"
+  const CACHE_MAX = 500
   const cache = new Map() // url -> HTMLImageElement
   const SAFE_DATA_IMAGE_RE = /^data:image\/(?:png|gif|jpe?g|webp|avif);base64,[a-z0-9+/=\s]+$/i
 
@@ -28,12 +29,18 @@
     const safeUrl = sanitizeUrl(url)
     if (!safeUrl) return null
     let img = cache.get(safeUrl)
-    if (!img) {
-      img = new Image()
-      img.decoding = "async"
-      img.src = safeUrl
+    if (img) {
+      cache.delete(safeUrl)
       cache.set(safeUrl, img)
+      return img
     }
+    img = new Image()
+    img.decoding = "async"
+    img.src = safeUrl
+    if (cache.size >= CACHE_MAX) {
+      cache.delete(cache.keys().next().value)
+    }
+    cache.set(safeUrl, img)
     return img
   }
 

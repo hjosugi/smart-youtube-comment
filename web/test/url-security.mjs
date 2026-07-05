@@ -130,6 +130,12 @@ assert("emoji: svg data rejected", sanitizeEmojiUrl("data:image/svg+xml;base64,P
   assert("emoji.js: unsafe get did not assign src", assigned.length === 0, assigned.join(","))
   const img = globalThis.SYCEmoji.get("https://yt3.ggpht.com/good=s24")
   assert("emoji.js: safe get assigns src", img && assigned[0] === "https://yt3.ggpht.com/good=s24")
+  const first = globalThis.SYCEmoji.get("https://yt3.ggpht.com/emoji0=s24")
+  for (let i = 1; i <= 500; i++) {
+    globalThis.SYCEmoji.get(`https://yt3.ggpht.com/emoji${i}=s24`)
+  }
+  const reloaded = globalThis.SYCEmoji.get("https://yt3.ggpht.com/emoji0=s24")
+  assert("emoji.js: cache evicts least-recently-used image", reloaded !== first)
 }
 
 let allOk = true
