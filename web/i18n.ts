@@ -50,6 +50,8 @@ const JA = {
     unavailable: "チャットなし（限定/非ライブ）",
     mock: "デモ",
     invalid: "URL/ID が不正です",
+    offline: "オフラインです",
+    player_error: "プレイヤーを読み込めません",
   },
   labels: {
     enabled: "弾幕（オーバーレイ）",
@@ -85,6 +87,10 @@ const JA = {
 const locale = (typeof navigator !== "undefined" ? navigator.language : "en") || "en"
 export const lang = locale.toLowerCase().startsWith("ja") ? "ja" : "en"
 const D: any = lang === "ja" ? JA : {}
+const EN_STATUS: Record<string, string> = {
+  offline: "Offline",
+  player_error: "Player load failed",
+}
 
 export const T = {
   play: D.play ?? "Play",
@@ -122,4 +128,4 @@ export const T = {
 
 export const groupName = g => D.groups?.[g] ?? g
 export const settingLabel = (key, fallback) => D.labels?.[key] ?? fallback
-export const statusText = key => D.status?.[key] ?? key
+export const statusText = key => D.status?.[key] ?? EN_STATUS[key] ?? key

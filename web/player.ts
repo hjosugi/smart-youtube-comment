@@ -3,18 +3,56 @@
 
 let apiPromise: Promise<any> | null = null
 
-const loadApi = (): Promise<any> => {
+export const API_LOAD_TIMEOUT_MS = 10_000
+
+export const loadApi = ({ timeoutMs = API_LOAD_TIMEOUT_MS } = {}): Promise<any> => {
   if (globalThis.YT?.Player) return Promise.resolve(globalThis.YT)
-  apiPromise ??= new Promise<any>(resolve => {
+  apiPromise ??= new Promise<any>((resolve, reject) => {
     const g = globalThis as any
     const prev = g.onYouTubeIframeAPIReady
-    g.onYouTubeIframeAPIReady = () => {
-      prev?.()
+    const script = document.createElement("script")
+    let settled = false
+
+    const cleanup = () => {
+      clearTimeout(timer)
+      script.onerror = null
+      if (g.onYouTubeIframeAPIReady === ready) {
+        if (prev) g.onYouTubeIframeAPIReady = prev
+        else delete g.onYouTubeIframeAPIReady
+      }
+    }
+    const fail = (error: Error) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      apiPromise = null
+      reject(error)
+    }
+    const ready = () => {
+      if (settled) return
+      try {
+        prev?.()
+      } catch {
+        // Keep our loader isolated from unrelated global callback failures.
+      }
+      if (!globalThis.YT?.Player) {
+        fail(new Error("YouTube IFrame API ready callback did not expose Player"))
+        return
+      }
+      settled = true
+      cleanup()
       resolve(globalThis.YT)
     }
-    const s = document.createElement("script")
-    s.src = "https://www.youtube.com/iframe_api"
-    document.head.appendChild(s)
+    const timer = setTimeout(
+      () => fail(new Error("YouTube IFrame API load timed out")),
+      Math.max(1, timeoutMs),
+    )
+
+    g.onYouTubeIframeAPIReady = ready
+    script.async = true
+    script.src = "https://www.youtube.com/iframe_api"
+    script.onerror = () => fail(new Error("YouTube IFrame API failed to load"))
+    document.head.appendChild(script)
   })
   return apiPromise
 }

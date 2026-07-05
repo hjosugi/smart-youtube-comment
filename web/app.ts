@@ -85,21 +85,38 @@ const startMockMode = () => {
 
 const startLive = async (videoId: string, relay: string, startSeconds = 0) => {
   stop()
+  if (navigator.onLine === false) {
+    activeVideo = null
+    seekActive = null
+    playbackMs = () => Infinity
+    setStatus("offline")
+    return
+  }
   activeVideo = videoId
   seen.clear()
   setStatus("loading")
   const client = createLiveChatClient({ base: relay, getOffsetMs: () => playbackMs() })
 
   let playing = false
-  const player: any = await mountPlayer(
-    "player",
-    videoId,
-    (state: string) => {
-      playing = state === "playing"
-      playing ? client.resume() : client.pause()
-    },
-    startSeconds,
-  )
+  let player: any
+  try {
+    player = await mountPlayer(
+      "player",
+      videoId,
+      (state: string) => {
+        playing = state === "playing"
+        playing ? client.resume() : client.pause()
+      },
+      startSeconds,
+    )
+  } catch {
+    client.stop()
+    activeVideo = null
+    seekActive = null
+    playbackMs = () => Infinity
+    setStatus("player_error")
+    return
+  }
   playbackMs = () => (player.getCurrentTime?.() ?? 0) * 1000
   seekActive = (s: number) => player.seekTo?.(s, true)
 

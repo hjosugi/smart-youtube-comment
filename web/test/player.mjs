@@ -1,7 +1,7 @@
 // Pure test for YouTube player state mapping. Unknown states such as -1
 // (unstarted) must be treated as non-playing so chat polling stays paused.
 
-import { mountPlayer } from "../player.ts"
+import { loadApi, mountPlayer } from "../player.ts"
 
 const checks = []
 const assert = (name, cond, extra = "") => checks.push({ name, ok: !!cond, extra })
@@ -38,6 +38,45 @@ assert(
   states[5] === "paused" && states[6] === "paused",
   JSON.stringify(states),
 )
+
+const originalDocument = globalThis.document
+const originalOnReady = globalThis.onYouTubeIframeAPIReady
+delete globalThis.YT
+delete globalThis.onYouTubeIframeAPIReady
+
+const installDocument = onAppend => {
+  globalThis.document = {
+    createElement: tag => ({
+      tagName: tag,
+      async: false,
+      src: "",
+      onerror: null,
+    }),
+    head: {
+      appendChild(script) {
+        onAppend(script)
+      },
+    },
+  }
+}
+
+installDocument(script => setTimeout(() => script.onerror?.(), 0))
+const loadError = await loadApi({ timeoutMs: 50 }).then(
+  () => "",
+  error => error.message,
+)
+assert("api loader rejects on script error", /failed to load/.test(loadError), loadError)
+
+installDocument(() => {})
+const timeoutError = await loadApi({ timeoutMs: 5 }).then(
+  () => "",
+  error => error.message,
+)
+assert("api loader rejects on timeout", /timed out/.test(timeoutError), timeoutError)
+
+globalThis.document = originalDocument
+if (originalOnReady) globalThis.onYouTubeIframeAPIReady = originalOnReady
+else delete globalThis.onYouTubeIframeAPIReady
 
 let allOk = true
 for (const c of checks) {
