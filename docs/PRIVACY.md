@@ -10,8 +10,8 @@ The extension processes the following data locally in the browser:
 - YouTube live chat message text
 - YouTube live chat author display names and author roles
 - YouTube page content needed to find live chat elements and render the overlay
-- Extension settings, display preferences, performance limits, and local block
-  lists
+- Extension settings, display preferences, and performance limits
+- Local block lists for users and words
 
 ## Local Processing
 
@@ -42,8 +42,15 @@ ignored.
 
 ## Storage
 
-The extension uses Chrome extension storage to save user settings and local
-filter lists. These settings are used only to configure the overlay experience.
+The extension uses Chrome extension storage only to configure the overlay
+experience:
+
+- Display, behavior, and performance settings are saved in
+  `chrome.storage.sync` when Chrome Sync is available, so Chrome may sync those
+  settings through the user's signed-in Chrome profile. The extension falls back
+  to local extension storage if sync storage is unavailable.
+- Blocked users and blocked words are saved in `chrome.storage.local` only.
+  They stay on the current device and are not synced across Chrome profiles.
 
 ## Remote Code
 

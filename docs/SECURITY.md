@@ -33,7 +33,8 @@ The gate fails if:
 
 - `manifest.json` leaves Manifest V3.
 - permissions expand beyond `storage`.
-- host permissions expand beyond `https://www.youtube.com/*`.
+- `host_permissions` is added; content-script `matches` scopes YouTube injection
+  without granting extension-wide host access.
 - extension CSP allows inline/eval/remote/blob/data script sources.
 - web-accessible resources are exposed.
 - extension source uses dangerous injection sinks such as `innerHTML`,

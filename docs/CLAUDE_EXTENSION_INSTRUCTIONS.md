@@ -150,7 +150,8 @@ docs/CLAUDE_EXTENSION_INSTRUCTIONS.md を読んでください。
 - innerHTML/outerHTML/insertAdjacentHTML/eval/new Function/remote script/remote style を使わない。
 - YouTube のコメント本文・作者名・metadata はすべて untrusted input。DOM 出力は textContent/setAttribute/DOM API を使う。
 - web_accessible_resources は空のままにする。
-- permissions は最小のまま。storage と https://www.youtube.com/* を基本にする。
+- permissions は最小のまま。`permissions` は `storage` のみ、YouTube への
+  注入範囲は `content_scripts.matches` で管理し、`host_permissions` は足さない。
 - package 依存を増やす場合は exact pin、lockfile integrity、install script なしを守る。
 
 検証:

@@ -119,8 +119,11 @@ The extension scores comments locally in the browser and uses that score to adju
 All scoring and filtering runs on device. The extension does not download remote code, does not use WebAssembly, and does not send chat text to an external server.
 
 Permissions:
-- storage: saves overlay, display, performance, and filter settings.
-- https://www.youtube.com/*: reads YouTube live chat and renders the overlay on YouTube video pages.
+- storage: saves overlay, display, and performance settings. Blocked users and
+  words are stored locally on the current device.
+
+Site access:
+- https://www.youtube.com/*: content scripts read YouTube live chat and render the overlay on YouTube video pages.
 ```
 
 Category:
@@ -169,15 +172,15 @@ No user data is collected by the developer.
 Privacy explanation:
 
 ```text
-The extension processes YouTube live chat text locally in the browser only for overlay rendering and local scoring. Chat text is not sent to the developer or to an external server. User settings and block lists are saved with Chrome extension storage.
+The extension processes YouTube live chat text locally in the browser only for overlay rendering and local scoring. Chat text is not sent to the developer or to an external server. Display, behavior, and performance settings are saved with Chrome Sync storage when available. Blocked users and blocked words are saved only in local extension storage on the current device and are not synced.
 ```
 
 Permission justification:
 
 ```text
-storage: Saves user settings such as overlay enabled state, display options, performance limits, and local block lists.
+storage: Saves user settings such as overlay enabled state, display options, and performance limits. It also saves blocked users and blocked words locally on the current device.
 
-https://www.youtube.com/*: Required to read YouTube live chat elements and render the comment overlay on YouTube video pages.
+https://www.youtube.com/* site access: Required for content scripts to read YouTube live chat elements and render the comment overlay on YouTube video pages.
 ```
 
 Remote code:

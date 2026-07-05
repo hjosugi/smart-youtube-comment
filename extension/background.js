@@ -53,6 +53,15 @@ function isAllowedSender(sender) {
   }
 }
 
+if (globalThis.__SYC_TEST__) {
+  globalThis.__SYCBackgroundTest = {
+    sanitizeText,
+    sanitizeNumber,
+    sanitizeRenderPayload,
+    isAllowedSender
+  };
+}
+
 chrome.runtime.onMessage.addListener((message, sender) => {
   if (message?.type !== "smart-comment:chat-message") return false;
   if (!isAllowedSender(sender)) return false;

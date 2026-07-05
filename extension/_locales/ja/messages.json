@@ -41,6 +41,7 @@
   "g_speed": { "message": "速度" },
   "g_speed_presets": { "message": "速度プリセット" },
   "g_filters": { "message": "フィルター" },
+  "f_local_note": { "message": "ブロックするユーザーと単語はこの端末のみに保存され、Chrome プロフィール間では同期されません。" },
   "s_fastMs": { "message": "速い段階の表示時間" },
   "s_normalMs": { "message": "通常段階の表示時間" },
   "s_slowMs": { "message": "遅い段階の表示時間" },

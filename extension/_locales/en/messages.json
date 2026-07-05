@@ -41,6 +41,7 @@
   "g_speed": { "message": "Speed" },
   "g_speed_presets": { "message": "Speed presets" },
   "g_filters": { "message": "Filters" },
+  "f_local_note": { "message": "Blocked users and words are saved only on this device and are not synced." },
   "s_fastMs": { "message": "Fast tier time" },
   "s_normalMs": { "message": "Normal tier time" },
   "s_slowMs": { "message": "Slow tier time" },

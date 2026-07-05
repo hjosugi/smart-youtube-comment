@@ -489,7 +489,15 @@
     globalThis.__SYCContentTest = {
       extractMessageText,
       extractDisplayText,
-      normalizeDisplayText
+      normalizeDisplayText,
+      extractAuthorType,
+      isOfficialChatText,
+      isUserChatMessageNode,
+      processChatNode,
+      resetSeenKeys() {
+        seenKeys.clear();
+        seenKeyQueue.length = 0;
+      }
     };
   }
 

@@ -184,6 +184,13 @@
     const heading = document.createElement("h2");
     heading.textContent = t("g_filters", "Filters");
     insertBeforeActions(heading);
+    const note = document.createElement("p");
+    note.className = "filter-note";
+    note.textContent = t(
+      "f_local_note",
+      "Blocked users and words are saved only on this device and are not synced."
+    );
+    insertBeforeActions(note);
 
     const lists = await F.load();
     const users = makeFilterField("f_users", "Blocked users (one per line)", lists.users.join("\n"));

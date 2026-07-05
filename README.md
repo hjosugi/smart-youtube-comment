@@ -39,6 +39,15 @@ The extension runs `extension/content.js` in every YouTube frame.
 
 The extension does not fetch remote code.
 
+## Privacy And Storage
+
+The extension scores, filters, and renders comments locally in the browser.
+Display, behavior, and performance settings are saved with Chrome Sync storage
+when available, so Chrome may sync those settings across the signed-in profile.
+Blocked users and blocked words are saved only in local extension storage on the
+current device. Chat text, author names, and block lists are not sent to the
+developer.
+
 ## Requirements
 
 - Chrome or Chromium for loading the extension

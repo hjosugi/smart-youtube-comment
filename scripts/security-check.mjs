@@ -52,10 +52,8 @@ function checkManifest() {
   if (!sameArray(manifest.permissions, ["storage"])) {
     fail('extension/manifest.json permissions must remain minimal: ["storage"].')
   }
-  if (!sameArray(manifest.host_permissions, ["https://www.youtube.com/*"])) {
-    fail(
-      "extension/manifest.json host_permissions must remain scoped to https://www.youtube.com/*.",
-    )
+  if ("host_permissions" in manifest) {
+    fail("extension/manifest.json must not request host_permissions; content_scripts.matches scopes injection.")
   }
 
   const csp = manifest.content_security_policy?.extension_pages ?? ""
