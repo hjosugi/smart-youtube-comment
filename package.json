@@ -2,18 +2,24 @@
   "name": "smart-youtube-comment",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
   "scripts": {
     "security": "node scripts/security-check.mjs && npm audit --omit=dev",
     "security:bun": "bun scripts/security-check.mjs && npm audit --omit=dev",
     "test": "node scripts/test.mjs",
-    "test:bun": "bun scripts/check-sandbox.mjs",
-    "typecheck": "npx --yes -p typescript@5.7.2 tsc --noEmit -p tsconfig.json",
+    "test:bun": "bun scripts/test.mjs",
+    "coverage": "node scripts/coverage.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "node scripts/build-web.mjs",
-    "deploy:web": "node scripts/build-web.mjs && npx wrangler pages deploy web/dist --project-name syc-danmaku --branch feat/mobile-livechat --commit-dirty=true",
-    "deploy:worker": "cd worker && npx wrangler deploy",
-    "format": "npx --yes prettier --write \"web/**/*.{ts,js,mjs}\" \"worker/**/*.{ts,js,mjs}\" \"scripts/*.mjs\"",
-    "format:check": "npx --yes prettier --check \"web/**/*.{ts,js,mjs}\" \"worker/**/*.{ts,js,mjs}\" \"scripts/*.mjs\"",
+    "deploy:web": "node scripts/deploy-web.mjs",
+    "deploy:worker": "npm --prefix worker run deploy",
+    "format": "prettier --write \"web/**/*.{ts,js,mjs}\" \"worker/**/*.{ts,js,mjs}\" \"bench/**/*.mjs\" \"scripts/*.mjs\"",
+    "format:check": "prettier --check \"web/**/*.{ts,js,mjs}\" \"worker/**/*.{ts,js,mjs}\" \"bench/**/*.mjs\" \"scripts/*.mjs\"",
     "test:e2e": "node bench/e2e/perf.mjs",
     "test:e2e:bun": "bun bench/e2e/perf.mjs",
     "test:sandbox": "node scripts/check-sandbox.mjs",
@@ -30,14 +36,16 @@
     "release:store": "npm run release:zip && npm run release:store:submit",
     "sandbox": "node scripts/serve-sandbox.mjs",
     "sandbox:bun": "bun scripts/serve-sandbox.mjs",
-    "sandbox:serve": "node scripts/serve-sandbox.mjs",
-    "sandbox:serve:bun": "bun scripts/serve-sandbox.mjs",
     "version:set": "node scripts/set-version.mjs",
     "version:set:bun": "bun scripts/set-version.mjs",
     "test:ext": "node bench/e2e/extension.mjs",
     "test:ext:bun": "bun bench/e2e/extension.mjs"
   },
   "devDependencies": {
-    "playwright": "1.60.0"
+    "esbuild": "0.28.1",
+    "playwright": "1.60.0",
+    "prettier": "3.9.4",
+    "typescript": "5.7.2",
+    "wrangler": "4.107.0"
   }
 }

@@ -1,6 +1,6 @@
 # Smart YouTube Comment — アーキテクチャ / 実装方針
 
-最終更新: 2026-06-20
+最終更新: 2026-07-05
 
 このリポジトリは「YouTube のライブチャットを内容評価しながら niconico 風の弾幕で
 流す」プロジェクトの **単一の完成品リポジトリ**。**Chrome 拡張(デスクトップ)** と
@@ -9,8 +9,9 @@
 - **Chrome 拡張(`extension/`)**: デスクトップ www.youtube.com に弾幕を重ねる。既存実装。
 - **モバイル PWA(`web/` + `worker/`)**: モバイルブラウザ向け伴走 Web アプリ。新規実装。
 
-評価・描画の中核(`scoring.js` / `danmaku.js`)は両者で共有するが、**過度な共通化は
-しない**(複雑になるなら最小限に留める方針 — 詳細は §5)。
+評価・描画の中核(`scoring.js` / `danmaku.js`)は両者で共有する。`web/` の
+オーケストレーションとリレー通信は TypeScript、`worker/` も TypeScript だが、
+**過度な共通化はしない**(複雑になるなら最小限に留める方針 — 詳細は §5)。
 
 モバイル対応ターゲット: **iOS Safari / Android Chrome / iPhone(Safari)**。
 YouTube 純正アプリへの適用は行わない(技術的に不可)。
@@ -87,10 +88,10 @@ YouTube IFrame Player を埋め込む方式では、**画面ロック/アプリ�
 │   [Danmaku Canvas Overlay] ◄── danmaku.js(再利用)                            │
 │          ▲                                                                      │
 │          │ push(renderPlan)                                                     │
-│   [Orchestrator app.js] ──► scoring.js(評価) / filter.js(NG) / settings.js  │
+│   [Orchestrator app.ts] ──► scoring.js(評価) / filter.js(NG) / settings.js  │
 │          ▲                                                                      │
 │          │ poll(ChatMessage[])                                                  │
-│   [chat-client.js]                                                              │
+│   [chat-client.ts]                                                              │
 │          │ fetch(JSON, CORS OK)                                                 │
 └──────────┼─────────────────────────────────────────────────────────────────────┘
            │ HTTPS
@@ -117,20 +118,20 @@ YouTube IFrame Player を埋め込む方式では、**画面ロック/アプリ�
 │   ├── danmaku.js           # ← 中核(web の出発点)
 │   ├── settings.js / filter.js
 │   └── icons/ _locales/
-├── web/                     # 【新規】モバイル PWA(静的配信。CF Pages 等)
+├── web/                     # モバイル PWA(静的配信。CF Pages 等)
 │   ├── index.html / styles.css
-│   ├── app.js               # オーケストレーション(player+chat+scoring+danmaku)
-│   ├── player.js            # YT IFrame ラッパ + Wake Lock + Media Session
-│   ├── chat-client.js       # CF Worker をポーリングし ChatMessage[] を返す
+│   ├── app.ts               # オーケストレーション(player+chat+scoring+danmaku)
+│   ├── player.ts            # YT IFrame ラッパ + Wake Lock + Media Session
+│   ├── chat-client.ts       # CF Worker をポーリングし ChatMessage[] を返す
 │   ├── store.js             # localStorage シム(chrome.storage の置換)
 │   ├── scoring.js           # ← extension 由来 / モバイル最適化で分岐可(§5.1)
 │   ├── danmaku.js           # ← extension 由来 / モバイル最適化で分岐可(§5.1)
 │   ├── settings.js / filter.js  # 流用(localStorage 化)
-│   ├── ui.js                # モバイル向け設定パネル(タッチ UI)
+│   ├── ui.ts                # モバイル向け設定パネル(タッチ UI)
 │   ├── sw.js / manifest.webmanifest / icons/
-├── worker/                  # 【実装済・検証済】Cloudflare Worker(CORS 中継, JS)
-│   ├── src/index.js         # Worker エントリ(CORS/ルーティング/キャッシュ)
-│   ├── src/innertube.js     # InnerTube 中継ロジック(純粋・ランタイム非依存)
+├── worker/                  # Cloudflare Worker(CORS 中継, TypeScript)
+│   ├── src/index.ts         # Worker エントリ(CORS/ルーティング/キャッシュ)
+│   ├── src/innertube.ts     # InnerTube 中継ロジック(純粋・ランタイム非依存)
 │   ├── test/probe.mjs       # node 実機検証ハーネス
 │   └── wrangler.jsonc / package.json
 └── docs/                    # 補足ドキュメント(契約・性能ノート等)
@@ -177,11 +178,12 @@ InnerTube レスポンスを下記 `ChatMessage` 形に正規化し、scoring �
   "authorType": "normal",  // "normal" | "member" | "moderator" | "owner"
   "authorColor": null,
   "text": "string",
-  "amount": null           // paid のみ
+  "amount": null,          // paid のみ
+  "offsetMs": 0            // replay/VOD のみ
 }
 
 // LiveChat ポーリング・エンベロープ(worker → 端末)
-{ "messages": [], "continuation": "string|null", "timeoutMs": 1000, "ended": false }
+{ "messages": [], "continuation": "string|null", "timeoutMs": 1000, "ended": false, "isReplay": false }
 
 // ScoreInput(scoring.js への入力)
 { "text": "string", "authorType": "normal", "kind": "text" }
@@ -227,7 +229,7 @@ CF Worker が以下を中継する(クライアントには CORS 制約のため
 - **Worker 側(境界化リトライ)** — `innertubePost` は per-attempt 3.5s タイムアウト
   (fetch とボディ読取の両方をカバー)で、timeout/429/5xx のみ最大2回・ジッタ付きで再試行。
   **単発ブリップを吸収しつつ最悪レイテンシを ~7s に境界化**(ポーリング間隔内)。叩き続けない。
-- **端末側(適応バックオフ, `web/chat-client.js`)** — 健全時は server の `timeoutMs`、
+- **端末側(適応バックオフ, `web/chat-client.ts`)** — 健全時は server の `timeoutMs`、
   失敗が続くほど**指数バックオフ(ジッタ付き・上限30s)**で間隔を伸ばし、回復で即リセット。
   持続失敗時は `videoId` から**再解決**(continuation 失効対策)。これが「自動可変」本体で、
   タールピット中の上流への負荷を下げて回復を早め、共有 egress IP にも優しい。
@@ -245,9 +247,9 @@ CF Worker が以下を中継する(クライアントには CORS 制約のため
 
 ### 7.3 端末の最適化
 
-- **モバイル最適化既定値**(`web/settings.js`, extension からの分岐): `maxActive` 700 /
-  `renderScalePct` 60% / `spawnPerFrame` 8。弱い端末はレンダラの適応キャップが更に自動で守る。
-- **性能 HUD**(`?perf=1`, `web/perf.js`): fps / active / drop / frameP95 / longTasks を実機表示。
+- **モバイル最適化既定値**(`web/settings.js`, extension からの分岐): `maxActive` 250 /
+  `renderScalePct` 60% / `spawnPerFrame` 6。弱い端末はレンダラの適応キャップが更に自動で守る。
+- **性能 HUD**(`?perf=1`, `web/perf.ts`): fps / active / drop / frameP95 / longTasks を実機表示。
   OffscreenCanvas 等の重い最適化は**この実測で必要性を確認してから**入れる方針(「実測して
   から」原則)。
 
@@ -261,7 +263,7 @@ CF Worker が以下を中継する(クライアントには CORS 制約のため
 - **DPR / 解像度**: モバイル GPU 負荷を抑えるため `renderScalePct` 既定値を下げる
   方向で調整(設定で可変)。
 - **タッチ UI**: 設定は元 `options.js` のスキーマ駆動を踏襲しつつ、ボトムシート等の
-  タッチ前提 UI(`ui.js`)に置換。
+  タッチ前提 UI(`ui.ts`)に置換。
 - **PWA**: `manifest.webmanifest` + `sw.js` でホーム画面追加・静的キャッシュ。
   チャット API はキャッシュしない(常に最新)。
 - **ストレージ**: `chrome.storage` → `localStorage`(`store.js` のシムで吸収。
@@ -276,16 +278,16 @@ CF Worker が以下を中継する(クライアントには CORS 制約のため
    `worker/test/probe.mjs` で実機検証可。
 2. ✅ **実デプロイ(`syc-livechat-relay.acofun.workers.dev`)で CF エッジ IP からの取得を確認**。
    タールピット対策の **2層リトライ + 適応 cadence** を実装・検証(§7.1)。
-   端末側 `web/chat-client.js`(適応バックオフ)は純粋な状態機械 `step` + 薄い副作用シェルに
+   端末側 `web/chat-client.ts`(適応バックオフ)は純粋な状態機械 `step` + 薄い副作用シェルに
    分離し、純粋ユニット + 決定論 + 実ライブの3層で検証済み(`web/test/chat-client-pure.mjs`
    / `chat-client-adaptive.mjs` / `chat-client-live.mjs`)。
-3. ✅ **垂直スライス**: `scoring.js`/`danmaku.js` を `extension/` からコピー、`app.js` で
+3. ✅ **垂直スライス**: `scoring.js`/`danmaku.js` を `extension/` からコピー、`app.ts` で
    player + chat-client + scoring + danmaku を結線。**実ブラウザ(headless Chromium)で弾幕
    描画を e2e 検証**(`web/test/e2e.mjs`)。FP の小モジュール分割(config/pipeline/player/mock)。
 4. ✅ **PWA + ライフサイクル**: `sw.js`(静的シェルキャッシュ・チャットAPIは非キャッシュ) +
-   `manifest.webmanifest` + Wake Lock/Media Session(`lifecycle.js`)。SW activate を e2e 検証。
+   `manifest.webmanifest` + Wake Lock/Media Session(`lifecycle.ts`)。SW activate を e2e 検証。
 5. ✅ **タッチ設定UI**: `store.js`(localStorage シム)で `settings.js`/`filter.js` を**無改変流用**、
-   schema 駆動の `controls.js`/`ui.js` ボトムシート。速度/表示/NG等をライブ反映+永続化を e2e 検証。
+   schema 駆動の `controls.ts`/`ui.ts` ボトムシート。速度/表示/NG等をライブ反映+永続化を e2e 検証。
 6. 実機(iOS Safari / Android Chrome)で確認・チューニング(CF Pages へデプロイ → 実機)。
 
 ### 9.1 無料枠での運用(measured)
@@ -296,7 +298,7 @@ CF Worker が以下を中継する(クライアントには CORS 制約のため
 - **キャッシュは無料枠の天井を上げない**(上流 YouTube 呼び出しと IP-BAN 対策にのみ効く)。
   有料公開規模(数千同時)は WebSocket + Durable Object 単一フライトが必要(ロードマップ)。
 
-無料枠を**有料機能なしで**広げる実装(`chat-client.js`):
+無料枠を**有料機能なしで**広げる実装(`chat-client.ts`):
 - **非表示/一時停止中はポーリング停止**(Page Visibility + プレイヤー状態 → `pause()/resume()`)。
   バックグラウンドのタブはリクエスト消費ゼロ。実利用で最大の節約。
 - **静寂適応**: 0件の窓が続くと間隔を `quietGrowth` 倍に延長(上限 `maxQuietMs`=40s)、

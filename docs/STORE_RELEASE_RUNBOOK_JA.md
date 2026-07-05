@@ -71,19 +71,6 @@ printf 'GCP_PROJECT_ID=%s\nGITHUB=%s/%s\n' "$GCP_PROJECT_ID" "$GITHUB_OWNER" "$G
 1. ローカルでzipを作る。
 
 ```sh
-
-
-
-
-
-
-
-
-
-
-
-
-
 npm ci
 npm run release:zip
 ```
@@ -398,7 +385,7 @@ npm run version:set -- "$VERSION"
 npm run release:zip
 
 git status --short
-git add package.json extension/manifest.json
+git add package.json package-lock.json web/package.json web/package-lock.json worker/package.json worker/package-lock.json extension/manifest.json
 git commit -m "Release ${VERSION}"
 git tag "v${VERSION}"
 git push origin HEAD
@@ -452,7 +439,7 @@ deploy_percentage: 空欄
 ```sh
 export VERSION="X.Y.Z"
 npm run version:set -- "$VERSION"
-git add package.json extension/manifest.json
+git add package.json package-lock.json web/package.json web/package-lock.json worker/package.json worker/package-lock.json extension/manifest.json
 git commit -m "Release ${VERSION}"
 git tag -d "v${VERSION}" || true
 git tag "v${VERSION}"

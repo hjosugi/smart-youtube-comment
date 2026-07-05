@@ -10,15 +10,14 @@ import { join } from "node:path"
 
 const WEB = new URL("../web/", import.meta.url).pathname
 const DIST = join(WEB, "dist")
+const ESBUILD = new URL("../node_modules/.bin/esbuild", import.meta.url).pathname
 
 rmSync(DIST, { recursive: true, force: true })
 mkdirSync(DIST, { recursive: true })
 
 execFileSync(
-  "npx",
+  ESBUILD,
   [
-    "--yes",
-    "esbuild",
     join(WEB, "app.ts"),
     "--bundle",
     "--format=esm",

@@ -11,11 +11,13 @@
 
 # Release/package outputs
 /.release/
+/.coverage/
 *.crx
 *.xpi
 
 # Local-only coordination notes
 /.private-discussion/
+/.claude/
 
 # Local secrets and machine-specific files
 .env

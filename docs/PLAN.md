@@ -2,13 +2,18 @@
 
 ## Current Architecture
 
-The extension is JavaScript-only. Scorer time is not the bottleneck; browser
-rendering and chat extraction are.
+The desktop Chrome extension under `extension/` is JavaScript-only. The mobile
+PWA under `web/` uses TypeScript modules plus copied classic browser scripts,
+and the CORS relay under `worker/` is a TypeScript Cloudflare Worker. Scorer
+time is not the bottleneck; browser rendering, chat extraction, and relay
+resilience are.
 
 ## Current Split
 
 - Claude: `extension/`
-- Shared: `docs/`, release scripts, package scripts
+- Codex: CI/tooling, `web/`, `worker/`, and shared release automation when a
+  change needs end-to-end validation
+- Shared: `docs/`, release scripts, package scripts, interface contracts
 - Local notes: `.private-discussion/`
 
 ## Current Scoring Path
@@ -34,7 +39,8 @@ The next performance work should focus on the browser path:
 Use these commands:
 
 - `npm run security`
-- `npm run test:sandbox`
+- `npm test`
+- `npm run coverage`
 - `npm run test:e2e` for renderer performance
 - `npm run test:ext` for real Chromium extension smoke testing
 

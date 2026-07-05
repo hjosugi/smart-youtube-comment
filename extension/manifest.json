@@ -4,8 +4,12 @@
   "version": "0.1.0",
   "description": "__MSG_ext_desc__",
   "default_locale": "en",
-  "permissions": ["storage"],
-  "host_permissions": ["https://www.youtube.com/*"],
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://www.youtube.com/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },
@@ -33,8 +37,16 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://www.youtube.com/*"],
-      "js": ["scoring.js", "danmaku.js", "settings.js", "filter.js", "content.js"],
+      "matches": [
+        "https://www.youtube.com/*"
+      ],
+      "js": [
+        "scoring.js",
+        "danmaku.js",
+        "settings.js",
+        "filter.js",
+        "content.js"
+      ],
       "run_at": "document_idle",
       "all_frames": true
     }

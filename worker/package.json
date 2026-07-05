@@ -1,5 +1,6 @@
 {
   "name": "syc-livechat-relay",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,6 +9,7 @@
     "probe": "node test/probe.mjs"
   },
   "devDependencies": {
-    "wrangler": "^4.103.0"
+    "@cloudflare/workers-types": "4.20260702.1",
+    "wrangler": "4.107.0"
   }
 }

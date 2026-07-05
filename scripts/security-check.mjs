@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { extname, join, relative, resolve } from "node:path"
 
 const root = resolve(new URL("..", import.meta.url).pathname)
@@ -122,11 +122,32 @@ function checkExtensionSource() {
 }
 
 function checkPackagePolicy() {
-  const pkg = readJson(resolve(root, "package.json"))
-  const lock = readJson(resolve(root, "package-lock.json"))
-  if (pkg.private !== true)
-    fail("package.json must remain private to prevent accidental npm publish.")
-  if (lock.lockfileVersion !== 3) fail("package-lock.json must use lockfileVersion 3.")
+  for (const relDir of [".", "web", "worker"]) checkPackageRoot(relDir)
+}
+
+const allowedInstallScripts = new Set([
+  "node_modules/esbuild",
+  "node_modules/sharp",
+  "node_modules/workerd",
+])
+
+function checkPackageRoot(relDir) {
+  const label = relDir === "." ? "." : relDir
+  const packagePath = resolve(root, relDir, "package.json")
+  const lockPath = resolve(root, relDir, "package-lock.json")
+
+  if (!existsSync(packagePath)) fail(`${label}/package.json is missing.`)
+  if (!existsSync(lockPath)) {
+    fail(`${label}/package-lock.json is missing; every package root must have a lockfile.`)
+    return
+  }
+
+  const pkg = readJson(packagePath)
+  const lock = readJson(lockPath)
+  if (pkg.private !== true) {
+    fail(`${label}/package.json must remain private to prevent accidental npm publish.`)
+  }
+  if (lock.lockfileVersion !== 3) fail(`${label}/package-lock.json must use lockfileVersion 3.`)
 
   for (const section of [
     "dependencies",
@@ -136,28 +157,41 @@ function checkPackagePolicy() {
   ]) {
     for (const [name, spec] of Object.entries(pkg[section] ?? {})) {
       if (/^[~^*]|x|\|\||[<>]/.test(spec)) {
-        fail(`package.json ${section}.${name} must be pinned exactly, found ${spec}.`)
+        fail(`${label}/package.json ${section}.${name} must be pinned exactly, found ${spec}.`)
       }
     }
   }
 
   const rootLock = lock.packages?.[""] ?? {}
-  for (const [name, spec] of Object.entries(rootLock.devDependencies ?? {})) {
-    if (pkg.devDependencies?.[name] !== spec) {
-      fail(`package-lock root devDependency ${name} (${spec}) does not match package.json.`)
+  if (rootLock.name !== pkg.name) {
+    fail(`${label}/package-lock.json root package name does not match package.json.`)
+  }
+  if ((pkg.version ?? rootLock.version) !== rootLock.version) {
+    fail(`${label}/package-lock.json root package version does not match package.json.`)
+  }
+
+  for (const section of ["dependencies", "devDependencies", "optionalDependencies"]) {
+    for (const [name, spec] of Object.entries(rootLock[section] ?? {})) {
+      if (pkg[section]?.[name] !== spec) {
+        fail(
+          `${label}/package-lock.json root ${section}.${name} (${spec}) does not match package.json.`,
+        )
+      }
     }
   }
 
   for (const [path, meta] of Object.entries(lock.packages ?? {})) {
     if (!path || !path.startsWith("node_modules/")) continue
-    if (!meta.integrity) fail(`package-lock entry ${path} is missing integrity.`)
+    if (!meta.integrity) fail(`${label}/package-lock.json entry ${path} is missing integrity.`)
     if (!meta.resolved?.startsWith("https://registry.npmjs.org/")) {
-      fail(`package-lock entry ${path} must resolve from the npm registry.`)
+      fail(`${label}/package-lock.json entry ${path} must resolve from the npm registry.`)
     }
-    if (meta.hasInstallScript && !meta.optional) {
-      fail(`package-lock entry ${path} has a lifecycle install script.`)
+    if (meta.hasInstallScript && !meta.optional && !allowedInstallScripts.has(path)) {
+      fail(`${label}/package-lock.json entry ${path} has a lifecycle install script.`)
     } else if (meta.hasInstallScript) {
-      warn(`optional dependency ${path} has an install script; keep it optional and dev-only.`)
+      warn(
+        `${label}/package-lock.json entry ${path} has an install script; keep it dev-only or optional.`,
+      )
     }
   }
 }

@@ -140,7 +140,7 @@ writeFileSync(
 - Prototype build
 - YouTube DOM changes may break extraction
 - Busy-stream performance still needs real Chrome profiling
-- Not yet ready for Chrome Web Store submission
+- Chrome Web Store submission requires the one-time store listing and privacy setup
 `,
 )
 

@@ -4,13 +4,12 @@ import { existsSync } from "node:fs"
 import { join } from "node:path"
 
 const ROOT = new URL("..", import.meta.url).pathname
+const REQUIRE_E2E = process.env.SYC_REQUIRE_E2E === "1"
 
 // Type-check and build the web app (the e2e + manifest suites run against web/dist).
-console.log("── typecheck + build ──")
-execFileSync("npx", ["--yes", "-p", "typescript@5.7.2", "tsc", "--noEmit", "-p", "tsconfig.json"], {
-  cwd: ROOT,
-  stdio: "inherit",
-})
+console.log("── security policy + typecheck + build ──")
+execFileSync("node", [join(ROOT, "scripts/security-check.mjs")], { cwd: ROOT, stdio: "inherit" })
+execFileSync("npm", ["run", "typecheck"], { cwd: ROOT, stdio: "inherit" })
 execFileSync("node", [join(ROOT, "scripts/build-web.mjs")], { cwd: ROOT, stdio: "inherit" })
 
 // The e2e group drives a real browser via Playwright. That's an optional dev/CI
@@ -25,6 +24,11 @@ try {
   }
 } catch {
   e2eSkip = "playwright not installed (run: npm i -D playwright && npx playwright install chromium)"
+}
+
+if (e2eSkip && REQUIRE_E2E) {
+  console.error(`E2E browser is required but unavailable: ${e2eSkip}`)
+  process.exit(1)
 }
 
 const SUITES = [
@@ -75,4 +79,8 @@ for (const [g, suite] of SUITES) {
 }
 
 console.log(`\n════ ${pass} passed, ${fail} failed${skip ? `, ${skip} skipped` : ""} ════`)
+if (fail === 0) {
+  console.log("\n── sandbox smoke ──")
+  execFileSync("node", [join(ROOT, "scripts/check-sandbox.mjs")], { cwd: ROOT, stdio: "inherit" })
+}
 process.exit(fail ? 1 : 0)

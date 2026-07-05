@@ -16,7 +16,7 @@ const command =
   !commandArg || commandArg === "help" || commandArg === "--help" || commandArg === "-h"
     ? "help"
     : commandArg
-const args = command === "help" ? argv.slice(1) : argv.slice(1)
+const args = argv.slice(1)
 
 const apiBase = "https://chromewebstore.googleapis.com"
 const tokenUrl = "https://oauth2.googleapis.com/token"

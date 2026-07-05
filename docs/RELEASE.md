@@ -21,9 +21,11 @@ tracked extension source; there is no build step.
 Keep these versions identical:
 
 - `package.json` -> `version`
+- `web/package.json` -> `version`
+- `worker/package.json` -> `version`
 - `extension/manifest.json` -> `version`
 
-Set both at once:
+Set all of them, plus lockfile root metadata, at once:
 
 ```sh
 npm run version:set -- 0.1.1

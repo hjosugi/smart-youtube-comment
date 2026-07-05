@@ -1,6 +1,6 @@
 import { createServer } from "node:http"
 import { createReadStream, existsSync, statSync } from "node:fs"
-import { extname, join, normalize, resolve } from "node:path"
+import { extname, isAbsolute, normalize, relative, resolve, sep } from "node:path"
 
 const root = resolve(new URL("..", import.meta.url).pathname)
 const requestedPort = Number(process.argv[2] || process.env.PORT || 4173)
@@ -16,12 +16,20 @@ const types = new Map([
 ])
 
 const server = createServer((request, response) => {
-  const url = new URL(request.url ?? "/", `http://${host}`)
-  const pathname = url.pathname === "/" ? "/sandbox/index.html" : url.pathname
-  const decoded = decodeURIComponent(pathname)
-  const candidate = normalize(join(root, decoded))
+  let decoded
+  try {
+    const rawPath = (request.url ?? "/").split(/[?#]/, 1)[0] || "/"
+    const pathname = rawPath === "/" ? "/sandbox/index.html" : rawPath
+    decoded = decodeURIComponent(pathname)
+  } catch {
+    response.writeHead(400)
+    response.end("Bad request")
+    return
+  }
+  const candidate = normalize(resolve(root, `.${decoded}`))
+  const rel = relative(root, candidate)
 
-  if (!candidate.startsWith(root)) {
+  if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
     response.writeHead(403)
     response.end("Forbidden")
     return

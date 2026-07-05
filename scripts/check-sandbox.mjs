@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process"
+import { request } from "node:http"
 
 const port = 4183
 const server = spawn(process.execPath, ["scripts/serve-sandbox.mjs", String(port)], {
@@ -50,9 +51,30 @@ async function runChecks() {
     throw new Error("shared scoring script did not contain SYCScoring export")
   }
 
+  const traversalStatus = await rawStatus("/%2e%2e/package.json")
+  if (traversalStatus !== 403) {
+    throw new Error(`encoded path traversal was not blocked: ${traversalStatus}`)
+  }
+
+  const badRequestResponse = await fetch(`http://127.0.0.1:${port}/%zz`)
+  if (badRequestResponse.status !== 400) {
+    throw new Error(`malformed encoded path was not rejected: ${badRequestResponse.status}`)
+  }
+
   finished = true
   server.kill("SIGTERM")
   console.log("sandbox smoke ok")
+}
+
+function rawStatus(path) {
+  return new Promise((resolve, reject) => {
+    const req = request({ host: "127.0.0.1", port, path, method: "GET" }, response => {
+      response.resume()
+      response.on("end", () => resolve(response.statusCode))
+    })
+    req.on("error", reject)
+    req.end()
+  })
 }
 
 function fail(error) {

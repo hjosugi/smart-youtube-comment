@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs"
+import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 
 const version = process.argv[2]
@@ -10,12 +10,26 @@ if (!version || !/^\d+\.\d+\.\d+(?:\.\d+)?$/.test(version)) {
 }
 
 const root = resolve(new URL("..", import.meta.url).pathname)
-const targets = [resolve(root, "package.json"), resolve(root, "extension/manifest.json")]
+const targets = [
+  resolve(root, "package.json"),
+  resolve(root, "package-lock.json"),
+  resolve(root, "extension/manifest.json"),
+  resolve(root, "web/package.json"),
+  resolve(root, "web/package-lock.json"),
+  resolve(root, "worker/package.json"),
+  resolve(root, "worker/package-lock.json"),
+]
 
 for (const target of targets) {
+  if (!existsSync(target)) continue
   const json = JSON.parse(readFileSync(target, "utf8"))
-  json.version = version
+  if (target.endsWith("package-lock.json")) {
+    json.version = version
+    if (json.packages?.[""]) json.packages[""].version = version
+  } else {
+    json.version = version
+  }
   writeFileSync(target, `${JSON.stringify(json, null, 2)}\n`)
 }
 
-console.log(`Version set to ${version} in package.json and extension/manifest.json`)
+console.log(`Version set to ${version} in package roots and extension/manifest.json`)

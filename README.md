@@ -12,6 +12,8 @@ reactions, emoji floods, or low-value bursts bury everything else.
 Implemented:
 
 - Chrome MV3 extension scaffold
+- mobile PWA under `web/`
+- Cloudflare Worker live-chat relay under `worker/`
 - YouTube live-chat extraction from all frames
 - top-frame canvas danmaku renderer
 - JavaScript-only local scorer in `extension/scoring.js`
@@ -40,7 +42,7 @@ The extension does not fetch remote code.
 ## Requirements
 
 - Chrome or Chromium for loading the extension
-- Node.js for scripts
+- Node.js 22+ and npm 10+ for scripts
 - Optional: Bun 1.3+ for faster local scripts
 
 Install JS tooling:
@@ -51,7 +53,8 @@ npm install
 
 ## Test
 
-Run the security and sandbox smoke checks:
+Run the security gate, typecheck, web build, unit suites, browser e2e suites
+when Chromium is installed, and sandbox smoke checks:
 
 ```sh
 npm test
@@ -82,7 +85,9 @@ Real extension smoke test in Chromium:
 npm run test:ext
 ```
 
-`test:ext` opens a real browser and may require a desktop session.
+`test:ext` opens a real browser locally. In CI it skips by default unless
+`SYC_REQUIRE_EXTENSION_E2E=1` is set. To make `npm test` fail instead of
+skipping missing Chromium, set `SYC_REQUIRE_E2E=1`.
 
 ## Local Sandbox
 
@@ -143,6 +148,9 @@ Set package and manifest versions together:
 npm run version:set -- 0.1.1
 ```
 
+This updates the root, `web/`, `worker/`, their lockfile root metadata, and
+`extension/manifest.json`.
+
 ## Project Layout
 
 ```text
@@ -161,6 +169,14 @@ npm run version:set -- 0.1.1
 ├── bench/
 │   ├── danmaku-bench.html
 │   └── e2e/
+├── web/
+│   ├── app.ts
+│   ├── test/
+│   └── dist/
+├── worker/
+│   ├── src/
+│   ├── test/
+│   └── wrangler.jsonc
 ├── sandbox/
 │   └── index.html
 ├── docs/

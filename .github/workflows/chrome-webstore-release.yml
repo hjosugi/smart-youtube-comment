@@ -61,8 +61,8 @@ jobs:
       CHROME_WEBSTORE_REFRESH_TOKEN: ${{ secrets.CHROME_WEBSTORE_REFRESH_TOKEN }}
       CHROME_WEBSTORE_ACCESS_TOKEN: ${{ secrets.CHROME_WEBSTORE_ACCESS_TOKEN }}
       CHROME_WEBSTORE_BLOCK_ON_WARNINGS: "1"
-      CHROME_WEBSTORE_SKIP_REVIEW: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_review || false }}
-      CHROME_WEBSTORE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
+      CHROME_WEBSTORE_SKIP_REVIEW: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_review == true }}
+      CHROME_WEBSTORE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == true }}
       CHROME_WEBSTORE_DEPLOY_PERCENTAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_percentage || '' }}
       GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
       GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
@@ -82,7 +82,7 @@ jobs:
 
       - name: Authenticate to Google Cloud
         id: google-auth
-        if: ${{ (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)) && env.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && env.GCP_SERVICE_ACCOUNT != '' }}
+        if: ${{ (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.dry_run != true)) && env.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && env.GCP_SERVICE_ACCOUNT != '' }}
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
@@ -91,13 +91,13 @@ jobs:
           access_token_scopes: https://www.googleapis.com/auth/chromewebstore
 
       - name: Use short-lived Chrome Web Store access token
-        if: ${{ (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)) && env.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && env.GCP_SERVICE_ACCOUNT != '' }}
+        if: ${{ (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.dry_run != true)) && env.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && env.GCP_SERVICE_ACCOUNT != '' }}
         env:
           ACCESS_TOKEN: ${{ steps.google-auth.outputs.access_token }}
         run: echo "CHROME_WEBSTORE_ACCESS_TOKEN=${ACCESS_TOKEN}" >> "$GITHUB_ENV"
 
       - name: Set manual version
-        if: ${{ github.event_name == 'workflow_dispatch' && !inputs.status_only && !inputs.publish_only && inputs.version != '' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.status_only != true && inputs.publish_only != true && inputs.version != '' }}
         env:
           RELEASE_VERSION: ${{ inputs.version }}
         run: npm run version:set -- "$RELEASE_VERSION"
@@ -119,19 +119,19 @@ jobs:
           NODE
 
       - name: Fetch Chrome Web Store status
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.status_only }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.status_only == true }}
         run: npm run release:store:status
 
       - name: Publish existing Chrome Web Store draft
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_only }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_only == true }}
         run: npm run release:store:publish
 
       - name: Build release zip
-        if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.status_only && !inputs.publish_only) }}
+        if: ${{ github.event_name != 'workflow_dispatch' || (inputs.status_only != true && inputs.publish_only != true) }}
         run: npm run release:zip
 
       - name: Upload release artifacts
-        if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.status_only && !inputs.publish_only) }}
+        if: ${{ github.event_name != 'workflow_dispatch' || (inputs.status_only != true && inputs.publish_only != true) }}
         uses: actions/upload-artifact@v4
         with:
           name: chrome-extension-release
@@ -140,9 +140,9 @@ jobs:
           if-no-files-found: error
 
       - name: Upload to Chrome Web Store
-        if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && !inputs.status_only && !inputs.publish_only) }}
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.status_only != true && inputs.publish_only != true) }}
         run: npm run release:store:upload
 
       - name: Publish in Chrome Web Store
-        if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && !inputs.status_only && !inputs.publish_only && inputs.publish) }}
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.status_only != true && inputs.publish_only != true && inputs.publish == true) }}
         run: npm run release:store:publish

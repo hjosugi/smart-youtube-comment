@@ -104,8 +104,8 @@ git push origin main --tags
 
 Pushing a `vX.Y.Z` tag runs checks, packages the extension, uploads release
 artifacts, uploads the zip to Chrome Web Store, and submits it for
-review/publishing. The workflow rejects a tag if it does not match both
-`package.json` and `extension/manifest.json`.
+review/publishing. The workflow rejects a tag if it does not match the package
+roots updated by `npm run version:set` and `extension/manifest.json`.
 
 Manual emergency path:
 
