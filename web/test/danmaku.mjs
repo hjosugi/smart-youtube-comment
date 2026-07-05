@@ -29,6 +29,24 @@ const makeDocument = () => ({
   },
 })
 
+const makePerformanceObserver = counters =>
+  class {
+    constructor(callback) {
+      counters.created += 1
+      this.callback = callback
+    }
+
+    observe(options) {
+      counters.observed += 1
+      counters.lastOptions = options
+      this.callback({ getEntries: () => [{}] })
+    }
+
+    disconnect() {
+      counters.disconnected += 1
+    }
+  }
+
 const hasCacheText = (cache, text) => Array.from(cache.keys()).some(key => key.endsWith(`|${text}`))
 
 const assertAdaptiveCap = (label, Overlay) => {
@@ -120,10 +138,36 @@ const assertDedup = (label, Overlay) => {
   )
 }
 
+const assertLongTaskObserverLifecycle = (label, Overlay, counters) => {
+  const overlay = new Overlay({ dpr: 1, dedup: false })
+
+  assert.equal(counters.observed, 0, `${label}: constructor should not subscribe before attach`)
+  overlay._startLongTaskObserver()
+  assert.equal(counters.observed, 1, `${label}: observer should subscribe on start`)
+  assert.equal(overlay.longTasks, 1, `${label}: observer callback should update long-task count`)
+  overlay._startLongTaskObserver()
+  assert.equal(counters.observed, 1, `${label}: repeated start should not double subscribe`)
+
+  overlay.detach()
+  assert.equal(counters.disconnected, 1, `${label}: detach should disconnect the observer`)
+  assert.equal(overlay._lto, null, `${label}: detach should clear the observer handle`)
+
+  overlay._startLongTaskObserver()
+  assert.equal(counters.observed, 2, `${label}: observer should be restartable after detach`)
+  overlay._stopLongTaskObserver()
+  assert.equal(
+    counters.disconnected,
+    2,
+    `${label}: explicit stop should disconnect restarted observer`,
+  )
+}
+
 const loadWebOverlay = async () => {
+  const observerCounters = { created: 0, observed: 0, disconnected: 0, lastOptions: null }
   globalThis.self = globalThis
   globalThis.devicePixelRatio = 1
   globalThis.document = makeDocument()
+  globalThis.PerformanceObserver = makePerformanceObserver(observerCounters)
   globalThis.requestAnimationFrame = () => 1
   globalThis.cancelAnimationFrame = () => {}
   delete globalThis.SYCScoring
@@ -132,16 +176,22 @@ const loadWebOverlay = async () => {
   const stamp = Date.now()
   await import(new URL(`../scoring.js?test=${stamp}`, import.meta.url))
   await import(new URL(`../danmaku.js?test=${stamp}`, import.meta.url))
-  return { Overlay: globalThis.SYCDanmaku.DanmakuOverlay, scoring: globalThis.SYCScoring }
+  return {
+    Overlay: globalThis.SYCDanmaku.DanmakuOverlay,
+    observerCounters,
+    scoring: globalThis.SYCScoring,
+  }
 }
 
 const loadExtensionOverlay = () => {
+  const observerCounters = { created: 0, observed: 0, disconnected: 0, lastOptions: null }
   const sandbox = {
     cancelAnimationFrame() {},
     console,
     devicePixelRatio: 1,
     document: makeDocument(),
     globalThis: null,
+    PerformanceObserver: makePerformanceObserver(observerCounters),
     requestAnimationFrame: () => 1,
     self: null,
   }
@@ -164,24 +214,35 @@ const loadExtensionOverlay = () => {
   )
   return {
     Overlay: sandbox.globalThis.SYCDanmaku.DanmakuOverlay,
+    observerCounters,
     scoring: sandbox.globalThis.SYCScoring,
   }
 }
 
-const { Overlay: webOverlay, scoring: webScoring } = await loadWebOverlay()
+const {
+  Overlay: webOverlay,
+  observerCounters: webObserverCounters,
+  scoring: webScoring,
+} = await loadWebOverlay()
 assertScoringHelpers("web", webScoring)
 assertDedup("web", webOverlay)
+assertLongTaskObserverLifecycle("web", webOverlay, webObserverCounters)
 assertAdaptiveCap("web", webOverlay)
 assertLruCache("web", webOverlay, (overlay, text) =>
   overlay._rasterize([{ t: text }], "#fff", 24, false),
 )
 
-const { Overlay: extensionOverlay, scoring: extensionScoring } = loadExtensionOverlay()
+const {
+  Overlay: extensionOverlay,
+  observerCounters: extensionObserverCounters,
+  scoring: extensionScoring,
+} = loadExtensionOverlay()
 assertScoringHelpers("extension", extensionScoring)
 assertDedup("extension", extensionOverlay)
+assertLongTaskObserverLifecycle("extension", extensionOverlay, extensionObserverCounters)
 assertAdaptiveCap("extension", extensionOverlay)
 assertLruCache("extension", extensionOverlay, (overlay, text) =>
   overlay._rasterize(text, "#fff", 24, false),
 )
 
-console.log("danmaku ok (28 assertions)")
+console.log("danmaku ok (44 assertions)")

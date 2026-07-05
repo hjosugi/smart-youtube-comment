@@ -90,10 +90,6 @@
       this.frameSampleLen = 0;
       this.frameSamplePos = 0;
       this._lto = null;
-      try {
-        this._lto = new PerformanceObserver((list) => { this.longTasks += list.getEntries().length; });
-        this._lto.observe({ entryTypes: ["longtask"] });
-      } catch { this._lto = null; }
       this._loop = this._loop.bind(this);
       this.w = 1; this.h = 1; this.laneCount = 1; this.laneTop = 0; this.laneH = this.cfg.lineHeight;
     }
@@ -115,11 +111,13 @@
       this._resize();
       this._ro = new ResizeObserver(() => this._resize());
       this._ro.observe(player);
+      this._startLongTaskObserver();
       this.start();
     }
 
     detach() {
       this.stop();
+      this._stopLongTaskObserver();
       this._ro?.disconnect();
       this._ro = null;
       this.canvas?.remove();
@@ -131,6 +129,19 @@
       this.recentLen = 0;
       this.recentPos = 0;
       this.player = null;
+    }
+
+    _startLongTaskObserver() {
+      if (this._lto) return;
+      try {
+        this._lto = new PerformanceObserver((list) => { this.longTasks += list.getEntries().length; });
+        this._lto.observe({ entryTypes: ["longtask"] });
+      } catch { this._lto = null; }
+    }
+
+    _stopLongTaskObserver() {
+      this._lto?.disconnect?.();
+      this._lto = null;
     }
 
     setConfig(partial) {
