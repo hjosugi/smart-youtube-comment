@@ -24,8 +24,21 @@ external server.
 The standalone web app can request live-chat data through a configured relay
 endpoint. In that mode the relay receives the YouTube video ID, live/replay
 continuation tokens, and polling offsets needed to fetch the next chat batch.
-Do not point `?relay=` at a relay you do not trust. The default extension path
-does not use this relay.
+The web app only honors `?relay=` when it resolves to the built-in default
+relay, the web app's own origin, or a deployment-provided trusted HTTPS relay
+origin. Other relay origins are ignored and the built-in default relay is used
+instead.
+
+Self-hosted deployments that trust an additional relay can provide
+`globalThis.SYC_TRUSTED_RELAY_ORIGINS = ["https://relay.example"]` from a
+same-origin script loaded before `app.js`, and must keep the page CSP
+`connect-src` in sync. The default extension path does not use this relay.
+
+Relay-provided custom emoji image URLs are treated as untrusted display data.
+The web app only loads raster `data:image/...` URLs used by local mock data and
+HTTPS YouTube image assets from `yt3.ggpht.com` or subdomains of
+`googleusercontent.com`; unsafe image URLs are rendered as text fallbacks or
+ignored.
 
 ## Storage
 

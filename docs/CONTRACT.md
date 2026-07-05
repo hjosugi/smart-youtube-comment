@@ -41,10 +41,21 @@ Produced by the live-chat reader and consumed by the overlay renderer.
   "authorType": "normal",  // "normal" | "member" | "moderator" | "owner"
   "authorColor": null,
   "text": "string",
+  "parts": [
+    { "t": "plain text" },
+    { "u": "https://yt3.ggpht.com/custom-emoji=s24", "a": ":emoji:" }
+  ],
   "amount": null,
   "offsetMs": 0            // replay/VOD only: the message's video timestamp (omitted for live)
 }
 ```
+
+`parts[].u` is untrusted relay data. Web consumers must validate it before
+assigning it to `img.src` or drawing it to canvas. The accepted image sources
+are HTTPS YouTube emoji assets from `yt3.ggpht.com` or subdomains of
+`googleusercontent.com`, plus raster `data:image/...` URLs used by local mock
+data. Unsafe image parts should fall back to their alt text when available or be
+ignored.
 
 ## LiveChat Poll Envelope
 

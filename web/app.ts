@@ -13,6 +13,7 @@ import { mountControls, fmtTime } from "./videoctl.ts"
 import { createCommentList } from "./commentlist.ts"
 import { createLiveChatClient } from "./chat-client.ts"
 import { T, statusText } from "./i18n.ts"
+import { sanitizeChatMessage } from "./url-security.ts"
 import type { ChatMessage } from "./types.ts"
 
 const { createFallbackScorer, buildRenderPlan } = globalThis.SYCScoring
@@ -23,6 +24,8 @@ const filter = globalThis.SYCFilter
 // DOM access is glue — `$` returns `any` so element-shape details stay out of the way.
 const $ = (id: string): any => document.getElementById(id)
 const setStatus = (key: string) => ($("status").textContent = statusText(key))
+const readAppParams = () =>
+  readParams(location.search, { trustedRelayOrigins: globalThis.SYC_TRUSTED_RELAY_ORIGINS })
 
 const overlay = new DanmakuOverlay()
 const list = createCommentList($("list"))
@@ -47,7 +50,8 @@ const fate = makeFate({ seen, shouldDrop: (a: string, t: string) => filter.shoul
 
 const onMessages = (msgs: ChatMessage[]) => {
   const now = playbackMs()
-  for (const m of msgs) {
+  for (const raw of msgs) {
+    const m = sanitizeChatMessage(raw)
     const f = fate(m, now)
     if (f === "skip") continue
     remember(m.id)
@@ -165,7 +169,7 @@ $("launch").addEventListener("submit", (e: Event) => {
     if (start) seekActive(start)
     return
   }
-  startLive(video, readParams(location.search).relay, start)
+  startLive(video, readAppParams().relay, start)
 })
 
 // --- localized labels on the static chrome ---
@@ -196,7 +200,7 @@ if ("serviceWorker" in navigator) {
   mountHelp({ button: $("help") })
   reflectToggles()
 
-  const params = readParams(location.search)
+  const params = readAppParams()
   if (params.perf) mountPerfHud(overlay)
   if (params.mock) startMockMode()
   else if (params.video) startLive(params.video, params.relay, params.start)

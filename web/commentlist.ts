@@ -2,6 +2,8 @@
 // space below the player. Capped + auto-scroll (sticks to the bottom unless the
 // user has scrolled up to read). Toggled independently from the danmaku overlay.
 
+import { sanitizeEmojiUrl } from "./url-security.ts"
+
 const ROLE_COLOR = { owner: "#ffca28", moderator: "#5e9bff", member: "#7CFC8C", normal: "#cfcfd6" }
 const MAX_ROWS = 200
 
@@ -26,8 +28,13 @@ export const createCommentList = root => {
     const parts = m.parts && m.parts.length ? m.parts : [{ t: m.text }]
     for (const p of parts) {
       if (p.u) {
+        const url = sanitizeEmojiUrl(p.u)
+        if (!url) {
+          if (p.a) span.append(document.createTextNode(p.a))
+          continue
+        }
         const img = make("img", "clist-emoji")
-        img.src = p.u
+        img.src = url
         img.alt = p.a || ""
         img.loading = "lazy"
         span.append(img)

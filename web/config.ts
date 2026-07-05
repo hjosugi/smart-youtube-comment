@@ -1,6 +1,8 @@
 // Pure configuration + URL-param parsing for the PWA. No side effects.
 
-export const RELAY_DEFAULT = "https://syc-livechat-relay.acofun.workers.dev"
+import { sanitizeRelayBase } from "./url-security.ts"
+
+export { RELAY_DEFAULT, RELAY_TRUSTED_ORIGINS, sanitizeRelayBase } from "./url-security.ts"
 
 // Danmaku config is now settings-driven (SYCSettings.toEngineConfig), with mobile
 // tuning expressed through the schema's renderScalePct default + the renderer's
@@ -33,12 +35,15 @@ export const parseInput = (raw = "") => ({
   start: parseStartSeconds(raw),
 })
 
-export const readParams = (search = "") => {
+export const readParams = (
+  search = "",
+  options: { baseUrl?: string; trustedRelayOrigins?: Iterable<string> } = {},
+) => {
   const p = new URLSearchParams(search)
   return {
     video: parseVideoId(p.get("v") || ""),
     start: parseStartSeconds(search) || parseStartSeconds(p.get("v") || ""),
-    relay: p.get("relay") || RELAY_DEFAULT,
+    relay: sanitizeRelayBase(p.get("relay") || "", options),
     mock: p.get("mock") === "1",
     perf: p.get("perf") === "1",
   }

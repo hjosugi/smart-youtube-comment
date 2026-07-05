@@ -51,6 +51,13 @@ The gate fails if:
   over HTML string insertion.
 - Treat YouTube chat text, author names, video metadata, and page text as
   untrusted display data only.
+- Keep standalone web relays allowlisted: built-in default relay, same-origin
+  relays, or explicitly trusted HTTPS origins only. If a deployment adds a
+  trusted relay origin, update both `SYC_TRUSTED_RELAY_ORIGINS` and the web CSP
+  `connect-src`.
+- Never use relay-provided `parts[].u` directly as an image URL. Pass custom
+  emoji URLs through the web sanitizer and keep the allowed image hosts limited
+  to YouTube emoji assets plus raster `data:image/...` mock assets.
 - Keep `chrome.runtime.onMessage` handlers narrow and validate message `type`
   and sender assumptions before acting.
 - Keep dependency additions rare. If a package is necessary, pin it exactly,

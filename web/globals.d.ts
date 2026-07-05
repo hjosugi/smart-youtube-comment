@@ -20,14 +20,16 @@ declare global {
   }
 
   var SYCEmoji: {
-    get(url: string): HTMLImageElement
+    get(url: string): HTMLImageElement | null
     preload(parts: Part[] | undefined): void
+    sanitizeUrl(url: string): string
   }
 
   var SYCSettings: SettingsApi
   var SYCFilter: FilterApi
   var SYCChat: unknown
   var SYCApp: unknown
+  var SYC_TRUSTED_RELAY_ORIGINS: string[] | undefined
   var YT: any
 }
 

@@ -39,7 +39,22 @@ assert("readParams: video", p.video === ID)
 assert("readParams: mock true", p.mock === true)
 assert("readParams: perf true", p.perf === true)
 assert("readParams: default relay", readParams("").relay === RELAY_DEFAULT)
-assert("readParams: custom relay", readParams("?relay=https://r.dev").relay === "https://r.dev")
+assert(
+  "readParams: arbitrary relay rejected",
+  readParams("?relay=https://evil.example").relay === RELAY_DEFAULT,
+)
+assert(
+  "readParams: same-origin relay allowed",
+  readParams("?relay=/relay", { baseUrl: "https://app.example/index.html" }).relay ===
+    "https://app.example/relay",
+)
+assert(
+  "readParams: trusted relay allowed",
+  readParams("?relay=https://relay.example/live", {
+    baseUrl: "https://app.example/index.html",
+    trustedRelayOrigins: ["https://relay.example"],
+  }).relay === "https://relay.example/live",
+)
 assert("readParams: mock default false", readParams("?v=" + ID).mock === false)
 assert("readParams: empty video for junk", readParams("?v=junk").video === "")
 
