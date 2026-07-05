@@ -15,9 +15,10 @@ const MIME = {
   ".png": "image/png",
 }
 
-export const serveWeb = async () => {
+export const serveWeb = async ({ handleRequest } = {}) => {
   const server = createServer(async (req, res) => {
     try {
+      if (handleRequest && (await handleRequest(req, res))) return
       const rel = decodeURIComponent(req.url.split("?")[0])
       const file = join(ROOT, rel === "/" ? "index.html" : rel)
       const body = await readFile(file)

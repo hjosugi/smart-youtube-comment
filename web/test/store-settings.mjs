@@ -15,6 +15,17 @@ globalThis.localStorage = new Proxy(target, {
   get: (t, p) => (typeof t[p] === "function" ? t[p].bind(t) : mem.has(p) ? mem.get(p) : t[p]),
 })
 
+const eventListeners = new Map()
+globalThis.addEventListener = (type, cb) => {
+  const list = eventListeners.get(type) ?? []
+  list.push(cb)
+  eventListeners.set(type, list)
+}
+globalThis.dispatchEvent = event => {
+  for (const cb of eventListeners.get(event.type) ?? []) cb.call(globalThis, event)
+  return true
+}
+
 await import("../store.js") // installs globalThis.chrome.storage over localStorage
 await import("../settings.js")
 await import("../filter.js")
@@ -34,6 +45,45 @@ const assert = (name, cond, extra = "") => checks.push({ name, ok: !!cond, extra
   assert("store: onChanged fired with newValue", fired?.["t:k"]?.newValue?.a === 1)
   await chrome.storage.local.remove("t:k")
   assert("store: remove clears", (await chrome.storage.local.get("t:k"))["t:k"] === undefined)
+}
+
+// --- store shim: cross-tab storage events fan out as chrome onChanged events ---
+{
+  let fired = null
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (changes["tab:k"]) fired = { changes, areaName }
+  })
+  globalThis.dispatchEvent({
+    type: "storage",
+    key: "tab:k",
+    oldValue: JSON.stringify({ old: true }),
+    newValue: JSON.stringify({ next: 2 }),
+  })
+  assert(
+    "store: storage event emits parsed old/new values",
+    fired?.areaName === "local" &&
+      fired.changes["tab:k"].oldValue.old === true &&
+      fired.changes["tab:k"].newValue.next === 2,
+    JSON.stringify(fired),
+  )
+
+  let removed = null
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (changes["tab:removed"]) removed = { changes, areaName }
+  })
+  globalThis.dispatchEvent({
+    type: "storage",
+    key: "tab:removed",
+    oldValue: JSON.stringify(["gone"]),
+    newValue: null,
+  })
+  assert(
+    "store: storage event remove maps null to undefined",
+    removed?.areaName === "local" &&
+      Array.isArray(removed.changes["tab:removed"].oldValue) &&
+      removed.changes["tab:removed"].newValue === undefined,
+    JSON.stringify(removed),
+  )
 }
 
 // --- settings: defaults, normalize/clamp, save<->load, engine mapping ---

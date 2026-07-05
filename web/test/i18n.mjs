@@ -23,6 +23,20 @@ assert(
   T.helpItems.every(it => Array.isArray(it) && it.length === 2),
 )
 
+Object.defineProperty(globalThis, "navigator", { value: { language: "en-US" }, configurable: true })
+const en = await import("../i18n.ts?locale=en-US")
+
+assert("en locale detected", en.lang === "en")
+assert("en: play fallback", en.T.play === "Play")
+assert("en: settings fallback", en.T.settings === "Settings")
+assert(
+  "en: setting label uses supplied fallback",
+  en.settingLabel("maxActive", "Max active") === "Max active",
+)
+assert("en: group name falls back to key", en.groupName("Performance") === "Performance")
+assert("en: status text falls back to key", en.statusText("live") === "live")
+assert("en: unknown status remains key", en.statusText("nope") === "nope")
+
 let allOk = true
 for (const c of checks) {
   console.log(`${c.ok ? "✅" : "❌"} ${c.name}${c.ok ? "" : "  -> " + c.extra}`)

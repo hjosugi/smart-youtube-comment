@@ -151,6 +151,43 @@ globalThis.fetch = async url => {
   assert("410 recovery reaches terminal envelope", endedReason === "ended", String(endedReason))
 }
 
+// --- 404 unavailable is terminal and does not reconnect ---
+{
+  calls = []
+  globalThis.fetch = async url => {
+    const u = url instanceof URL ? url : new URL(url)
+    calls.push({
+      cont: u.searchParams.get("cont"),
+      video: u.searchParams.get("video"),
+      offset: u.searchParams.get("offset"),
+    })
+    return { ok: false, status: 404, json: async () => ({ error: "no live chat" }) }
+  }
+
+  const errors = []
+  const states = []
+  let endedReason = null
+  const c = createLiveChatClient({
+    base: "http://x",
+    minIntervalMs: 20,
+    jitterRatio: 0,
+    reResolveAfter: 1,
+  })
+  await c.start("VIDEOIDXXXX", {
+    onState: s => states.push(s),
+    onError: e => errors.push(e.status),
+    onEnded: info => (endedReason = info.reason),
+  })
+
+  assert("404 unavailable ends terminally", endedReason === "unavailable", String(endedReason))
+  assert(
+    "404 unavailable does not reconnect",
+    calls.length === 1 && calls[0].video === "VIDEOIDXXXX" && calls[0].cont === null,
+    JSON.stringify(calls),
+  )
+  assert("404 unavailable is not transient state/error", states.length === 0 && errors.length === 0)
+}
+
 let allOk = true
 for (const c of checks) {
   console.log(`${c.ok ? "✅" : "❌"} ${c.name}${c.ok ? "" : "  -> " + c.extra}`)

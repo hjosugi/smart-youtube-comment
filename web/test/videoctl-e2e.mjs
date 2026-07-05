@@ -5,11 +5,91 @@
 import { chromium } from "playwright"
 import { serveWeb } from "./_serve.mjs"
 
-const { port, close } = await serveWeb()
+const waitFor = async (fn, timeoutMs = 5000) => {
+  const start = Date.now()
+  while (!fn()) {
+    if (Date.now() - start > timeoutMs) throw new Error("timed out waiting for condition")
+    await new Promise(r => setTimeout(r, 25))
+  }
+}
+
+let apiCalls = 0
+const { port, close } = await serveWeb({
+  handleRequest(req, res) {
+    const url = new URL(req.url, `http://${req.headers.host}`)
+    if (url.pathname !== "/api/livechat") return false
+    apiCalls += 1
+    res.writeHead(200, {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+    })
+    res.end(
+      JSON.stringify({
+        messages: [{ id: `m${apiCalls}`, author: "@tester", text: `hello ${apiCalls}` }],
+        continuation: "c",
+        timeoutMs: 20,
+        ended: false,
+      }),
+    )
+    return true
+  },
+})
 const browser = await chromium.launch()
 const page = await browser.newPage()
 const errors = []
 page.on("pageerror", e => errors.push(e.message))
+
+await page.addInitScript(() => {
+  globalThis.__sycHidden = false
+  globalThis.__sycPlayerStateHandlers = []
+  const hiddenDescriptor = {
+    configurable: true,
+    get: () => Boolean(globalThis.__sycHidden),
+  }
+  try {
+    Object.defineProperty(document, "hidden", hiddenDescriptor)
+  } catch {
+    Object.defineProperty(Document.prototype, "hidden", hiddenDescriptor)
+  }
+  globalThis.__sycEmitPlayerState = state => {
+    for (const handler of globalThis.__sycPlayerStateHandlers) handler({ data: state })
+  }
+  globalThis.YT = {
+    Player: function Player(elementId, options) {
+      let state = 2
+      let currentTime = 0
+      const host = document.getElementById(elementId)
+      if (host) {
+        const replacement = document.createElement("div")
+        replacement.id = elementId
+        host.replaceWith(replacement)
+      }
+      const player = {
+        getCurrentTime: () => currentTime,
+        getDuration: () => 120,
+        getPlayerState: () => state,
+        playVideo: () => {
+          state = 1
+          globalThis.__sycEmitPlayerState(1)
+        },
+        pauseVideo: () => {
+          state = 2
+          globalThis.__sycEmitPlayerState(2)
+        },
+        seekTo: s => {
+          currentTime = s
+        },
+        destroy: () => {},
+      }
+      globalThis.__sycPlayerStateHandlers.push(e => {
+        state = e.data
+        options.events?.onStateChange?.(e)
+      })
+      setTimeout(() => options.events?.onReady?.({ target: player }), 0)
+      return player
+    },
+  }
+})
 
 // boot the app (sets globalThis.SYCApp, which re-exports videoctl for testing)
 await page.goto(`http://localhost:${port}/index.html`, { waitUntil: "load" })
@@ -65,6 +145,38 @@ const r = await page.evaluate(async () => {
   return out
 })
 
+await page.evaluate(
+  base => globalThis.SYCApp.startLive("VIDEOIDXXXX", base),
+  `http://localhost:${port}`,
+)
+await waitFor(() => apiCalls >= 1)
+
+const afterStart = apiCalls
+await page.evaluate(() => {
+  globalThis.__sycHidden = true
+  document.dispatchEvent(new Event("visibilitychange"))
+})
+const hiddenAt = apiCalls
+await new Promise(r => setTimeout(r, 950))
+const hiddenAfter = apiCalls
+
+await page.evaluate(() => {
+  globalThis.__sycHidden = false
+  document.dispatchEvent(new Event("visibilitychange"))
+})
+await waitFor(() => apiCalls > hiddenAfter, 2500)
+const visibleAfter = apiCalls
+
+await page.evaluate(() => globalThis.__sycEmitPlayerState(2))
+const pausedAt = apiCalls
+await new Promise(r => setTimeout(r, 950))
+const pausedAfter = apiCalls
+
+await page.evaluate(() => globalThis.__sycEmitPlayerState(1))
+await waitFor(() => apiCalls > pausedAfter, 2500)
+const playingAfter = apiCalls
+await page.evaluate(() => globalThis.SYCApp.stop())
+
 await browser.close()
 close()
 
@@ -76,6 +188,11 @@ const checks = [
   ["play button toggles", r.btnToggles],
   ["seek bar seeks", r.seekSeeks],
   ["teardown removes overlay", r.unmounted],
+  ["live client starts polling", afterStart >= 1],
+  ["visibilitychange hidden pauses polling", hiddenAfter === hiddenAt],
+  ["visibilitychange visible resumes polling", visibleAfter > hiddenAfter],
+  ["player paused state pauses polling", pausedAfter === pausedAt],
+  ["player playing state resumes polling", playingAfter > pausedAfter],
   ["no page errors", errors.length === 0],
 ]
 
@@ -84,6 +201,22 @@ for (const [name, pass] of checks) {
   console.log(`${pass ? "✅" : "❌"} ${name}`)
   if (!pass) ok = false
 }
-if (!ok) console.log("detail:", JSON.stringify(r), errors)
+if (!ok) {
+  console.log(
+    "detail:",
+    JSON.stringify({
+      controls: r,
+      apiCalls,
+      afterStart,
+      hiddenAt,
+      hiddenAfter,
+      visibleAfter,
+      pausedAt,
+      pausedAfter,
+      playingAfter,
+    }),
+    errors,
+  )
+}
 console.log(ok ? "RESULT: ✅ custom video controls verified" : "RESULT: ❌ FAIL")
 process.exit(ok ? 0 : 1)
