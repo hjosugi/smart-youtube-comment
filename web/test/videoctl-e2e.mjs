@@ -185,6 +185,16 @@ const unknownAt = apiCalls
 await new Promise(r => setTimeout(r, 950))
 const unknownAfter = apiCalls
 
+await page.evaluate(() => globalThis.__sycEmitPlayerState(1))
+await waitFor(() => apiCalls > unknownAfter, 2500)
+const liveBeforeMock = apiCalls
+
+await page.evaluate(() => globalThis.SYCApp.startMockMode())
+const mockStatus = await page.textContent("#status")
+const mockAt = apiCalls
+await new Promise(r => setTimeout(r, 350))
+const mockAfter = apiCalls
+
 await page.evaluate(() => globalThis.SYCApp.stop())
 const stoppedStatus = await page.textContent("#status")
 
@@ -206,6 +216,8 @@ const checks = [
   ["player paused state pauses polling", pausedAfter === pausedAt],
   ["player playing state resumes polling", playingAfter > pausedAfter],
   ["unknown player state pauses polling", unknownAfter === unknownAt],
+  ["mock mode starts", mockStatus === "mock" || mockStatus === "デモ"],
+  ["startMockMode stops live polling", mockAfter - mockAt <= 1],
   ["stop updates status", stoppedStatus === "stopped" || stoppedStatus === "停止"],
   ["no page errors", errors.length === 0],
 ]
@@ -230,6 +242,10 @@ if (!ok) {
       playingAfter,
       unknownAt,
       unknownAfter,
+      liveBeforeMock,
+      mockStatus,
+      mockAt,
+      mockAfter,
       stoppedStatus,
     }),
     errors,

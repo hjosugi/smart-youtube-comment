@@ -92,6 +92,7 @@ export function createLiveChatClient(options = {}) {
   const advance = step(cfg)
   const applyJitter = jitter(cfg.jitterRatio, cfg.random)
   let stopped = false
+  let running: Promise<void> | null = null
   let paused = false
   let wake: any = null // resolve fn for the paused gate
   let inflight: any = null
@@ -172,60 +173,71 @@ export function createLiveChatClient(options = {}) {
     },
 
     async start(videoId: string, handlers: any = {}) {
-      const { onMessages, onState, onError, onEnded } = handlers
-      stopped = false
-      let state: { cont: string | null; failures: number; quiet: number } = {
-        cont: null,
-        failures: 0,
-        quiet: 0,
-      }
-      let replay = false // latched the first time the relay reports a VOD
+      if (running) return running
 
-      const paramsFor = (s: typeof state): any => {
-        const p: any = s.cont ? { cont: s.cont } : { video: videoId }
-        if (replay) p.offset = Math.max(0, Math.floor(cfg.getOffsetMs?.() ?? 0))
-        return p
-      }
-
-      while (!stopped) {
-        await waitWhilePaused() // zero requests while paused
-        if (stopped) break
-
-        const outcome = await pollOnce(paramsFor(state))
-
-        // 404 = no live chat (chat disabled, not actually live, or members-only).
-        // This is terminal, not a transient blip — stop instead of reconnecting.
-        if (!outcome.ok && outcome.error?.status === 404) {
-          onEnded?.({ reason: "unavailable" })
-          break
+      const loop = (async () => {
+        const { onMessages, onState, onError, onEnded } = handlers
+        stopped = false
+        let state: { cont: string | null; failures: number; quiet: number } = {
+          cont: null,
+          failures: 0,
+          quiet: 0,
         }
-        if (!outcome.ok && (outcome.error?.status === 410 || outcome.error?.reResolve)) {
-          onError?.(outcome.error, state.failures + 1)
-          state = { cont: null, failures: 0, quiet: state.quiet }
-          continue
+        let replay = false // latched the first time the relay reports a VOD
+
+        const paramsFor = (s: typeof state): any => {
+          const p: any = s.cont ? { cont: s.cont } : { video: videoId }
+          if (replay) p.offset = Math.max(0, Math.floor(cfg.getOffsetMs?.() ?? 0))
+          return p
         }
 
-        if (outcome.ok && outcome.env.isReplay) replay = true
-        const plan = advance(state, outcome)
-        state = plan.state
+        while (!stopped) {
+          await waitWhilePaused() // zero requests while paused
+          if (stopped) break
 
-        if (plan.emit.length) onMessages?.(plan.emit)
-        if (plan.error) onError?.(plan.error, state.failures)
-        if (plan.stop) {
-          onEnded?.({ reason: plan.stop })
-          break
+          const outcome = await pollOnce(paramsFor(state))
+
+          // 404 = no live chat (chat disabled, not actually live, or members-only).
+          // This is terminal, not a transient blip — stop instead of reconnecting.
+          if (!outcome.ok && outcome.error?.status === 404) {
+            onEnded?.({ reason: "unavailable" })
+            break
+          }
+          if (!outcome.ok && (outcome.error?.status === 410 || outcome.error?.reResolve)) {
+            onError?.(outcome.error, state.failures + 1)
+            state = { cont: null, failures: 0, quiet: state.quiet }
+            continue
+          }
+
+          if (outcome.ok && outcome.env.isReplay) replay = true
+          const plan = advance(state, outcome)
+          state = plan.state
+
+          if (plan.emit.length) onMessages?.(plan.emit)
+          if (plan.error) onError?.(plan.error, state.failures)
+          if (plan.stop) {
+            onEnded?.({ reason: plan.stop })
+            break
+          }
+          if (stopped) break
+
+          const wait = plan.healthy ? plan.wait : applyJitter(plan.wait)
+          onState?.({
+            healthy: plan.healthy,
+            failures: state.failures,
+            quiet: state.quiet,
+            nextInMs: wait,
+            replay,
+          })
+          await nap(wait)
         }
-        if (stopped) break
+      })()
 
-        const wait = plan.healthy ? plan.wait : applyJitter(plan.wait)
-        onState?.({
-          healthy: plan.healthy,
-          failures: state.failures,
-          quiet: state.quiet,
-          nextInMs: wait,
-          replay,
-        })
-        await nap(wait)
+      running = loop
+      try {
+        await loop
+      } finally {
+        if (running === loop) running = null
       }
     },
   }

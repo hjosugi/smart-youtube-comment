@@ -74,6 +74,7 @@ let activeVideo: string | null = null // currently-playing id; re-submitting mus
 let seekActive: ((s: number) => void) | null = null // seek the active player on same-video re-submit
 
 const startMockMode = () => {
+  stop()
   overlay.attach($("stage"))
   setStatus("mock")
   const stopMock = startMock(onMessages, { ratePerSec: 30 })

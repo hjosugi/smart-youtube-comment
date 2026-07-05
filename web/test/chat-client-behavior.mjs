@@ -107,6 +107,40 @@ globalThis.fetch = async url => {
   assert("stop halts polling", calls.length - atStop <= 1, `grew by ${calls.length - atStop}`)
 }
 
+// --- start() is idempotent while a polling loop is already active ---
+{
+  calls = []
+  let releaseFetch
+  const gate = new Promise(r => (releaseFetch = r))
+  globalThis.fetch = async url => {
+    const u = url instanceof URL ? url : new URL(url)
+    calls.push({
+      cont: u.searchParams.get("cont"),
+      video: u.searchParams.get("video"),
+      offset: u.searchParams.get("offset"),
+    })
+    await gate
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ messages: [], continuation: null, ended: true }),
+    }
+  }
+
+  const c = createLiveChatClient({ base: "http://x", minIntervalMs: 20, quietThreshold: 0 })
+  const first = c.start("VIDEOIDXXXX", {})
+  const second = c.start("OTHERVIDEO", {})
+  await sleep(30)
+  const beforeRelease = calls.length
+  releaseFetch()
+  await Promise.all([first, second])
+  assert(
+    "start re-entry does not create a second loop",
+    beforeRelease === 1 && calls[0].video === "VIDEOIDXXXX",
+    JSON.stringify(calls),
+  )
+}
+
 // --- stale continuation 410 immediately re-resolves from videoId ---
 {
   calls = []
