@@ -1,7 +1,7 @@
 // InnerTube live-chat relay logic (pure, runtime-agnostic).
 //
 // Runs unchanged in a Cloudflare Worker and in Node (via worker/test/probe.mjs).
-// Structured as a thin IO layer (innertubePost) over a body of PURE transforms
+// Structured as a thin IO layer (postWithRetry) over a body of PURE transforms
 // (normalization + continuation extraction). The IO functions resolve the
 // initial continuation and poll get_live_chat; everything else is data->data.
 // NO scoring/dedupe/render — that is the device's job. Shapes: docs/CONTRACT.md.
@@ -16,7 +16,8 @@ type TaggedError = Error & { status: number }
 const INNERTUBE_BASE = "https://www.youtube.com/youtubei/v1"
 
 // Public WEB client identity. No API key required when a valid context is POSTed.
-const CLIENT = { clientName: "WEB", clientVersion: "2.20240814.00.00" }
+export const INNERTUBE_CLIENT = { clientName: "WEB", clientVersion: "2.20240814.00.00" }
+export const INNERTUBE_CLIENT_VERSION = INNERTUBE_CLIENT.clientVersion
 
 const FETCH_TIMEOUT_MS = 3500 // per-attempt bound; a hung request aborts and is retried
 const MAX_ATTEMPTS = 2 // total tries (1 + 1 retry): absorb a SINGLE blip, keep worst-case
@@ -28,7 +29,7 @@ const DEFAULT_TIMEOUT_MS = 1000
 const MAX_TIMEOUT_MS = 30000 // cap an absurd value so the device can't be parked forever
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
-const context = () => ({ context: { client: CLIENT } })
+const context = () => ({ context: { client: INNERTUBE_CLIENT } })
 
 // ---- IO layer ---------------------------------------------------------------
 
@@ -49,9 +50,6 @@ const postWithRetry = async (endpoint: string, body: unknown, attempt = 1): Prom
   }
 }
 
-const innertubePost = (endpoint: string, body: unknown): Promise<any> =>
-  postWithRetry(endpoint, body)
-
 // Single attempt. The timeout covers the WHOLE round-trip (headers AND body —
 // YouTube can tarpit the body). Throws Error tagged with `.status`:
 //   504 = network/timeout, upstream HTTP status, or 502 = non-JSON body.
@@ -66,15 +64,11 @@ async function postOnce(endpoint: string, body: unknown): Promise<any> {
       signal: ac.signal,
     })
     const text = await res.text()
-    if (!res.ok)
-      throw tagged(`InnerTube ${endpoint} HTTP ${res.status}: ${text.slice(0, 200)}`, res.status)
+    if (!res.ok) throw tagged(`InnerTube ${endpoint} HTTP ${res.status}`, res.status)
     try {
       return JSON.parse(text)
     } catch {
-      throw tagged(
-        `InnerTube ${endpoint} non-JSON (status ${res.status}): ${text.slice(0, 120)}`,
-        502,
-      )
+      throw tagged(`InnerTube ${endpoint} non-JSON (status ${res.status})`, 502)
     }
   } catch (e: any) {
     if (e?.status) throw e // already-tagged HTTP/non-JSON error — pass through
@@ -123,7 +117,7 @@ const isReplayChat = (lc: any): boolean => {
 export const resolveLiveChat = async (
   videoId: string,
 ): Promise<{ continuation: string | null; isReplay: boolean } | null> => {
-  const data = await innertubePost("next", { ...context(), videoId })
+  const data = await postWithRetry("next", { ...context(), videoId })
   const lc = data?.contents?.twoColumnWatchNextResults?.conversationBar?.liveChatRenderer
   if (!lc) return null
   return { continuation: extractContinuation(lc.continuations).token, isReplay: isReplayChat(lc) }
@@ -143,7 +137,7 @@ export const pollLiveChat = async (
   opts: { replay?: boolean; offsetMs?: number } = {},
 ): Promise<PollEnvelope> => {
   if (opts.replay) return pollReplay(continuation, opts.offsetMs ?? 0)
-  const data = await innertubePost("live_chat/get_live_chat", { ...context(), continuation })
+  const data = await postWithRetry("live_chat/get_live_chat", { ...context(), continuation })
   const lc = data?.continuationContents?.liveChatContinuation
   const messages = (lc?.actions ?? []).map(parseAction).filter(Boolean) as ChatMessage[]
   const { token, timeoutMs } = extractContinuation(lc?.continuations)
@@ -151,7 +145,7 @@ export const pollLiveChat = async (
 }
 
 const pollReplay = async (continuation: string, offsetMs: number): Promise<PollEnvelope> => {
-  const data = await innertubePost("live_chat/get_live_chat_replay", {
+  const data = await postWithRetry("live_chat/get_live_chat_replay", {
     ...context(),
     continuation,
     currentPlayerState: { playerOffsetMs: String(Math.max(0, Math.floor(offsetMs))) },
@@ -188,7 +182,7 @@ const CONT_DATA_KEYS = [
 const pickContData = (c: any = {}): any => CONT_DATA_KEYS.map(k => c[k]).find(Boolean) ?? {}
 
 const clampTimeout = (ms: number): number =>
-  !Number.isFinite(ms) || ms < MIN_TIMEOUT_MS ? DEFAULT_TIMEOUT_MS : Math.min(ms, MAX_TIMEOUT_MS)
+  !Number.isFinite(ms) ? DEFAULT_TIMEOUT_MS : Math.max(MIN_TIMEOUT_MS, Math.min(ms, MAX_TIMEOUT_MS))
 
 const extractContinuation = (
   continuations: any[] = [],

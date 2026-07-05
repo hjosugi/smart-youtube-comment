@@ -170,7 +170,7 @@ test("continuation extraction preserves precedence and clamps timeout boundaries
   assert.equal(
     extractContinuation([{ timedContinuationData: { continuation: "E", timeoutMs: 10 } }])
       .timeoutMs,
-    1000,
+    250,
   )
   assert.equal(
     extractContinuation([{ timedContinuationData: { continuation: "F", timeoutMs: 250 } }])

@@ -214,9 +214,11 @@ CF Worker が以下を中継する(クライアントには CORS 制約のため
    `ended:true` / `continuation:null` を返す。端末はこのシグナルで停止する
    (古いトークンの無限再ポーリングを防ぐ)。
 4. **濫用対策**: relay はエッジキャッシュ(`caches.default`)に URL キーで
-   `s-maxage=timeoutMs` 保存。同一配信を見る N 視聴者の同一トークン・ポーリングを
-   1 本の上流呼び出しに集約し、Worker IP の BAN リスクを抑える。`video`(11文字ID)/
-   `cont`(長さ上限)を上流呼び出し前に検証。
+   `s-maxage=floor(timeoutMs/1000)` 保存。同一配信を見る N 視聴者の同一トークン・
+   ポーリングを、同一 Cloudflare POP 内では 1 本の上流呼び出しに集約し、Worker IP の
+   BAN リスクを抑える。POP をまたいだグローバル集約ではないため、地理分散した視聴者は
+   POP ごとに上流呼び出しが発生しうる。`timeoutMs < 1000` の高速ポーリング窓は鮮度を
+   優先してキャッシュしない。`video`(11文字ID)/`cont`(長さ・文字集合)を上流呼び出し前に検証。
 5. Worker は最小整形(ChatMessage 化)のみ。**評価・重複排除・描画はクライアント。**
 
 ### 7.1 信頼性 — 2層リトライ + 適応 cadence
@@ -296,7 +298,8 @@ CF Worker が以下を中継する(クライアントには CORS 制約のため
 - **1ポーリング = 1 Worker リクエスト**(キャッシュ HIT/MISS 問わず Worker が起動)。10秒間隔で
   1視聴者 8,640 req/日 → **常時24h なら ~11人**、**1時間セッションなら ~278/日**。
 - **キャッシュは無料枠の天井を上げない**(上流 YouTube 呼び出しと IP-BAN 対策にのみ効く)。
-  有料公開規模(数千同時)は WebSocket + Durable Object 単一フライトが必要(ロードマップ)。
+  また、`caches.default` は POP 局所なのでグローバルな単一フライトではない。有料公開規模
+  (数千同時)は WebSocket + Durable Object 単一フライトが必要(ロードマップ)。
 
 無料枠を**有料機能なしで**広げる実装(`chat-client.ts`):
 - **非表示/一時停止中はポーリング停止**(Page Visibility + プレイヤー状態 → `pause()/resume()`)。
