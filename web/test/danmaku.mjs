@@ -88,7 +88,7 @@ const assertLruCache = (label, Overlay, rasterize) => {
   assert.equal(hasCacheText(overlay.cache, "gamma"), true, `${label}: new bitmap should be cached`)
 }
 
-const assertDprCacheInvalidation = (label, Overlay, rasterize) => {
+const assertRasterCacheInvalidation = (label, Overlay, rasterize) => {
   const overlay = new Overlay({ cacheMax: 4, dpr: 1, dedup: false })
 
   rasterize(overlay, "scale")
@@ -102,6 +102,18 @@ const assertDprCacheInvalidation = (label, Overlay, rasterize) => {
 
   overlay.setConfig({ dpr: 2 })
   assert.equal(overlay.cache.size, 1, `${label}: unchanged dpr should keep cached bitmaps`)
+
+  overlay.setConfig({ maxActive: 300 })
+  assert.equal(overlay.cache.size, 1, `${label}: non-raster settings should keep cached bitmaps`)
+
+  overlay.setConfig({ fontFamily: "serif" })
+  assert.equal(overlay.cache.size, 0, `${label}: font changes should clear cached bitmaps`)
+
+  rasterize(overlay, "scale")
+  assert.equal(overlay.cache.size, 1, `${label}: changed font bitmap should be cached`)
+
+  overlay.setConfig({ lineHeight: 36 })
+  assert.equal(overlay.cache.size, 0, `${label}: geometry changes should clear cached bitmaps`)
 }
 
 const assertRendererDefaultsMatchSettings = (label, rendererDefaults, settings) => {
@@ -276,7 +288,7 @@ assertAdaptiveCap("web", webOverlay)
 assertLruCache("web", webOverlay, (overlay, text) =>
   overlay._rasterize([{ t: text }], "#fff", 24, false),
 )
-assertDprCacheInvalidation("web", webOverlay, (overlay, text) =>
+assertRasterCacheInvalidation("web", webOverlay, (overlay, text) =>
   overlay._rasterize([{ t: text }], "#fff", 24, false),
 )
 
@@ -295,8 +307,8 @@ assertAdaptiveCap("extension", extensionOverlay)
 assertLruCache("extension", extensionOverlay, (overlay, text) =>
   overlay._rasterize(text, "#fff", 24, false),
 )
-assertDprCacheInvalidation("extension", extensionOverlay, (overlay, text) =>
+assertRasterCacheInvalidation("extension", extensionOverlay, (overlay, text) =>
   overlay._rasterize(text, "#fff", 24, false),
 )
 
-console.log("danmaku ok (54 assertions)")
+console.log("danmaku ok (62 assertions)")

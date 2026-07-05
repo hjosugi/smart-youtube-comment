@@ -45,6 +45,18 @@
     dpr: Math.max(0.5, Math.min(2, (self.devicePixelRatio || 1) * 0.75))
   };
 
+  const RASTER_CONFIG_KEYS = [
+    "dpr",
+    "fontPx",
+    "fontFamily",
+    "fontWeight",
+    "outlineWidth",
+    "outlineAlpha",
+    "lineHeight",
+    "textColor",
+    "roleColors"
+  ];
+
   const COLORS = { owner: "#ffca28", moderator: "#5e9bff", member: "#7CFC8C", normal: "#ffffff" };
   const AUTHOR_BOOST = { owner: 0.40, moderator: 0.25, member: 0.10, normal: 0 };
   const TARGET_FRAME_MS = 1000 / 60;
@@ -145,9 +157,11 @@
     }
 
     setConfig(partial) {
-      const previousDpr = this.cfg.dpr;
+      const shouldClearRasterCache = RASTER_CONFIG_KEYS.some((key) =>
+        partial[key] != null && partial[key] !== this.cfg[key]
+      );
       Object.assign(this.cfg, partial);
-      if (partial.dpr != null && partial.dpr !== previousDpr) this.cache.clear();
+      if (shouldClearRasterCache) this.cache.clear();
       if (partial.maxActive != null || partial.minActive != null) this._updateDynamicCap();
       if (this.canvas) this._resize();
     }
