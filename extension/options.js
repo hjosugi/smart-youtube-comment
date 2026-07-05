@@ -8,6 +8,7 @@
   const root = document.getElementById("settings");
   const getters = {};
   const setters = {};
+  const SAVE_DEBOUNCE_MS = 750;
   let saveTimer = 0;
 
   const t = (name, fallback) => {
@@ -48,7 +49,7 @@
       } catch {
         setStatus("opt_save_failed", "Save failed");
       }
-    }, 150);
+    }, SAVE_DEBOUNCE_MS);
   }
 
   function makeControl(spec, value) {

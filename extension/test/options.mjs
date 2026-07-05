@@ -47,6 +47,10 @@ class Element {
     this.eventListeners.set(type, listeners)
   }
 
+  dispatchEvent(type) {
+    for (const listener of this.eventListeners.get(type) || []) listener({ target: this })
+  }
+
   click() {
     for (const listener of this.eventListeners.get("click") || []) listener({ target: this })
   }
@@ -168,7 +172,11 @@ preset.click()
 assert.equal(document.getElementById("status").textContent, "")
 assert.equal(saves.length, 0)
 
-await wait(180)
+await wait(500)
+
+assert.equal(saves.length, 0)
+
+await wait(300)
 
 assert.equal(saves.length, 1)
 assert.equal(saves[0].speedPct, 120)
@@ -177,4 +185,24 @@ assert.equal(saves[0].normalMs, 4000)
 assert.equal(saves[0].slowMs, 5000)
 assert.equal(document.getElementById("status").textContent, "Saved")
 
-console.log("options ok (8 assertions)")
+const speed = document.querySelectorAll("input").find((input) => input.type === "range")
+assert.ok(speed)
+
+speed.value = 130
+speed.dispatchEvent("input")
+await wait(300)
+speed.value = 140
+speed.dispatchEvent("input")
+await wait(300)
+speed.value = 150
+speed.dispatchEvent("input")
+await wait(500)
+
+assert.equal(saves.length, 1)
+
+await wait(300)
+
+assert.equal(saves.length, 2)
+assert.equal(saves[1].speedPct, 150)
+
+console.log("options ok (12 assertions)")
