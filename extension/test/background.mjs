@@ -23,9 +23,11 @@ const loadHelpers = () => {
   sandbox.globalThis = sandbox
   sandbox.globalThis.__SYC_TEST__ = true
 
-  runInNewContext(readFileSync(resolve("extension/background.js"), "utf8"), sandbox, {
-    filename: "extension/background.js",
-  })
+  for (const file of ["sanitize.js", "background.js"]) {
+    runInNewContext(readFileSync(resolve("extension", file), "utf8"), sandbox, {
+      filename: `extension/${file}`,
+    })
+  }
   return { helpers: sandbox.globalThis.__SYCBackgroundTest, sandbox }
 }
 

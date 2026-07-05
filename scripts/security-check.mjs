@@ -86,7 +86,11 @@ function checkManifest() {
 }
 
 function checkExtensionSource() {
-  const files = walk(extensionDir).filter(path => [".js", ".html", ".json"].includes(extname(path)))
+  const files = walk(extensionDir).filter(
+    path =>
+      [".js", ".mjs", ".html", ".json"].includes(extname(path)) &&
+      !rel(path).startsWith("extension/test/"),
+  )
   const forbidden = [
     { re: /\beval\s*\(/g, label: "eval()" },
     { re: /\bnew\s+Function\b/g, label: "new Function" },

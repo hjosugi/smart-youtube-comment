@@ -117,9 +117,11 @@ const loadHelpers = () => {
   }
   sandbox.globalThis.__SYC_TEST__ = true
 
-  runInNewContext(readFileSync(resolve("extension/content.js"), "utf8"), sandbox, {
-    filename: "extension/content.js",
-  })
+  for (const file of ["sanitize.js", "content.js"]) {
+    runInNewContext(readFileSync(resolve("extension", file), "utf8"), sandbox, {
+      filename: `extension/${file}`,
+    })
+  }
   return { helpers: sandbox.globalThis.__SYCContentTest, sandbox }
 }
 
@@ -193,9 +195,11 @@ const loadLiveChatStartup = () => {
     },
   }
 
-  runInNewContext(readFileSync(resolve("extension/content.js"), "utf8"), sandbox, {
-    filename: "extension/content.js",
-  })
+  for (const file of ["sanitize.js", "content.js"]) {
+    runInNewContext(readFileSync(resolve("extension", file), "utf8"), sandbox, {
+      filename: `extension/${file}`,
+    })
+  }
 
   return {
     get filterLoadStarted() {

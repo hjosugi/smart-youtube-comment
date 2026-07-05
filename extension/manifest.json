@@ -8,7 +8,8 @@
     "storage"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.mjs",
+    "type": "module"
   },
   "icons": {
     "16": "icons/icon16.png",
@@ -38,6 +39,7 @@
         "https://www.youtube.com/*"
       ],
       "js": [
+        "sanitize.js",
         "scoring.js",
         "danmaku.js",
         "settings.js",

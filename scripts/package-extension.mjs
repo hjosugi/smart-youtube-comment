@@ -27,7 +27,9 @@ if (manifest.version !== pkg.version) {
 
 const required = [
   "manifest.json",
+  "background.mjs",
   "background.js",
+  "sanitize.js",
   "scoring.js",
   "danmaku.js",
   "settings.js",
