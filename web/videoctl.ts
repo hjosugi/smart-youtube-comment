@@ -3,6 +3,8 @@
 // appear on tap/hover and auto-hide after a (configurable, longer) delay. Drives
 // the player through the IFrame API. Degrades safely if API methods are missing.
 
+import { el } from "./dom.ts"
+
 const PLAYING = 1 // YT.PlayerState.PLAYING
 
 export const fmtTime = secs => {
@@ -13,21 +15,28 @@ export const fmtTime = secs => {
   return h ? `${h}:${String(m % 60).padStart(2, "0")}:${sec}` : `${m}:${sec}`
 }
 
-const el = (tag: string, cls: string, props: any = {}): any =>
-  Object.assign(document.createElement(tag), { className: cls, ...props })
-
 const ICON_PLAY =
   '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>'
 const ICON_PAUSE =
   '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>'
 
 export const mountControls = (stage, player, { hideMs = 3500 } = {}) => {
-  const wrap = el("div", "vctl")
-  const bar = el("div", "vctl-bar")
-  const playBtn = el("button", "vctl-play", { type: "button", innerHTML: ICON_PLAY })
-  const cur = el("span", "vctl-time", { textContent: "0:00" })
-  const dur = el("span", "vctl-time", { textContent: "0:00" })
-  const seek = el("input", "vctl-seek", { type: "range", min: "0", max: "1000", value: "0" })
+  const wrap = el("div", { className: "vctl" })
+  const bar = el("div", { className: "vctl-bar" })
+  const playBtn = el("button", {
+    className: "vctl-play",
+    type: "button",
+    innerHTML: ICON_PLAY,
+  })
+  const cur = el("span", { className: "vctl-time", textContent: "0:00" })
+  const dur = el("span", { className: "vctl-time", textContent: "0:00" })
+  const seek = el("input", {
+    className: "vctl-seek",
+    type: "range",
+    min: "0",
+    max: "1000",
+    value: "0",
+  })
   bar.append(playBtn, cur, seek, dur)
   wrap.append(bar)
   stage.append(wrap)

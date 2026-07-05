@@ -12,6 +12,8 @@
 // timers — fully testable in isolation. `start` is the thin effectful shell.
 // Relay envelope shape: see docs/CONTRACT.md.
 
+import { clamp } from "./math.js"
+
 const DEFAULTS = {
   base: "",
   minIntervalMs: 800,
@@ -32,10 +34,8 @@ const DEFAULTS = {
 
 // ---- pure core --------------------------------------------------------------
 
-const clamp = (lo, hi) => n => Math.max(lo, Math.min(hi, n))
-
 const healthyWait = (cfg, timeoutMs, quiet) => {
-  const base = clamp(cfg.minIntervalMs, cfg.maxIntervalMs)(Number(timeoutMs) || cfg.minIntervalMs)
+  const base = clamp(cfg.minIntervalMs, cfg.maxIntervalMs, Number(timeoutMs) || cfg.minIntervalMs)
   return Math.min(cfg.maxQuietMs, Math.round(base * cfg.quietGrowth ** quiet))
 }
 

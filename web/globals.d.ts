@@ -1,5 +1,5 @@
-// Ambient declarations for the classic-script globals (scoring/danmaku/settings/
-// filter/emoji are loaded via <script> and expose globalThis.SYC*). Typed loosely
+// Ambient declarations for script globals (scoring/danmaku/settings/filter/emoji
+// expose globalThis.SYC*). Typed loosely
 // where the .js source is untyped; the data shapes that matter are in types.ts.
 
 import type { ChatMessage, Part, ScoreInput, ScoreResult, RenderPlan } from "./types.ts"
@@ -58,7 +58,7 @@ export interface SettingSpec {
   key: string
   group: string
   label: string
-  type: "bool" | "range" | "color" | "select" | "text"
+  type: "bool" | "range" | "color" | "select"
   default: unknown
   min?: number
   max?: number

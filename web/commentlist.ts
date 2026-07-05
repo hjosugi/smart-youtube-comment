@@ -3,8 +3,9 @@
 // user has scrolled up to read). Toggled independently from the danmaku overlay.
 
 import { sanitizeEmojiUrl } from "./url-security.ts"
+import { el } from "./dom.ts"
+import { AUTHOR_ROLE_COLORS, COMMENT_LIST_DEFAULT_AUTHOR_COLOR } from "./theme.js"
 
-const ROLE_COLOR = { owner: "#ffca28", moderator: "#5e9bff", member: "#7CFC8C", normal: "#cfcfd6" }
 const MAX_ROWS = 200
 
 export const createCommentList = root => {
@@ -14,17 +15,11 @@ export const createCommentList = root => {
   root.append(list)
 
   const atBottom = () => list.scrollHeight - list.scrollTop - list.clientHeight < 48
-  const make = (tag: string, cls?: string, text?: string): any => {
-    const el = document.createElement(tag)
-    if (cls) el.className = cls
-    if (text != null) el.textContent = text
-    return el
-  }
 
   // Render message parts: text nodes + custom-emoji <img>. Falls back to plain
   // text when the relay didn't supply parts.
   const renderText = m => {
-    const span = make("span", "clist-text")
+    const span = el("span", { className: "clist-text" })
     const parts = m.parts && m.parts.length ? m.parts : [{ t: m.text }]
     for (const p of parts) {
       if (p.u) {
@@ -33,7 +28,7 @@ export const createCommentList = root => {
           if (p.a) span.append(document.createTextNode(p.a))
           continue
         }
-        const img = make("img", "clist-emoji")
+        const img = el("img", { className: "clist-emoji" })
         img.src = url
         img.alt = p.a || ""
         img.loading = "lazy"
@@ -49,9 +44,9 @@ export const createCommentList = root => {
     push(m) {
       if (!visible || !m || !m.text) return
       const stick = atBottom()
-      const row = make("div", m.kind === "paid" ? "clist-row paid" : "clist-row")
-      const who = make("span", "clist-author", m.author || "")
-      who.style.color = ROLE_COLOR[m.authorType] ?? ROLE_COLOR.normal
+      const row = el("div", { className: m.kind === "paid" ? "clist-row paid" : "clist-row" })
+      const who = el("span", { className: "clist-author", textContent: m.author || "" })
+      who.style.color = AUTHOR_ROLE_COLORS[m.authorType] ?? COMMENT_LIST_DEFAULT_AUTHOR_COLOR
       row.append(who, renderText(m))
       list.append(row)
       while (list.childElementCount > MAX_ROWS) list.firstChild?.remove()

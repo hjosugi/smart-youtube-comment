@@ -56,14 +56,14 @@
     <!-- non-danmaku comment feed (fills the space below the player) -->
     <section id="list" class="list-wrap"></section>
 
-    <!-- core (classic IIFE globals) must load before the module orchestrator.
-         store.js installs the localStorage shim that settings.js/filter.js use. -->
+    <!-- Core globals must load before the module orchestrator. store.js installs
+         the localStorage shim that settings.js/filter.js use. -->
     <script src="store.js"></script>
-    <script src="settings.js"></script>
+    <script type="module" src="settings.js"></script>
     <script src="filter.js"></script>
-    <script src="scoring.js"></script>
+    <script type="module" src="scoring.js"></script>
     <script src="emoji.js"></script>
-    <script src="danmaku.js"></script>
+    <script type="module" src="danmaku.js"></script>
     <script type="module" src="app.js"></script>
   </body>
 </html>

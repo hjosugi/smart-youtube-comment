@@ -1,3 +1,5 @@
+import { clamp01 } from "./math.js";
+
 (() => {
   "use strict";
 
@@ -156,10 +158,6 @@
       (codePoint >= 0x1f000 && codePoint <= 0x1faff) ||
       (codePoint >= 0x2600 && codePoint <= 0x27bf)
     );
-  }
-
-  function clamp01(value) {
-    return Math.max(0, Math.min(value, 1));
   }
 
   globalThis.SYCScoring = {

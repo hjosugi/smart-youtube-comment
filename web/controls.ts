@@ -2,11 +2,7 @@
 // onInput(key, value) on change. One small builder per control type, picked from a
 // table; inputs carry data-key so tests/code can target them.
 
-const el = (tag: string, props: any = {}, kids: any[] = []): any => {
-  const node = Object.assign(document.createElement(tag), props)
-  for (const k of kids) node.append(k)
-  return node
-}
+import { el } from "./dom.ts"
 
 const row = (label: string, control: any, extra?: any): any =>
   el("label", { className: "ctl" }, [
@@ -63,5 +59,3 @@ export const buildControl = (spec, value, onInput) =>
 
 export const groupBy = (items, key) =>
   items.reduce((map, item) => map.set(item[key], [...(map.get(item[key]) ?? []), item]), new Map())
-
-export { el }

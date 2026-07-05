@@ -1,3 +1,6 @@
+import { clamp } from "./math.js";
+import { AUTHOR_ROLE_COLORS } from "./theme.js";
+
 (() => {
   "use strict";
 
@@ -44,10 +47,7 @@
     dpr: Math.min(self.devicePixelRatio || 1, 1.5)
   };
 
-  const COLORS = { owner: "#ffca28", moderator: "#5e9bff", member: "#7CFC8C", normal: "#ffffff" };
   const AUTHOR_BOOST = { owner: 0.40, moderator: 0.25, member: 0.10, normal: 0 };
-
-  const clamp = (min, max, v) => (v < min ? min : v > max ? max : v);
 
   function popcount(v) {
     v -= (v >>> 1) & 0x55555555;
@@ -267,7 +267,7 @@
       const scale = emphasis >= 0.62 ? 1.12 : emphasis <= 0.18 ? 0.9 : 1.0;
       const fontPx = Math.round(this.cfg.fontPx * scale);
       const color = (this.cfg.roleColors && payload.authorType && payload.authorType !== "normal")
-        ? (COLORS[payload.authorType] ?? this.cfg.textColor)
+        ? (AUTHOR_ROLE_COLORS[payload.authorType] ?? this.cfg.textColor)
         : this.cfg.textColor;
       const msgParts = payload.parts && payload.parts.length ? payload.parts : [{ t: payload.text }];
       const parts = (payload.author && payload.kind && payload.kind !== "text"

@@ -1,8 +1,8 @@
 // Build the web/ PWA into web/dist/:
 //   1. bundle the TS module graph (entry app.ts) into one app.js
-//   2. copy the classic <script> globals + static assets verbatim
-// The classic scripts (scoring/danmaku/settings/filter/store/emoji) are loaded via
-// <script> and read by the bundle through globalThis.SYC*, so they are NOT bundled.
+//   2. copy script globals, their shared ESM helpers, and static assets verbatim
+// Script globals (scoring/danmaku/settings/filter/store/emoji) expose globalThis.SYC*
+// and are not bundled into app.js.
 
 import { execFileSync } from "node:child_process"
 import { rmSync, mkdirSync, cpSync } from "node:fs"
@@ -28,7 +28,9 @@ execFileSync(
   { stdio: "inherit" },
 )
 
-const CLASSIC = [
+const SCRIPTS = [
+  "math.js",
+  "theme.js",
   "scoring.js",
   "danmaku.js",
   "settings.js",
@@ -38,7 +40,7 @@ const CLASSIC = [
   "sw.js",
 ]
 const STATIC = ["index.html", "styles.css", "manifest.webmanifest"]
-for (const f of [...CLASSIC, ...STATIC]) cpSync(join(WEB, f), join(DIST, f))
+for (const f of [...SCRIPTS, ...STATIC]) cpSync(join(WEB, f), join(DIST, f))
 cpSync(join(WEB, "icons"), join(DIST, "icons"), { recursive: true })
 
 console.log("built -> web/dist")

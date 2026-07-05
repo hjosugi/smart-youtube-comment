@@ -1,10 +1,10 @@
+import { clamp } from "./math.js";
+
 (() => {
   "use strict";
 
-  // Single source of truth for user settings: the schema drives BOTH the options
-  // UI (options.js builds controls from it) and the runtime (content.js maps it
-  // onto the danmaku engine). Classic script on purpose — it must stay
-  // export-free so Chrome can load it as a content script; consumers read
+  // Single source of truth for user settings: the schema drives the options UI
+  // and the runtime mapping onto the danmaku engine. Consumers read
   // globalThis.SYCSettings. (Same pattern as scoring.js.)
 
   const SCHEMA = [
@@ -52,7 +52,6 @@
 
   const DEFAULTS = Object.fromEntries(SCHEMA.map((s) => [s.key, s.default]));
   const STORAGE_KEY = "syc:settings";
-  const clamp = (min, max, value) => Math.min(max, Math.max(min, value));
 
   function area() {
     // chrome.storage.sync can be disabled; fall back to local. null when there is
@@ -108,10 +107,6 @@
       : fallback;
   }
 
-  function normalizeText(value, fallback) {
-    return typeof value === "string" ? value.slice(0, 200) : fallback;
-  }
-
   function normalize(values) {
     const input = values && typeof values === "object" ? values : {};
     const clean = {};
@@ -120,7 +115,6 @@
       if (spec.type === "bool") clean[spec.key] = normalizeBool(value, spec.default);
       else if (spec.type === "range") clean[spec.key] = normalizeRange(spec, value);
       else if (spec.type === "color") clean[spec.key] = normalizeColor(value, spec.default);
-      else if (spec.type === "text") clean[spec.key] = normalizeText(value, spec.default);
       else if (spec.type === "select") clean[spec.key] = (spec.options || []).some((o) => o.value === value) ? value : spec.default;
       else clean[spec.key] = spec.default;
     }

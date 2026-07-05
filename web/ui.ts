@@ -2,7 +2,8 @@
 // help panel. Localized via i18n. Drives SYCSettings.save / SYCFilter.save; the
 // app subscribes to onChange for live preview. See ARCHITECTURE.md §8.
 
-import { buildControl, groupBy, el } from "./controls.ts"
+import { buildControl, groupBy } from "./controls.ts"
+import { el } from "./dom.ts"
 import { T, groupName, settingLabel } from "./i18n.ts"
 
 const section = title => el("h3", { className: "sheet-h", textContent: title })
