@@ -138,6 +138,8 @@ test("resolveLiveChat extracts continuation and localized replay state", async (
   })
   assert.equal(calls[0].body.videoId, "abc123def45")
   assert.equal(calls[0].body.context.client.clientName, "WEB")
+  assert.equal(calls[0].body.context.client.hl, "en")
+  assert.equal(calls[0].body.context.client.gl, "US")
 })
 
 test("resolveLiveChat returns null when a watch page has no chat renderer", async () => {

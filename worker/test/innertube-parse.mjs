@@ -197,6 +197,12 @@ test("continuation extraction preserves precedence and clamps timeout boundaries
 })
 
 test("replay chat detection covers flags, English titles, and localized titles", () => {
+  assert.equal(
+    _pure.isReplayChat({
+      continuations: [{ liveChatReplayContinuationData: { continuation: "REPLAY" } }],
+    }),
+    true,
+  )
   assert.equal(_pure.isReplayChat(headerWith(["Top chat replay", "Live chat replay"])), true)
   assert.equal(_pure.isReplayChat(headerWith(["Top chat", "Live chat"])), false)
   assert.equal(

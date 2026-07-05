@@ -16,7 +16,12 @@ type TaggedError = Error & { status: number }
 const INNERTUBE_BASE = "https://www.youtube.com/youtubei/v1"
 
 // Public WEB client identity. No API key required when a valid context is POSTed.
-export const INNERTUBE_CLIENT = { clientName: "WEB", clientVersion: "2.20240814.00.00" }
+export const INNERTUBE_CLIENT = {
+  clientName: "WEB",
+  clientVersion: "2.20240814.00.00",
+  hl: "en",
+  gl: "US",
+}
 export const INNERTUBE_CLIENT_VERSION = INNERTUBE_CLIENT.clientVersion
 
 const FETCH_TIMEOUT_MS = 3500 // per-attempt bound; a hung request aborts and is retried
@@ -104,8 +109,12 @@ const REPLAY_TITLE_PATTERNS = [
 const isReplayTitle = (title: unknown): boolean =>
   typeof title === "string" && REPLAY_TITLE_PATTERNS.some(pattern => pattern.test(title))
 
+const hasReplayContinuation = (continuations: any[] = []): boolean =>
+  continuations.some(c => Boolean(c?.liveChatReplayContinuationData))
+
 const isReplayChat = (lc: any): boolean => {
   if (lc?.isReplay === true) return true
+  if (hasReplayContinuation(lc?.continuations)) return true
   const titles: string[] =
     lc?.header?.liveChatHeaderRenderer?.viewSelector?.sortFilterSubMenuRenderer?.subMenuItems?.map(
       (s: any) => s.title,
