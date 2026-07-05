@@ -138,6 +138,135 @@ const assertResizeGating = (label, Overlay) => {
   assert.equal(resizes, 2, `${label}: dpr changes should resize canvas`)
 }
 
+const payload = (text, overrides = {}) => ({
+  text,
+  parts: [{ t: text }],
+  tier: 1,
+  durationMs: 7500,
+  score: 0,
+  emphasis: 0,
+  authorType: "normal",
+  kind: "text",
+  ...overrides,
+})
+
+const assertPriorityQueueAdmission = (label, Overlay) => {
+  const overlay = new Overlay({ maxQueue: 2, dpr: 1, dedup: false })
+  overlay.canvas = makeCanvas()
+
+  assert.equal(overlay.push(payload("low")), true, `${label}: first pending comment accepted`)
+  assert.equal(
+    overlay.push(payload("mid", { score: 0.5 })),
+    true,
+    `${label}: second pending comment accepted`,
+  )
+  assert.equal(
+    overlay.push(payload("weaker")),
+    false,
+    `${label}: weaker comment should drop when pending queue is full`,
+  )
+  assert.equal(overlay.dropped, 1, `${label}: dropped count should include rejected pending item`)
+  assert.equal(
+    overlay.push(payload("paid", { kind: "paid", score: 1 })),
+    true,
+    `${label}: higher-priority comment should evict the weakest pending item`,
+  )
+
+  const pendingTexts = overlay.pending.map(item => item.payload.text).sort()
+  assert.equal(
+    JSON.stringify(pendingTexts),
+    JSON.stringify(["mid", "paid"]),
+    `${label}: pending queue should retain strongest`,
+  )
+}
+
+const assertActiveCapEviction = (label, Overlay) => {
+  const overlay = new Overlay({
+    maxActive: 2,
+    minActive: 2,
+    dpr: 1,
+    dedup: false,
+    lengthSpread: false,
+  })
+  overlay.canvas = makeCanvas()
+  overlay.ctx = makeContext()
+  overlay.w = 320
+  overlay.h = 180
+  overlay.laneTop = 0
+  overlay.laneH = 24
+  overlay.laneCount = 3
+  overlay.lanes = [0, 0, 0]
+  overlay.dynamicCap = 2
+
+  assert.equal(overlay._spawn(payload("low"), 0.1), true, `${label}: first active spawn accepted`)
+  assert.equal(overlay._spawn(payload("mid"), 0.2), true, `${label}: second active spawn accepted`)
+  assert.equal(
+    overlay._spawn(payload("weak"), 0.05),
+    false,
+    `${label}: weaker active candidate should drop at cap`,
+  )
+  assert.equal(overlay.dropped, 1, `${label}: dropped count should include rejected active item`)
+  assert.equal(
+    overlay._spawn(payload("high"), 0.9),
+    true,
+    `${label}: stronger active candidate should evict weakest active item`,
+  )
+  assert.equal(overlay.active.length, 2, `${label}: active set should stay capped`)
+  const activePriorities = overlay.active.map(item => item.priority).sort((a, b) => a - b)
+  assert.equal(
+    JSON.stringify(activePriorities),
+    JSON.stringify([0.2, 0.9]),
+    `${label}: active set should retain strongest priorities`,
+  )
+}
+
+const assertLaneSelectionAndClear = (label, Overlay) => {
+  const overlay = new Overlay({ dpr: 1, dedup: false })
+  overlay.laneCount = 3
+  overlay.lanes = [200, 150, 170]
+  assert.equal(overlay._pickLane(100), 1, `${label}: all-busy lanes choose soonest free lane`)
+  assert.equal(overlay._pickLane(151), 1, `${label}: already-free lane is reused immediately`)
+
+  if (typeof overlay.clear === "function") {
+    overlay.active.push({ priority: 1 })
+    overlay.nextActive.push({ priority: 2 })
+    overlay.pending.push({ payload: payload("queued"), priority: 1 })
+    overlay.pendingHead = 1
+    overlay.recentLen = 3
+    overlay.recentPos = 2
+    overlay.clear()
+
+    assert.equal(overlay.active.length, 0, `${label}: clear removes active comments`)
+    assert.equal(overlay.nextActive.length, 0, `${label}: clear removes next-active comments`)
+    assert.equal(overlay.pending.length, 0, `${label}: clear removes pending comments`)
+    assert.equal(overlay.pendingHead, 0, `${label}: clear resets pending head`)
+    assert.equal(overlay.recentLen, 0, `${label}: clear resets dedup recent length`)
+    assert.equal(overlay.recentPos, 0, `${label}: clear resets dedup ring position`)
+  }
+}
+
+const assertPendingCompaction = (label, Overlay) => {
+  const overlay = new Overlay({ dpr: 1, dedup: false })
+  overlay.pending = Array.from({ length: 520 }, (_, i) => ({
+    payload: payload(`p${i}`),
+    priority: i,
+  }))
+  overlay.pendingHead = 260
+  overlay._compactPending()
+  assert.equal(overlay.pending.length, 260, `${label}: compact removes consumed prefix`)
+  assert.equal(overlay.pendingHead, 0, `${label}: compact resets pending head`)
+  assert.equal(
+    overlay.pending[0].payload.text,
+    "p260",
+    `${label}: compact keeps first unconsumed item`,
+  )
+
+  overlay.pendingHead = overlay.pending.length
+  overlay._compactPending()
+  assert.equal(overlay.pending.length, 0, `${label}: compact clears fully consumed queue`)
+  assert.equal(overlay.pendingHead, 0, `${label}: compact resets fully consumed head`)
+}
+
 const assertRendererDefaultsMatchSettings = (label, rendererDefaults, settings) => {
   const engineDefaults = settings.toEngineConfig(settings.DEFAULTS)
   const rendererEngineDefaults = Object.fromEntries(
@@ -258,6 +387,7 @@ const loadExtensionOverlay = () => {
     devicePixelRatio: 1,
     document: makeDocument(),
     globalThis: null,
+    performance: { now: () => 1000 },
     PerformanceObserver: makePerformanceObserver(observerCounters),
     requestAnimationFrame: () => 1,
     self: null,
@@ -314,6 +444,10 @@ assertRasterCacheInvalidation("web", webOverlay, (overlay, text) =>
   overlay._rasterize([{ t: text }], "#fff", 24, false),
 )
 assertResizeGating("web", webOverlay)
+assertPriorityQueueAdmission("web", webOverlay)
+assertActiveCapEviction("web", webOverlay)
+assertLaneSelectionAndClear("web", webOverlay)
+assertPendingCompaction("web", webOverlay)
 
 const {
   Overlay: extensionOverlay,
@@ -334,5 +468,9 @@ assertRasterCacheInvalidation("extension", extensionOverlay, (overlay, text) =>
   overlay._rasterize(text, "#fff", 24, false),
 )
 assertResizeGating("extension", extensionOverlay)
+assertPriorityQueueAdmission("extension", extensionOverlay)
+assertActiveCapEviction("extension", extensionOverlay)
+assertLaneSelectionAndClear("extension", extensionOverlay)
+assertPendingCompaction("extension", extensionOverlay)
 
-console.log("danmaku ok (70 assertions)")
+console.log("danmaku ok (106 assertions)")
