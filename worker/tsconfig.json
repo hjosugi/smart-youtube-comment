@@ -3,7 +3,7 @@
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ESNext", "DOM", "DOM.Iterable", "WebWorker"],
+    "lib": ["ESNext"],
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "strict": true,
@@ -11,8 +11,7 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "skipLibCheck": true,
-    "types": []
+    "types": ["@cloudflare/workers-types"]
   },
-  "include": ["web/**/*.ts", "web/globals.d.ts"],
-  "exclude": ["node_modules", "**/node_modules", "web/dist"]
+  "include": ["src/**/*.ts"]
 }

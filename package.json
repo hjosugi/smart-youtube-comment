@@ -14,7 +14,7 @@
     "test": "node scripts/test.mjs",
     "test:bun": "bun scripts/test.mjs",
     "coverage": "node scripts/coverage.mjs",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && npm --prefix worker run typecheck",
     "build": "node scripts/build-web.mjs",
     "deploy:web": "node scripts/deploy-web.mjs",
     "deploy:worker": "npm --prefix worker run deploy",

@@ -19,10 +19,6 @@
 import { INNERTUBE_CLIENT_VERSION, resolveLiveChat, pollLiveChat } from "./innertube.ts"
 import type { PollEnvelope } from "../../web/types.ts"
 
-interface ExecutionContext {
-  waitUntil(promise: Promise<unknown>): void
-}
-
 interface Env {
   SYC_VERSION?: string
   COMMIT_SHA?: string
@@ -213,7 +209,7 @@ export const handle = async (
   const invalid = validate(params)
   if (invalid) return json({ error: invalid }, 400)
 
-  const cache: Cache = deps.cache ?? (caches as any).default
+  const cache: Cache = deps.cache ?? caches.default
   const cacheKey = cacheKeyFor(url, params)
   const cached = await cache.match(cacheKey)
   if (cached) return withHeader(cached, "X-SYC-Cache", "HIT")
@@ -241,9 +237,11 @@ export const handle = async (
   }
 }
 
-export default {
+const worker: ExportedHandler<Env> = {
   fetch: (request: Request, env: Env, ctx: ExecutionContext) => handle(request, env, ctx),
 }
+
+export default worker
 
 export const _test = {
   validate,
