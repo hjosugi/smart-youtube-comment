@@ -52,6 +52,7 @@ const SUITES = [
   ["deterministic", "web/test/chat-client-adaptive.mjs"],
   ["deterministic", "web/test/chat-client-behavior.mjs"],
   ["e2e", "web/test/e2e.mjs"],
+  ["e2e", "web/test/accessibility-e2e.mjs"],
   ["e2e", "web/test/pwa.mjs"],
   ["e2e", "web/test/settings-e2e.mjs"],
   ["e2e", "web/test/views-e2e.mjs"],

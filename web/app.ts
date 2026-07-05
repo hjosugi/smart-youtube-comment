@@ -12,7 +12,7 @@ import { mountPerfHud } from "./perf.ts"
 import { mountControls, fmtTime } from "./videoctl.ts"
 import { createCommentList } from "./commentlist.ts"
 import { createLiveChatClient } from "./chat-client.ts"
-import { T, statusText } from "./i18n.ts"
+import { T, lang, statusText } from "./i18n.ts"
 import { sanitizeChatMessage } from "./url-security.ts"
 import type { ChatMessage } from "./types.ts"
 
@@ -176,12 +176,19 @@ $("launch").addEventListener("submit", (e: Event) => {
 
 // --- localized labels on the static chrome ---
 const localizeChrome = () => {
+  const labelButton = (id: string, label: string) => {
+    const button = $(id)
+    button.title = label
+    button.setAttribute("aria-label", label)
+  }
+
+  document.documentElement.lang = lang
   $("video").placeholder = T.urlPlaceholder
   $("launch").querySelector("button[type=submit]").textContent = T.play
-  $("toggle").title = T.danmakuToggle
-  $("listToggle").title = T.listToggle
-  $("settings").title = T.settings
-  $("help").title = T.help
+  labelButton("toggle", T.danmakuToggle)
+  labelButton("listToggle", T.listToggle)
+  labelButton("settings", T.settings)
+  labelButton("help", T.help)
   setStatus("idle")
 }
 
