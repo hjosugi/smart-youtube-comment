@@ -24,15 +24,8 @@ const element = (tag, attrs = {}, children = []) => ({
     return attrs[name] ?? null
   },
   querySelector(selector) {
-    if (selector === '[type="owner"], [aria-label*="Owner"], [aria-label*="owner"]') {
-      return attrs.role === "owner" ? this : null
-    }
-    if (selector === '[type="moderator"], [aria-label*="Moderator"], [aria-label*="moderator"]') {
-      return attrs.role === "moderator" ? this : null
-    }
-    if (selector === '[type="member"], [aria-label*="Member"], [aria-label*="member"]') {
-      return attrs.role === "member" ? this : null
-    }
+    const type = selector.match(/^\[type="([^"]+)"\]$/)?.[1]
+    if (type && attrs.type === type) return this
     return null
   },
 })
@@ -58,10 +51,14 @@ const makeChatRenderer = ({
   author = "Alice",
   authorType = null,
   fallbackRole = null,
+  fallbackAriaLabel = null,
   officialContainer = false,
 } = {}) => {
   const message = element("span", {}, [text(textValue)])
   const authorNode = element("span", {}, [text(author)])
+  const fallbackBadge = fallbackRole
+    ? element("span", { type: fallbackRole, "aria-label": fallbackAriaLabel })
+    : null
   return {
     sentTag: tag,
     matches(selector) {
@@ -82,11 +79,7 @@ const makeChatRenderer = ({
     querySelector(selector) {
       if (selector === "#message") return message
       if (selector === "#author-name") return authorNode
-      if (selector.includes("owner") && fallbackRole === "owner") return element("span", { role: fallbackRole })
-      if (selector.includes("moderator") && fallbackRole === "moderator") {
-        return element("span", { role: fallbackRole })
-      }
-      if (selector.includes("member") && fallbackRole === "member") return element("span", { role: fallbackRole })
+      if (fallbackBadge) return fallbackBadge.querySelector(selector)
       return null
     },
   }
@@ -243,7 +236,8 @@ const { helpers, sandbox } = loadHelpers()
 }
 
 assert.equal(helpers.extractAuthorType(makeChatRenderer({ authorType: "owner" })), "owner")
-assert.equal(helpers.extractAuthorType(makeChatRenderer({ fallbackRole: "member" })), "member")
+assert.equal(helpers.extractAuthorType(makeChatRenderer({ fallbackRole: "member", fallbackAriaLabel: "メンバー" })), "member")
+assert.equal(helpers.extractAuthorType(makeChatRenderer({ fallbackAriaLabel: "Owner" })), "normal")
 assert.equal(helpers.isOfficialChatText({ author: "YouTube", text: "hello", kind: "text" }), true)
 assert.equal(helpers.isOfficialChatText({ author: "Alice", text: "welcome to live chat", kind: "text" }), true)
 assert.equal(helpers.isOfficialChatText({ author: "Alice", text: "normal comment", kind: "text" }), false)

@@ -436,9 +436,9 @@
   function extractAuthorType(node) {
     const value = node.getAttribute("author-type");
     if (["owner", "moderator", "member", "normal"].includes(value)) return value;
-    if (node.querySelector('[type="owner"], [aria-label*="Owner"], [aria-label*="owner"]')) return "owner";
-    if (node.querySelector('[type="moderator"], [aria-label*="Moderator"], [aria-label*="moderator"]')) return "moderator";
-    if (node.querySelector('[type="member"], [aria-label*="Member"], [aria-label*="member"]')) return "member";
+    if (node.querySelector('[type="owner"]')) return "owner";
+    if (node.querySelector('[type="moderator"]')) return "moderator";
+    if (node.querySelector('[type="member"]')) return "member";
     return "normal";
   }
 
