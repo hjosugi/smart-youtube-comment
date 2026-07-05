@@ -12,6 +12,11 @@ page.on("pageerror", e => errors.push(e.message))
 
 await page.goto(`http://localhost:${port}/index.html?mock=1`, { waitUntil: "load" })
 await page.waitForSelector("#settings", { timeout: 8000 })
+await page.click("#toggle")
+await page.waitForFunction(() => {
+  const saved = JSON.parse(localStorage.getItem("syc:settings") || "{}")
+  return saved.enabled === false
+})
 await page.click("#settings")
 await page.waitForSelector('[data-key="speedPct"]', { timeout: 4000 })
 
@@ -28,6 +33,8 @@ await page.waitForTimeout(200)
 const after = await page.evaluate(() => ({
   durationScale: globalThis.SYCApp?.overlay?.cfg?.durationScale,
   saved: JSON.parse(localStorage.getItem("syc:settings") || "{}").speedPct,
+  savedEnabled: JSON.parse(localStorage.getItem("syc:settings") || "{}").enabled,
+  togglePressed: document.getElementById("toggle")?.getAttribute("aria-pressed"),
 }))
 
 // NG filter: save a word, confirm it persists
@@ -52,6 +59,8 @@ const checks = [
   ],
   ["speed 200% -> durationScale 0.5 (live)", Math.abs((after.durationScale ?? 0) - 0.5) < 1e-9],
   ["speedPct persisted to localStorage", after.saved === 200],
+  ["sheet save preserves top-bar overlay toggle", after.savedEnabled === false],
+  ["top-bar overlay toggle stays reflected", after.togglePressed === "false"],
   ["NG list persisted", ngSaved === "blockme"],
   ["no page errors", errors.length === 0],
 ]

@@ -34,9 +34,10 @@ const sheetWith = (button, root, title) => {
 
 const settingsSection = async (settings, sheet) => {
   const draft = { ...(await settings.load()) }
+  settings.onChange(next => Object.assign(draft, next))
   const onInput = (key, v) => {
     draft[key] = v
-    settings.save(draft)
+    settings.save({ ...draft })
   }
 
   const body = el("div", { className: "ctls" })
@@ -67,7 +68,7 @@ const settingsSection = async (settings, sheet) => {
         slowMs: p.slowMs,
         spreadStrength: p.spreadStrength,
       })
-      settings.save(draft)
+      settings.save({ ...draft })
       rebuild()
     })
     presets.append(b)
