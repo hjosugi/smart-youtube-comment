@@ -177,4 +177,14 @@ assert.equal(sandbox.sentMessages.length, 1)
 await helpers.processChatNode(makeChatRenderer({ textValue: "welcome to live chat", author: "Alice" }))
 assert.equal(sandbox.sentMessages.length, 1)
 
-console.log("content-extract ok (14 assertions)")
+helpers.resetSeenKeys()
+await helpers.processChatNode(makeChatRenderer({
+  textValue: `  ${"x".repeat(620)}  `,
+  author: "  Bob\nName  ",
+}))
+assert.equal(sandbox.sentMessages.length, 2)
+assert.equal(sandbox.sentMessages[1].payload.text.length, 500)
+assert.equal(sandbox.sentMessages[1].payload.author, "Bob Name")
+assert.equal(sandbox.sentMessages[1].payload.kind, "text")
+
+console.log("content-extract ok (18 assertions)")
