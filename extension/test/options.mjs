@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { runInNewContext } from "node:vm"
 
-const wait = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms))
+const wait = (ms = 0) => new Promise(done => setTimeout(done, ms))
 
 class Element {
   constructor(tagName) {

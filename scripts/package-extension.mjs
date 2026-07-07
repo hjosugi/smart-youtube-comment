@@ -122,7 +122,9 @@ writeFileSync(
 
 ## Validation
 
+- Lint and format checks: included in \`npm run release:zip\`
 - Security policy check: included in \`npm run release:zip\`
+- Typecheck and automated test suites: included in \`npm run release:zip\`
 - Local sandbox smoke: included in \`npm run release:zip\`
 - Zip integrity: included in \`npm run release:zip\`
 - Zip extraction verification: included in \`npm run release:zip\`

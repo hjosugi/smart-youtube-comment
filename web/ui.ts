@@ -50,7 +50,8 @@ const settingsSection = async (settings, sheet) => {
   }
   const onInput = (key, v, commit = true) => {
     draft[key] = v
-    commit ? persist() : schedulePersist()
+    if (commit) persist()
+    else schedulePersist()
   }
 
   const body = el("div", { className: "ctls" })

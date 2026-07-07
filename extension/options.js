@@ -132,12 +132,6 @@
     return b;
   }
 
-  function currentSettingValues() {
-    const v = {};
-    for (const key in getters) v[key] = getters[key]();
-    return v;
-  }
-
   function debounce(fn, ms) {
     let timer = 0;
     return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), ms); };
@@ -156,7 +150,7 @@
     bar.className = "presets";
     for (const [key, preset] of Object.entries(S.SPEED_PRESETS)) {
       bar.appendChild(makeButton(t(`sp_${key}`, preset.label), () => {
-        const { label, ...vals } = preset;
+        const { label: _label, ...vals } = preset;
         for (const [k, v] of Object.entries(vals)) setters[k]?.(v);
         updatePreview();
         scheduleSave();

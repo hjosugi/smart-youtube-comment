@@ -51,10 +51,13 @@ export const mountControls = (stage, player, { hideMs = 3500 } = {}) => {
   const show = () => {
     wrap.classList.add("show")
     clearTimeout(hideTimer)
-    hideTimer = setTimeout(() => scrubbing || wrap.classList.remove("show"), hideMs)
+    hideTimer = setTimeout(() => {
+      if (!scrubbing) wrap.classList.remove("show")
+    }, hideMs)
   }
   const toggle = () => {
-    isPlaying() ? player.pauseVideo?.() : player.playVideo?.()
+    if (isPlaying()) player.pauseVideo?.()
+    else player.playVideo?.()
     setIcon()
     show()
   }

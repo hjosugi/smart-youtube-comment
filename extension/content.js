@@ -161,7 +161,7 @@
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      const nextEnabled = !Boolean(getSettings().enabled);
+      const nextEnabled = !getSettings().enabled;
       setEnabled(nextEnabled);
     });
 

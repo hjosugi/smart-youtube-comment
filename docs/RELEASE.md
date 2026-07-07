@@ -39,6 +39,14 @@ For now, use simple semver:
 
 ## Pre-Release Checklist
 
+Install every package root before running local release checks:
+
+```sh
+npm ci
+npm --prefix web ci
+npm --prefix worker ci
+```
+
 Run:
 
 ```sh
@@ -47,7 +55,11 @@ npm run release:check
 
 This runs:
 
+- lint and format checks
 - security and supply-chain policy checks
+- root and worker typechecks
+- web build
+- unit, deterministic, and browser e2e suites
 - local sandbox server smoke test
 
 Optional but useful:

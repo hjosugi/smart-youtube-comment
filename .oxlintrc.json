@@ -1,0 +1,49 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "env": {
+    "browser": true,
+    "builtin": true,
+    "node": true,
+    "serviceworker": true,
+    "webextensions": true,
+    "worker": true
+  },
+  "plugins": ["typescript", "oxc"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "warn",
+    "pedantic": "off",
+    "style": "off",
+    "restriction": "off"
+  },
+  "ignorePatterns": [
+    ".release/**",
+    "node_modules/**",
+    "web/dist/**",
+    "web/node_modules/**",
+    "worker/node_modules/**"
+  ],
+  "globals": {
+    "SYCScoring": "readonly"
+  },
+  "rules": {
+    "eqeqeq": ["error", "always", { "null": "ignore" }],
+    "no-await-in-loop": "off",
+    "no-debugger": "error",
+    "no-undef": "error",
+    "no-underscore-dangle": "off",
+    "no-unmodified-loop-condition": "off",
+    "no-unused-expressions": "error",
+    "no-unused-vars": "error",
+    "oxc/no-map-spread": "off"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.d.ts"],
+      "rules": {
+        "typescript/no-useless-empty-export": "off"
+      }
+    }
+  ]
+}

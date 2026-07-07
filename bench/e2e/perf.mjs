@@ -11,7 +11,6 @@ import { chromium } from "playwright";
 import { fileURLToPath } from "node:url";
 
 const BENCH_URL = "file://" + fileURLToPath(new URL("../danmaku-bench.html", import.meta.url));
-const TARGET_LIVE = 1000;
 const TARGET_FPS = 50;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

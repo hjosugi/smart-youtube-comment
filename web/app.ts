@@ -70,24 +70,31 @@ const onMessages = (msgs: ChatMessage[]) => {
 // --- sources ---
 const wakeLock = createWakeLock()
 let stop = () => {}
+let sourceGeneration = 0
 let activeVideo: string | null = null // currently-playing id; re-submitting must not restart
 let seekActive: ((s: number) => void) | null = null // seek the active player on same-video re-submit
 
 const startMockMode = () => {
+  const generation = (sourceGeneration += 1)
   stop()
+  const isCurrent = () => generation === sourceGeneration
   overlay.attach($("stage"))
   setStatus("mock")
   const stopMock = startMock(onMessages, { ratePerSec: 30 })
   stop = () => {
+    const wasCurrent = isCurrent()
+    if (wasCurrent) sourceGeneration += 1
     stopMock()
     overlay.detach()
     list.clear()
-    setStatus("stopped")
+    if (wasCurrent) setStatus("stopped")
   }
 }
 
 const startLive = async (videoId: string, relay: string, startSeconds = 0) => {
+  const generation = (sourceGeneration += 1)
   stop()
+  const isCurrent = () => generation === sourceGeneration
   if (navigator.onLine === false) {
     activeVideo = null
     seekActive = null
@@ -99,6 +106,15 @@ const startLive = async (videoId: string, relay: string, startSeconds = 0) => {
   seen.clear()
   setStatus("loading")
   const client = createLiveChatClient({ base: relay, getOffsetMs: () => playbackMs() })
+  stop = () => {
+    const wasCurrent = isCurrent()
+    if (wasCurrent) sourceGeneration += 1
+    client.stop()
+    activeVideo = null
+    seekActive = null
+    playbackMs = () => Infinity
+    if (wasCurrent) setStatus("stopped")
+  }
 
   let playing = false
   let player: any
@@ -107,17 +123,26 @@ const startLive = async (videoId: string, relay: string, startSeconds = 0) => {
       "player",
       videoId,
       (state: string) => {
+        if (!isCurrent()) return
         playing = state === "playing"
-        playing ? client.resume() : client.pause()
+        if (playing) client.resume()
+        else client.pause()
       },
       startSeconds,
     )
+    if (!isCurrent()) {
+      client.stop()
+      player.destroy?.()
+      return
+    }
   } catch {
     client.stop()
-    activeVideo = null
-    seekActive = null
-    playbackMs = () => Infinity
-    setStatus("player_error")
+    if (isCurrent()) {
+      activeVideo = null
+      seekActive = null
+      playbackMs = () => Infinity
+      setStatus("player_error")
+    }
     return
   }
   playbackMs = () => (player.getCurrentTime?.() ?? 0) * 1000
@@ -148,13 +173,18 @@ const startLive = async (videoId: string, relay: string, startSeconds = 0) => {
   setMediaSession({ title: videoId })
 
   client.start(videoId, {
-    onMessages,
+    onMessages: (msgs: ChatMessage[]) => {
+      if (isCurrent()) onMessages(msgs)
+    },
     onState: ({ healthy, failures, replay }: any) =>
+      isCurrent() &&
       setStatus(healthy || failures < 2 ? (replay ? "replay" : "live") : "reconnecting"),
-    onEnded: ({ reason }: any) => setStatus(reason),
+    onEnded: ({ reason }: any) => isCurrent() && setStatus(reason),
   })
 
   stop = () => {
+    const wasCurrent = isCurrent()
+    if (wasCurrent) sourceGeneration += 1
     clearInterval(seekTimer)
     document.removeEventListener("visibilitychange", onVisibility)
     client.stop()
@@ -166,7 +196,7 @@ const startLive = async (videoId: string, relay: string, startSeconds = 0) => {
     activeVideo = null
     seekActive = null
     player.destroy?.()
-    setStatus("stopped")
+    if (wasCurrent) setStatus("stopped")
   }
 }
 

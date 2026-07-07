@@ -306,7 +306,7 @@ const assertDedup = (label, Overlay) => {
   const overlay = new Overlay({ dpr: 1, dedup: true, simThreshold: 3, recentMax: 8 })
   overlay.canvas = makeCanvas()
 
-  const payload = {
+  const samplePayload = {
     text: "Hello, WORLD!!!",
     tier: 1,
     durationMs: 7500,
@@ -316,9 +316,9 @@ const assertDedup = (label, Overlay) => {
     kind: "text",
   }
 
-  assert.equal(overlay.push(payload), true, `${label}: first comment should be accepted`)
+  assert.equal(overlay.push(samplePayload), true, `${label}: first comment should be accepted`)
   assert.equal(
-    overlay.push({ ...payload, text: "hello world" }),
+    overlay.push({ ...samplePayload, text: "hello world" }),
     false,
     `${label}: normalized near-duplicate should be dropped`,
   )

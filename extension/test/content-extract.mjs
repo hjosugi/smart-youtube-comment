@@ -182,10 +182,10 @@ const loadLiveChatStartup = () => {
   sandbox.globalThis.SYCFilter = {
     load() {
       filterLoadStarted = true
-      return new Promise(resolve => {
+      return new Promise(done => {
         releaseFilter = () => {
           filterLoaded = true
-          resolve()
+          done()
         }
       })
     },

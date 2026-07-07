@@ -9,7 +9,7 @@ const waitFor = async (fn, timeoutMs = 5000) => {
   const start = Date.now()
   while (!fn()) {
     if (Date.now() - start > timeoutMs) throw new Error("timed out waiting for condition")
-    await new Promise(r => setTimeout(r, 25))
+    await new Promise(done => setTimeout(done, 25))
   }
 }
 
@@ -161,7 +161,7 @@ await page.evaluate(() => {
   document.dispatchEvent(new Event("visibilitychange"))
 })
 const hiddenAt = apiCalls
-await new Promise(r => setTimeout(r, 950))
+await new Promise(done => setTimeout(done, 950))
 const hiddenAfter = apiCalls
 
 await page.evaluate(() => {
@@ -173,7 +173,7 @@ const visibleAfter = apiCalls
 
 await page.evaluate(() => globalThis.__sycEmitPlayerState(2))
 const pausedAt = apiCalls
-await new Promise(r => setTimeout(r, 950))
+await new Promise(done => setTimeout(done, 950))
 const pausedAfter = apiCalls
 
 await page.evaluate(() => globalThis.__sycEmitPlayerState(1))
@@ -182,7 +182,7 @@ const playingAfter = apiCalls
 
 await page.evaluate(() => globalThis.__sycEmitPlayerState(-1))
 const unknownAt = apiCalls
-await new Promise(r => setTimeout(r, 950))
+await new Promise(done => setTimeout(done, 950))
 const unknownAfter = apiCalls
 
 await page.evaluate(() => globalThis.__sycEmitPlayerState(1))
@@ -192,7 +192,7 @@ const liveBeforeMock = apiCalls
 await page.evaluate(() => globalThis.SYCApp.startMockMode())
 const mockStatus = await page.textContent("#status")
 const mockAt = apiCalls
-await new Promise(r => setTimeout(r, 350))
+await new Promise(done => setTimeout(done, 350))
 const mockAfter = apiCalls
 
 await page.evaluate(() => globalThis.SYCApp.stop())

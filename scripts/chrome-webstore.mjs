@@ -169,14 +169,15 @@ function formatPayload(payload) {
 }
 
 async function requestJson(url, { method = "GET", token, headers = {}, body } = {}) {
-  const response = await fetch(url, {
+  const init = {
     method,
     headers: {
       Authorization: `Bearer ${token}`,
       ...headers,
     },
-    body,
-  })
+  }
+  if (body !== undefined) init.body = body
+  const response = await fetch(url, init)
   const payload = await parseResponse(response)
   if (!response.ok) {
     throw new Error(`${method} ${url} failed with ${response.status}\n${formatPayload(payload)}`)
