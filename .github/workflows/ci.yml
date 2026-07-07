@@ -32,7 +32,9 @@ jobs:
         run: npm --prefix worker ci
 
       - name: Install Chromium
-        run: npx playwright install chromium
+        run: |
+          npx playwright install chromium
+          npm --prefix web exec playwright install chromium
 
       - name: Format check
         run: npm run format:check
