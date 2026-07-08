@@ -65,6 +65,33 @@ const assertAdaptiveCap = (label, Overlay) => {
   assert.equal(overlay.dynamicCap, 100, `${label}: fast frames should recover to maxActive`)
 }
 
+const assertClampedDeltaLifetime = (label, Overlay) => {
+  const overlay = new Overlay({ dpr: 1, dedup: false })
+  overlay.ctx = makeContext()
+  overlay.running = true
+  overlay.lastTs = 1000
+  overlay.active.push({
+    bmp: makeCanvas(),
+    w: 20,
+    h: 10,
+    x: 100,
+    y: 20,
+    vx: 1,
+    ttlMs: 80,
+    priority: 1,
+  })
+
+  overlay._loop(61_000)
+
+  assert.equal(
+    overlay.active.length,
+    1,
+    `${label}: hidden-tab wall time should not expire active comments`,
+  )
+  assert.equal(overlay.active[0].x, 50, `${label}: movement should use clamped delta`)
+  assert.equal(overlay.active[0].ttlMs, 30, `${label}: lifetime should use clamped delta`)
+}
+
 const assertLruCache = (label, Overlay, rasterize) => {
   const overlay = new Overlay({ cacheMax: 2, dpr: 1, dedup: false })
 
@@ -227,22 +254,21 @@ const assertLaneSelectionAndClear = (label, Overlay) => {
   assert.equal(overlay._pickLane(100), 1, `${label}: all-busy lanes choose soonest free lane`)
   assert.equal(overlay._pickLane(151), 1, `${label}: already-free lane is reused immediately`)
 
-  if (typeof overlay.clear === "function") {
-    overlay.active.push({ priority: 1 })
-    overlay.nextActive.push({ priority: 2 })
-    overlay.pending.push({ payload: payload("queued"), priority: 1 })
-    overlay.pendingHead = 1
-    overlay.recentLen = 3
-    overlay.recentPos = 2
-    overlay.clear()
+  assert.equal(typeof overlay.clear, "function", `${label}: clear() should be available`)
+  overlay.active.push({ priority: 1 })
+  overlay.nextActive.push({ priority: 2 })
+  overlay.pending.push({ payload: payload("queued"), priority: 1 })
+  overlay.pendingHead = 1
+  overlay.recentLen = 3
+  overlay.recentPos = 2
+  overlay.clear()
 
-    assert.equal(overlay.active.length, 0, `${label}: clear removes active comments`)
-    assert.equal(overlay.nextActive.length, 0, `${label}: clear removes next-active comments`)
-    assert.equal(overlay.pending.length, 0, `${label}: clear removes pending comments`)
-    assert.equal(overlay.pendingHead, 0, `${label}: clear resets pending head`)
-    assert.equal(overlay.recentLen, 0, `${label}: clear resets dedup recent length`)
-    assert.equal(overlay.recentPos, 0, `${label}: clear resets dedup ring position`)
-  }
+  assert.equal(overlay.active.length, 0, `${label}: clear removes active comments`)
+  assert.equal(overlay.nextActive.length, 0, `${label}: clear removes next-active comments`)
+  assert.equal(overlay.pending.length, 0, `${label}: clear removes pending comments`)
+  assert.equal(overlay.pendingHead, 0, `${label}: clear resets pending head`)
+  assert.equal(overlay.recentLen, 0, `${label}: clear resets dedup recent length`)
+  assert.equal(overlay.recentPos, 0, `${label}: clear resets dedup ring position`)
 }
 
 const assertPendingCompaction = (label, Overlay) => {
@@ -437,6 +463,7 @@ assertScoringHelpers("web", webScoring)
 assertDedup("web", webOverlay)
 assertLongTaskObserverLifecycle("web", webOverlay, webObserverCounters)
 assertAdaptiveCap("web", webOverlay)
+assertClampedDeltaLifetime("web", webOverlay)
 assertLruCache("web", webOverlay, (overlay, text) =>
   overlay._rasterize([{ t: text }], "#fff", 24, false),
 )
@@ -461,6 +488,7 @@ assertScoringHelpers("extension", extensionScoring)
 assertDedup("extension", extensionOverlay)
 assertLongTaskObserverLifecycle("extension", extensionOverlay, extensionObserverCounters)
 assertAdaptiveCap("extension", extensionOverlay)
+assertClampedDeltaLifetime("extension", extensionOverlay)
 assertLruCache("extension", extensionOverlay, (overlay, text) =>
   overlay._rasterize(text, "#fff", 24, false),
 )
@@ -473,4 +501,4 @@ assertActiveCapEviction("extension", extensionOverlay)
 assertLaneSelectionAndClear("extension", extensionOverlay)
 assertPendingCompaction("extension", extensionOverlay)
 
-console.log("danmaku ok (106 assertions)")
+console.log("danmaku ok (112 assertions)")

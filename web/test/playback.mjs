@@ -1,7 +1,7 @@
 // Pure tests for playback gating (makeFate) + seek detection (isSeek).
 // This is the heart of replay/VOD behavior, so it gets exhaustive coverage.
 
-import { makeFate, isSeek } from "../playback.ts"
+import { makeFate, isSeek, createSeenTracker, createSeekWatcher } from "../playback.ts"
 
 const checks = []
 const assert = (name, cond, extra = "") => checks.push({ name, ok: !!cond, extra })
@@ -67,13 +67,72 @@ assert("isSeek: normal play -> false", isSeek(700, 700) === false)
 assert("isSeek: minor drift -> false", isSeek(1200, 700) === false) // |500| < 2000
 assert("isSeek: forward seek -> true", isSeek(30000, 700) === true)
 assert("isSeek: backward seek -> true", isSeek(-20000, 700) === true)
-assert(
-  "isSeek: long pause looks like seek -> true (app gates on `playing`)",
-  isSeek(0, 3000) === true,
-)
+assert("isSeek: long pause looks like seek at primitive level", isSeek(0, 3000) === true)
 assert("isSeek: exactly threshold -> false (strict >)", isSeek(2700, 700) === false) // |2000| not > 2000
 assert("isSeek: just over threshold -> true", isSeek(2701, 700) === true)
 assert("isSeek: custom threshold", isSeek(1500, 0, 1000) === true && isSeek(800, 0, 1000) === false)
+
+// ---- createSeenTracker ----
+{
+  const seen = createSeenTracker(4)
+  for (const id of ["a", "b"]) seen.add(id)
+  seen.add("c") // rotates: previous={a,b}, current={c}
+  seen.add("d")
+  assert(
+    "seen tracker keeps current + previous generations",
+    ["a", "b", "c", "d"].every(id => seen.has(id)),
+  )
+  seen.add("e") // rotates: previous={c,d}, current={e}
+  assert(
+    "seen tracker drops only the oldest generation",
+    !seen.has("a") && seen.has("c") && seen.has("e"),
+  )
+  seen.clear()
+  assert("seen tracker clear resets both generations", seen.size === 0 && !seen.has("c"))
+}
+
+// ---- createSeekWatcher ----
+{
+  let playback = 0
+  let wall = 0
+  let playing = true
+  let seeks = 0
+  let callback
+  let cleared = false
+  const watcher = createSeekWatcher({
+    playbackMs: () => playback,
+    now: () => wall,
+    isPlaying: () => playing,
+    onSeek: () => {
+      seeks += 1
+    },
+    setTimer: cb => {
+      callback = cb
+      return 1
+    },
+    clearTimer: () => {
+      cleared = true
+    },
+  })
+
+  playback = 700
+  wall = 700
+  callback()
+  assert("seek watcher ignores normal playback", seeks === 0)
+
+  playing = false
+  wall = 4000
+  callback()
+  assert("seek watcher ignores paused wall-clock drift", seeks === 0)
+
+  playback = 15000
+  wall = 4700
+  callback()
+  assert("seek watcher catches paused scrub", seeks === 1)
+
+  watcher.stop()
+  assert("seek watcher stop clears timer", cleared)
+}
 
 let allOk = true
 for (const c of checks) {

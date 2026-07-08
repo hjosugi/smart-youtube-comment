@@ -16,6 +16,8 @@ export const makeRenderer = (scorer, buildRenderPlan) => msg => {
     author: msg.author,
     kind: msg.kind,
     authorType: msg.authorType,
+    amount: msg.amount ?? null,
+    paidColor: msg.paidColor ?? null,
     tier: plan.tier,
     durationMs: plan.durationMs,
     score: plan.score,
@@ -24,8 +26,8 @@ export const makeRenderer = (scorer, buildRenderPlan) => msg => {
 }
 
 // Render a batch into the overlay; returns how many were admitted.
-export const renderBatch = (renderer, overlay, messages = []) =>
-  messages.reduce((shown, msg) => {
+export const renderBatch = (renderer, overlay, messages) =>
+  (messages ?? []).reduce((shown, msg) => {
     const payload = renderer(msg)
     return payload && overlay.push(payload) ? shown + 1 : shown
   }, 0)

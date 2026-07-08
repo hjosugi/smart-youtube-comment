@@ -5,7 +5,7 @@ if (typeof globalThis.navigator === "undefined") {
   Object.defineProperty(globalThis, "navigator", { value: {}, configurable: true })
 }
 
-const { createWakeLock, setMediaSession } = await import("../lifecycle.ts")
+const { createWakeLock, resolveYouTubeTitle, setMediaSession } = await import("../lifecycle.ts")
 
 const checks = []
 const assert = (name, cond, extra = "") => checks.push({ name, ok: !!cond, extra })
@@ -33,6 +33,55 @@ try {
   threw2 = true
 }
 assert("setMediaSession never throws", !threw2)
+
+{
+  const handlers = new Map()
+  globalThis.MediaMetadata = function MediaMetadata(data) {
+    this.data = data
+  }
+  Object.defineProperty(globalThis.navigator, "mediaSession", {
+    configurable: true,
+    value: {
+      metadata: null,
+      setActionHandler: (action, fn) => handlers.set(action, fn),
+    },
+  })
+  let played = 0
+  let paused = 0
+  assert(
+    "setMediaSession returns true when supported",
+    setMediaSession({
+      title: "Resolved title",
+      actions: {
+        play: () => (played += 1),
+        pause: () => (paused += 1),
+      },
+    }) === true,
+  )
+  globalThis.navigator.mediaSession.setActionHandler("noop", null)
+  handlers.get("play")()
+  handlers.get("pause")()
+  assert(
+    "setMediaSession writes title metadata",
+    navigator.mediaSession.metadata.data.title === "Resolved title",
+  )
+  assert("setMediaSession wires play/pause handlers", played === 1 && paused === 1)
+  assert("setMediaSession clears missing handlers", handlers.get("seekforward") === null)
+}
+
+{
+  const title = await resolveYouTubeTitle("VIDEOIDXXXX", {
+    fetchImpl: async url => ({
+      ok: true,
+      json: async () => ({ title: `Title for ${url.searchParams.get("url")}` }),
+    }),
+  })
+  const missing = await resolveYouTubeTitle("VIDEOIDXXXX", {
+    fetchImpl: async () => ({ ok: false, json: async () => ({}) }),
+  })
+  assert("resolveYouTubeTitle reads oEmbed title", title.includes("VIDEOIDXXXX"))
+  assert("resolveYouTubeTitle returns empty on failure", missing === "")
+}
 
 // Supported Wake Lock behavior: browser auto-release may be re-acquired while
 // watching, but an explicit app release must disable future visibility reacquire.

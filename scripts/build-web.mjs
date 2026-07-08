@@ -5,7 +5,8 @@
 // and are not bundled into app.js.
 
 import { execFileSync } from "node:child_process"
-import { rmSync, mkdirSync, cpSync } from "node:fs"
+import { createHash } from "node:crypto"
+import { rmSync, mkdirSync, cpSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
 const WEB = new URL("../web/", import.meta.url).pathname
@@ -42,5 +43,33 @@ const SCRIPTS = [
 const STATIC = ["index.html", "styles.css", "manifest.webmanifest"]
 for (const f of [...SCRIPTS, ...STATIC]) cpSync(join(WEB, f), join(DIST, f))
 cpSync(join(WEB, "icons"), join(DIST, "icons"), { recursive: true })
+
+const stampServiceWorker = () => {
+  const swPath = join(DIST, "sw.js")
+  const sw = readFileSync(swPath, "utf8")
+  const shellEntries =
+    (sw.match(/const SHELL = \[([\s\S]*?)\]/)?.[1] || "")
+      .match(/"\.\/[^"]*"/g)
+      ?.map(s => s.slice(1, -1)) ?? []
+  if (!shellEntries.length) throw new Error("Could not parse service worker SHELL list")
+  if (!sw.includes("__SYC_SHELL_VERSION__")) {
+    throw new Error("Service worker cache version placeholder is missing")
+  }
+
+  const files = new Set(
+    shellEntries.map(entry => (entry === "./" ? "index.html" : entry.replace(/^\.\//, ""))),
+  )
+  const hash = createHash("sha256")
+  for (const rel of [...files].sort()) {
+    hash.update(rel)
+    hash.update("\0")
+    hash.update(readFileSync(join(DIST, rel)))
+    hash.update("\0")
+  }
+  const version = hash.digest("hex").slice(0, 16)
+  writeFileSync(swPath, sw.replace("__SYC_SHELL_VERSION__", version))
+}
+
+stampServiceWorker()
 
 console.log("built -> web/dist")

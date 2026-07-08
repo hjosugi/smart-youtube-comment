@@ -7,8 +7,12 @@ const ROOT = new URL("..", import.meta.url).pathname
 const REQUIRE_E2E = process.env.SYC_REQUIRE_E2E === "1"
 
 // Type-check and build the web app (the e2e + manifest suites run against web/dist).
-console.log("── security policy + typecheck + build ──")
+console.log("── security policy + shared drift + typecheck + build ──")
 execFileSync("node", [join(ROOT, "scripts/security-check.mjs")], { cwd: ROOT, stdio: "inherit" })
+execFileSync("node", [join(ROOT, "scripts/check-shared-drift.mjs")], {
+  cwd: ROOT,
+  stdio: "inherit",
+})
 execFileSync("npm", ["run", "typecheck"], { cwd: ROOT, stdio: "inherit" })
 execFileSync("node", [join(ROOT, "scripts/build-web.mjs")], { cwd: ROOT, stdio: "inherit" })
 
@@ -36,10 +40,12 @@ const SUITES = [
   ["unit", "worker/test/innertube-io.mjs"],
   ["unit", "extension/test/background.mjs"],
   ["unit", "extension/test/content-extract.mjs"],
+  ["unit", "extension/test/i18n.mjs"],
   ["unit", "extension/test/options.mjs"],
   ["unit", "extension/test/settings-filter.mjs"],
   ["unit", "web/test/playback.mjs"],
   ["unit", "web/test/config.mjs"],
+  ["unit", "web/test/history.mjs"],
   ["unit", "web/test/url-security.mjs"],
   ["unit", "web/test/commentlist.mjs"],
   ["unit", "web/test/danmaku.mjs"],

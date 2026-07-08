@@ -1,6 +1,6 @@
 {
   "name": "smart-youtube-comment",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "license": "0BSD",
   "type": "module",
@@ -11,10 +11,11 @@
   "scripts": {
     "security": "node scripts/security-check.mjs && npm audit --omit=dev",
     "security:bun": "bun scripts/security-check.mjs && npm audit --omit=dev",
+    "check:shared-drift": "node scripts/check-shared-drift.mjs",
     "test": "node scripts/test.mjs",
     "test:bun": "bun scripts/test.mjs",
     "coverage": "node scripts/coverage.mjs",
-    "typecheck": "tsc --noEmit -p tsconfig.json && npm --prefix worker run typecheck",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.checkjs.json && npm --prefix worker run typecheck",
     "build": "node scripts/build-web.mjs",
     "deploy:web": "node scripts/deploy-web.mjs",
     "deploy:worker": "npm --prefix worker run deploy",
@@ -41,7 +42,8 @@
     "version:set": "node scripts/set-version.mjs",
     "version:set:bun": "bun scripts/set-version.mjs",
     "test:ext": "node bench/e2e/extension.mjs",
-    "test:ext:bun": "bun bench/e2e/extension.mjs"
+    "test:ext:bun": "bun bench/e2e/extension.mjs",
+    "test:ext:youtube": "SYC_REAL_YOUTUBE_REQUIRED=1 node bench/e2e/extension.mjs"
   },
   "devDependencies": {
     "esbuild": "0.28.1",

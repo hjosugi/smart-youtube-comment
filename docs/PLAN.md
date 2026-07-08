@@ -26,6 +26,15 @@ resilience are.
 
 The scorer runs locally in the content script and performs no network calls.
 
+## Contract Migration Notes
+
+- `paidColor` is an optional display-only `ChatMessage` / render payload field
+  for Super Chat tier color. Older messages without it remain valid; `amount`
+  remains nullable as before.
+- Replay continuation polls now use `replay=1` alongside `cont` and `offset`.
+  Ambiguous `cont + offset` requests without `replay=1` receive a 400 response.
+  Replay `ended` remains device/player-owned, not relay-owned.
+
 ## Performance Work
 
 Status as of the current implementation:
@@ -37,6 +46,8 @@ Status as of the current implementation:
 | Configurable maxActive with interactivity guard | Done | `maxActive`, `maxQueue`, and `spawnPerFrame` are settings-backed; spawn budget falls under high frame EMA. |
 | Chat observation after player replacement | Partial | Lifecycle and chat-client tests cover reconnection behavior, but real YouTube DOM replacement remains a manual smoke item. |
 | Official guide/warning filtering | Done | Extension extraction tests cover official-message filtering and sanitized render payloads. |
+| Real device tuning | Checklist ready | `docs/DEVICE_TUNING.md` defines iOS/Android smoke steps, HUD metrics, and tuning thresholds. |
+| Heavy renderer optimizations | Gated | OffscreenCanvas/worker rasterization requires the `docs/DEVICE_TUNING.md` performance gate to fail on real devices first. |
 
 The next performance work should focus on the browser path:
 
@@ -53,6 +64,8 @@ Use these commands:
 - `npm run coverage`
 - `npm run test:e2e` for renderer performance
 - `npm run test:ext` for real Chromium extension smoke testing
+- `SYC_REAL_YOUTUBE_URL="https://www.youtube.com/watch?v=..." npm run test:ext:youtube`
+  for opt-in real YouTube smoke testing
 
 ## Scorer Transport Gate
 
@@ -76,3 +89,9 @@ setup: item creation, store listing copy/assets, privacy/data-use declarations,
 service-account or OAuth credential setup, and GitHub secret entry. After that,
 a matching `vX.Y.Z` tag can run checks, build the zip, upload it, and submit it
 for review/publishing.
+
+## Worker Roadmap
+
+`docs/WORKER_ROADMAP.md` tracks the WebSocket + Durable Object single-flight
+candidate. It remains gated on HTTP relay metrics proving cache/in-flight
+collapse insufficient.

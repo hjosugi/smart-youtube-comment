@@ -102,9 +102,27 @@ assert("emoji: svg data rejected", sanitizeEmojiUrl("data:image/svg+xml;base64,P
     authorColor: null,
     text: "hello",
     amount: null,
+    paidColor: "RGB(21, 101, 192)",
     parts: [{ u: "javascript:alert(1)", a: ":x:" }],
   })
   assert("message: unsafe part sanitized", msg.parts.length === 1 && msg.parts[0].t === ":x:")
+  assert("message: invalid paid color dropped", msg.paidColor === null)
+}
+
+{
+  const msg = sanitizeChatMessage({
+    id: "2",
+    ts: 0,
+    kind: "paid",
+    author: "@b",
+    authorType: "normal",
+    authorColor: null,
+    text: "hello",
+    amount: "$5.00",
+    paidColor: "#1565C0",
+    parts: [{ t: "hello" }],
+  })
+  assert("message: paid color normalized", msg.paidColor === "#1565c0")
 }
 
 // Classic emoji.js creates Image instances; it must refuse unsafe URLs before src assignment.

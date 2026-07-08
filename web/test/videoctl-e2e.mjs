@@ -7,28 +7,43 @@ import { serveWeb } from "./_serve.mjs"
 
 const waitFor = async (fn, timeoutMs = 5000) => {
   const start = Date.now()
-  while (!fn()) {
+  while (!(await fn())) {
     if (Date.now() - start > timeoutMs) throw new Error("timed out waiting for condition")
     await new Promise(done => setTimeout(done, 25))
   }
 }
 
 let apiCalls = 0
+const apiRequests = []
 const { port, close } = await serveWeb({
   handleRequest(req, res) {
     const url = new URL(req.url, `http://${req.headers.host}`)
     if (url.pathname !== "/api/livechat") return false
     apiCalls += 1
+    const offset = url.searchParams.get("offset")
+    apiRequests.push({
+      cont: url.searchParams.get("cont"),
+      video: url.searchParams.get("video"),
+      offset,
+    })
     res.writeHead(200, {
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
     })
     res.end(
       JSON.stringify({
-        messages: [{ id: `m${apiCalls}`, author: "@tester", text: `hello ${apiCalls}` }],
+        messages: [
+          {
+            id: `m${apiCalls}-${offset ?? "resolve"}`,
+            author: "@tester",
+            text: `hello ${apiCalls}`,
+            offsetMs: Number(offset ?? 0),
+          },
+        ],
         continuation: "c",
         timeoutMs: 20,
         ended: false,
+        isReplay: true,
       }),
     )
     return true
@@ -81,6 +96,7 @@ await page.addInitScript(() => {
         },
         destroy: () => {},
       }
+      globalThis.__sycFakePlayer = player
       globalThis.__sycPlayerStateHandlers.push(e => {
         state = e.data
         options.events?.onStateChange?.(e)
@@ -146,6 +162,29 @@ const r = await page.evaluate(async () => {
 
   unmount()
   out.unmounted = !stage.querySelector(".vctl")
+
+  const liveStage = document.createElement("div")
+  document.body.append(liveStage)
+  const liveCalls = { seek: 0 }
+  const unmountLive = mountControls(
+    liveStage,
+    {
+      getPlayerState: () => 1,
+      getDuration: () => 0,
+      getCurrentTime: () => 0,
+      pauseVideo: () => {},
+      playVideo: () => {},
+      seekTo: () => (liveCalls.seek += 1),
+    },
+    { isReplay: () => false, hideMs: 5000 },
+  )
+  const liveSeek = liveStage.querySelector(".vctl-seek")
+  out.liveBadge = liveStage.querySelector(".vctl-live")?.hidden === false
+  out.liveSeekHidden = liveSeek.hidden === true && liveSeek.disabled === true
+  liveSeek.value = "500"
+  liveSeek.dispatchEvent(new Event("change", { bubbles: true }))
+  out.liveSeekBlocked = liveCalls.seek === 0
+  unmountLive()
   return out
 })
 
@@ -153,6 +192,7 @@ await page.evaluate(
   base => globalThis.SYCApp.startLive("VIDEOIDXXXX", base),
   `http://localhost:${port}`,
 )
+await page.evaluate(() => globalThis.__sycEmitPlayerState(1))
 await waitFor(() => apiCalls >= 1)
 
 const afterStart = apiCalls
@@ -176,9 +216,18 @@ const pausedAt = apiCalls
 await new Promise(done => setTimeout(done, 950))
 const pausedAfter = apiCalls
 
+const listBeforePausedSeek = await page.evaluate(() => globalThis.SYCApp.list.count)
+await page.evaluate(() => globalThis.__sycFakePlayer.seekTo(60, true))
+await waitFor(() => page.evaluate(() => globalThis.SYCApp.list.count === 0), 2500)
+const pausedSeekCleared = await page.evaluate(() => globalThis.SYCApp.list.count === 0)
+const pausedSeekAt = apiCalls
+await new Promise(done => setTimeout(done, 250))
+const pausedSeekAfter = apiCalls
+
 await page.evaluate(() => globalThis.__sycEmitPlayerState(1))
-await waitFor(() => apiCalls > pausedAfter, 2500)
+await waitFor(() => apiCalls > pausedSeekAt, 2500)
 const playingAfter = apiCalls
+const pausedSeekOffset = apiRequests.slice(pausedSeekAt).some(request => request.offset === "60000")
 
 await page.evaluate(() => globalThis.__sycEmitPlayerState(-1))
 const unknownAt = apiCalls
@@ -210,11 +259,18 @@ const checks = [
   ["seek bar seeks", r.seekSeeks],
   ["pointer seek commits once", r.pointerSeekOnce],
   ["teardown removes overlay", r.unmounted],
+  ["live mode shows LIVE badge", r.liveBadge],
+  ["live mode hides seekbar", r.liveSeekHidden],
+  ["live mode blocks seek commits", r.liveSeekBlocked],
   ["live client starts polling", afterStart >= 1],
   ["visibilitychange hidden pauses polling", hiddenAfter === hiddenAt],
   ["visibilitychange visible resumes polling", visibleAfter > hiddenAfter],
   ["player paused state pauses polling", pausedAfter === pausedAt],
-  ["player playing state resumes polling", playingAfter > pausedAfter],
+  ["paused seek had rows to clear", listBeforePausedSeek > 0],
+  ["paused seek clears views", pausedSeekCleared],
+  ["paused seek does not poll until playback resumes", pausedSeekAfter === pausedSeekAt],
+  ["paused seek refresh uses new offset", pausedSeekOffset],
+  ["player playing state resumes polling", playingAfter > pausedSeekAt],
   ["unknown player state pauses polling", unknownAfter === unknownAt],
   ["mock mode starts", mockStatus === "mock" || mockStatus === "デモ"],
   ["startMockMode stops live polling", mockAfter - mockAt <= 1],
@@ -239,6 +295,12 @@ if (!ok) {
       visibleAfter,
       pausedAt,
       pausedAfter,
+      listBeforePausedSeek,
+      pausedSeekCleared,
+      pausedSeekAt,
+      pausedSeekAfter,
+      pausedSeekOffset,
+      apiRequests: apiRequests.slice(-8),
       playingAfter,
       unknownAt,
       unknownAfter,

@@ -4,7 +4,12 @@
 // (web/dist is the deployed output: app.js is the bundled module graph; the rest
 // are script globals, shared helpers, and static assets.)
 
-const CACHE = "syc-shell-v4"
+/** @type {ServiceWorkerGlobalScope & typeof globalThis} */
+const sw = /** @type {ServiceWorkerGlobalScope & typeof globalThis} */ (
+  /** @type {unknown} */ (self)
+)
+
+const CACHE = "syc-shell-__SYC_SHELL_VERSION__"
 const SHELL = [
   "./",
   "./index.html",
@@ -28,7 +33,7 @@ self.addEventListener("install", e => {
     caches
       .open(CACHE)
       .then(c => c.addAll(SHELL))
-      .then(() => self.skipWaiting()),
+      .then(() => sw.skipWaiting()),
   )
 })
 
@@ -37,7 +42,7 @@ self.addEventListener("activate", e => {
     caches
       .keys()
       .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
-      .then(() => self.clients.claim()),
+      .then(() => sw.clients.claim()),
   )
 })
 
@@ -50,18 +55,15 @@ self.addEventListener("fetch", e => {
   if (!SHELL_PATHS.has(url.pathname)) return
 
   const cacheKey = new URL(url.pathname, self.location.origin).href
-  // Stale-while-revalidate: serve cache instantly, refresh in the background so a
-  // new deploy is picked up on the next load.
+  // Cache-first by build-stamped shell version. The build replaces CACHE with a
+  // hash of the complete shell, so one cache never mixes files from two deploys.
   e.respondWith(
     caches.open(CACHE).then(async cache => {
       const cached = await cache.match(cacheKey)
-      const fresh = fetch(e.request)
-        .then(res => {
-          if (res.ok) cache.put(cacheKey, res.clone())
-          return res
-        })
-        .catch(() => cached)
-      return cached || fresh
+      if (cached) return cached
+      const fresh = await fetch(e.request)
+      if (fresh.ok) await cache.put(cacheKey, fresh.clone())
+      return fresh
     }),
   )
 })

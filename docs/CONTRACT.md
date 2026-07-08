@@ -46,6 +46,7 @@ Produced by the live-chat reader and consumed by the overlay renderer.
     { "u": "https://yt3.ggpht.com/custom-emoji=s24", "a": ":emoji:" }
   ],
   "amount": null,
+  "paidColor": null,      // optional "#rrggbb" Super Chat tier color
   "offsetMs": 0            // replay/VOD only: the message's video timestamp (omitted for live)
 }
 ```
@@ -78,10 +79,18 @@ relay sets `ended: true` and `continuation: null`. The device MUST stop polling
 on this signal (do not re-poll the previous token — it is dead).
 
 Replay (VOD) mode: when a video is a past-live recording, the relay reports
-`isReplay: true`. The device then polls `GET /api/livechat?cont=<token>&offset=<ms>`
-where `offset` is the current player position; each replay message carries an
-`offsetMs` (its video timestamp). The same continuation is reused — replay seeks by
-offset, it does not advance. The device gates messages to a window around playback.
+`isReplay: true`. The device then polls
+`GET /api/livechat?cont=<token>&offset=<ms>&replay=1` where `offset` is the
+current player position; each replay message carries an `offsetMs` (its video
+timestamp). The explicit `replay=1` flag disambiguates replay continuation polls
+from live continuation polls. Older `cont + offset` requests without `replay=1`
+are rejected with `400 { "error": "offset requires replay=1" }`.
+
+The same replay continuation is reused — replay seeks by offset, it does not
+advance. The device gates messages to a window around playback. Replay envelopes
+keep `ended: false`; the embedded player, not the relay, is authoritative for
+VOD terminal state because the replay endpoint can be queried by arbitrary
+player offsets.
 
 `timeoutMs` is clamped by the relay to `[250, 30000]`; the device may apply its
 own additional floor.
@@ -145,6 +154,11 @@ speed payload:
   "reasons": []
 }
 ```
+
+Paid-message render payloads may additionally carry `amount` and `paidColor`.
+These fields are display-only metadata: `amount` labels Super Chat currency
+text, and `paidColor` is an optional sanitized `#rrggbb` tier color. They do not
+affect the scorer's `tier` value.
 
 ## Reason Tags
 

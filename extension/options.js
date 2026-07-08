@@ -9,7 +9,10 @@
   const getters = {};
   const setters = {};
   const SAVE_DEBOUNCE_MS = 750;
-  let saveTimer = 0;
+  const BACKUP_APP = "smart-youtube-comment";
+  const BACKUP_VERSION = 1;
+  let filterInputs = null;
+  let statusTimer = 0;
 
   const t = (name, fallback) => {
     const msg = (typeof chrome !== "undefined" && chrome.i18n) ? chrome.i18n.getMessage(name) : "";
@@ -19,8 +22,8 @@
   function setStatus(key, fallback) {
     const el = document.getElementById("status");
     el.textContent = t(key, fallback);
-    clearTimeout(setStatus.timer);
-    setStatus.timer = setTimeout(() => { el.textContent = ""; }, 1200);
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => { el.textContent = ""; }, 1200);
   }
 
   function updatePreview() {
@@ -37,19 +40,115 @@
     el.style.paintOrder = "stroke fill";
   }
 
+  function currentSettings() {
+    const values = {};
+    for (const key in getters) values[key] = getters[key]();
+    return S.normalize ? S.normalize(values) : values;
+  }
+
+  function applySettings(values) {
+    const next = S.normalize ? S.normalize(values) : values;
+    for (const [key, value] of Object.entries(next)) setters[key]?.(value);
+    updatePreview();
+    return next;
+  }
+
+  function currentFilters() {
+    const F = globalThis.SYCFilter;
+    if (!F || !filterInputs) return { users: [], words: [] };
+    return {
+      users: F.cleanList(filterInputs.users.input.value),
+      words: F.cleanWordList(filterInputs.words.input.value),
+      channels: F.cleanChannelList(filterInputs.channels.input.value)
+    };
+  }
+
+  function applyFilterLists(lists) {
+    if (!filterInputs) return;
+    filterInputs.users.input.value = (lists.users || []).join("\n");
+    filterInputs.words.input.value = (lists.words || []).join("\n");
+    filterInputs.channels.input.value = (lists.channels || []).join("\n");
+  }
+
+  async function buildBackupData() {
+    const F = globalThis.SYCFilter;
+    const filters = filterInputs ? currentFilters() : F ? await F.load() : { users: [], words: [] };
+    return {
+      app: BACKUP_APP,
+      version: BACKUP_VERSION,
+      surface: S.PROFILE?.surface || "extension",
+      exportedAt: new Date().toISOString(),
+      settings: currentSettings(),
+      filters
+    };
+  }
+
+  async function exportBackup() {
+    const data = await buildBackupData();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `smart-youtube-comment-settings-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    setStatus("opt_exported", "Exported");
+  }
+
+  function parseBackup(text) {
+    const data = JSON.parse(text);
+    if (!data || typeof data !== "object") throw new Error("invalid backup");
+    if (data.app && data.app !== BACKUP_APP) throw new Error("wrong backup app");
+    const F = globalThis.SYCFilter;
+    return {
+      settings: S.normalize ? S.normalize(data.settings) : (data.settings || {}),
+      filters: {
+        users: F ? F.cleanList(data.filters?.users || []) : [],
+        words: F ? F.cleanWordList(data.filters?.words || []) : [],
+        channels: F ? F.cleanChannelList(data.filters?.channels || []) : []
+      }
+    };
+  }
+
+  async function importBackupText(text) {
+    const next = parseBackup(text);
+    applySettings(next.settings);
+    await S.save(next.settings);
+    if (globalThis.SYCFilter) {
+      await globalThis.SYCFilter.save(next.filters);
+      applyFilterLists(next.filters);
+    }
+    setStatus("opt_imported", "Imported");
+  }
+
+  async function resetAll() {
+    const defaults = applySettings({ ...S.DEFAULTS });
+    await S.save(defaults);
+    if (globalThis.SYCFilter) {
+      const empty = { users: [], words: [], channels: [] };
+      await globalThis.SYCFilter.save(empty);
+      applyFilterLists(empty);
+    }
+    setStatus("opt_reset_done", "Reset");
+  }
+
+  async function saveWithStatus(action) {
+    try {
+      await action();
+      setStatus("opt_saved", "Saved");
+    } catch {
+      setStatus("opt_save_failed", "Save failed");
+    }
+  }
+
+  const scheduleSettingsPersist = debounce(() => {
+    const values = currentSettings();
+    return saveWithStatus(() => S.save(values));
+  }, SAVE_DEBOUNCE_MS);
+
   function scheduleSave() {
     updatePreview();
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(async () => {
-      const values = {};
-      for (const key in getters) values[key] = getters[key]();
-      try {
-        await S.save(values);
-        setStatus("opt_saved", "Saved");
-      } catch {
-        setStatus("opt_save_failed", "Save failed");
-      }
-    }, SAVE_DEBOUNCE_MS);
+    scheduleSettingsPersist();
   }
 
   function makeControl(spec, value) {
@@ -118,7 +217,7 @@
 
   function applyStaticI18n() {
     for (const el of document.querySelectorAll("[data-i18n]")) {
-      el.textContent = t(el.dataset.i18n, el.textContent);
+      el.textContent = t(el.getAttribute("data-i18n"), el.textContent);
     }
     if (document.title) document.title = t("opt_title", document.title);
   }
@@ -189,30 +288,68 @@
     const lists = await F.load();
     const users = makeFilterField("f_users", "Blocked users (one per line)", lists.users.join("\n"));
     const words = makeFilterField("f_words", "Blocked words (one per line)", lists.words.join("\n"));
+    const channels = makeFilterField(
+      "f_channels",
+      "Blocked channel IDs (one per line)",
+      (lists.channels || []).join("\n")
+    );
+    filterInputs = { users, words, channels };
     insertBeforeActions(users.field);
     insertBeforeActions(words.field);
+    insertBeforeActions(channels.field);
 
-    const save = debounce(async () => {
-      try {
-        await F.save({ users: users.input.value, words: words.input.value });
-        setStatus("opt_saved", "Saved");
-      } catch { setStatus("opt_save_failed", "Save failed"); }
-    }, 250);
+    const save = debounce(() =>
+      saveWithStatus(() =>
+        F.save({
+          users: users.input.value,
+          words: words.input.value,
+          channels: channels.input.value
+        })
+      ),
+    SAVE_DEBOUNCE_MS);
     users.input.addEventListener("input", save);
     words.input.addEventListener("input", save);
+    channels.input.addEventListener("input", save);
 
     if (F.PRESETS && Object.keys(F.PRESETS).length) {
       const bar = document.createElement("div");
       bar.className = "presets";
-      for (const preset of Object.values(F.PRESETS)) {
-        bar.appendChild(makeButton(`+ ${preset.label}`, () => {
-          const merged = F.cleanList(words.input.value).concat(preset.words || []);
+      for (const [key, preset] of Object.entries(F.PRESETS)) {
+        const i18nKey = `fp_${key.replace(/[^a-zA-Z0-9_]/g, "_")}`;
+        bar.appendChild(makeButton(`+ ${t(i18nKey, preset.label)}`, () => {
+          const merged = F.cleanWordList(words.input.value).concat(preset.words || []);
           words.input.value = [...new Set(merged)].join("\n");
           save();
         }));
       }
       insertBeforeActions(bar);
     }
+  }
+
+  function buildBackupActions() {
+    const bar = document.createElement("div");
+    bar.className = "presets";
+    bar.appendChild(makeButton(t("opt_export", "Export JSON"), () => {
+      exportBackup().catch(() => setStatus("opt_export_failed", "Export failed"));
+    }));
+    const file = document.createElement("input");
+    file.type = "file";
+    file.accept = "application/json,.json";
+    file.hidden = true;
+    file.addEventListener("change", async () => {
+      const selected = file.files?.[0];
+      if (!selected) return;
+      try {
+        await importBackupText(await selected.text());
+      } catch {
+        setStatus("opt_import_failed", "Import failed");
+      } finally {
+        file.value = "";
+      }
+    });
+    bar.appendChild(makeButton(t("opt_import", "Import JSON"), () => file.click()));
+    bar.appendChild(file);
+    insertBeforeActions(bar);
   }
 
   async function init() {
@@ -228,6 +365,7 @@
       for (const spec of groups[groupName]) {
         const row = document.createElement("label");
         row.className = "row";
+        row.dataset.key = spec.key;
         const name = document.createElement("span");
         name.className = "name";
         name.textContent = t(`s_${spec.key}`, spec.label);
@@ -239,11 +377,24 @@
     updatePreview();
     buildSpeedPresets();
     await buildFilters();
+    buildBackupActions();
 
     document.getElementById("reset").addEventListener("click", async () => {
-      await S.save({ ...S.DEFAULTS });
-      location.reload();
+      try {
+        await resetAll();
+      } catch {
+        setStatus("opt_save_failed", "Save failed");
+      }
     });
+  }
+
+  if (globalThis.__SYC_TEST__) {
+    globalThis.__SYCOptionsTest = {
+      buildBackupData,
+      importBackupText,
+      parseBackup,
+      resetAll
+    };
   }
 
   init();

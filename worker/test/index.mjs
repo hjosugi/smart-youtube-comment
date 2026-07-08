@@ -115,11 +115,91 @@ test("validation rejects malformed video, continuation, and offset before upstre
     ["/api/livechat?cont=%3Cscript%3E", "invalid cont"],
     [`/api/livechat?cont=${"A".repeat(8193)}`, "cont too long"],
     ["/api/livechat?cont=NEXT&offset=NaN", "invalid offset"],
+    ["/api/livechat?cont=NEXT&offset=3000", "offset requires replay=1"],
   ]) {
     const response = await handle(req(path), {}, ctx(), { fetchEnvelope: upstream })
     assert.equal(response.status, 400)
     assert.deepEqual(await readJson(response), { error })
   }
+})
+
+test("configured origin allowlist rejects browser callers outside the list", async () => {
+  const blocked = await handle(
+    req("/api/livechat?video=abc123def45", { headers: { Origin: "https://evil.example" } }),
+    { ALLOWED_ORIGINS: "https://app.example" },
+    ctx(),
+  )
+  assert.equal(blocked.status, 403)
+  assert.deepEqual(await readJson(blocked), { error: "origin not allowed" })
+
+  let called = false
+  const allowed = await handle(
+    req("/api/livechat?video=abc123def45", { headers: { Origin: "https://app.example" } }),
+    { ALLOWED_ORIGINS: "https://app.example" },
+    ctx(),
+    {
+      cache: new MemoryCache(),
+      fetchEnvelope: async () => {
+        called = true
+        return envelope()
+      },
+    },
+  )
+  assert.equal(allowed.status, 200)
+  assert.equal(called, true)
+})
+
+test("per-client rate limit returns 429 before upstream", async () => {
+  let calls = 0
+  const deps = {
+    cache: new MemoryCache(),
+    fetchEnvelope: async () => {
+      calls += 1
+      return envelope({ timeoutMs: 250 })
+    },
+  }
+  const init = { headers: { "CF-Connecting-IP": "198.51.100.44" } }
+  const first = await handle(
+    req("/api/livechat?video=abc123def45", init),
+    { RATE_LIMIT_PER_MINUTE: "1" },
+    ctx(),
+    deps,
+  )
+  const second = await handle(
+    req("/api/livechat?video=def456abc78", init),
+    { RATE_LIMIT_PER_MINUTE: "1" },
+    ctx(),
+    deps,
+  )
+  assert.equal(first.status, 200)
+  assert.equal(second.status, 429)
+  assert.deepEqual(await readJson(second), { error: "rate limited" })
+  assert.equal(second.headers.get("X-SYC-RateLimit-Limit"), "1")
+  assert.equal(calls, 1)
+})
+
+test("livechat responses emit structured cache and upstream metrics", async () => {
+  const cache = new MemoryCache()
+  const runtime = ctx()
+  const metrics = []
+  const response = await handle(req("/api/livechat?cont=METRIC"), {}, runtime, {
+    cache,
+    logMetric: metric => metrics.push(metric),
+    fetchEnvelope: async (_params, config) => {
+      config.metrics.attempts = 2
+      config.metrics.retries = 1
+      return envelope({ messages: [{ id: "m1" }] })
+    },
+  })
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get("X-SYC-Upstream-Attempts"), "2")
+  assert.equal(response.headers.get("X-SYC-Upstream-Retries"), "1")
+  await Promise.all(runtime.waits)
+  assert.equal(metrics.length, 1)
+  assert.equal(metrics[0].event, "livechat")
+  assert.equal(metrics[0].cache, "MISS")
+  assert.equal(metrics[0].upstreamAttempts, 2)
+  assert.equal(metrics[0].upstreamRetries, 1)
 })
 
 test("cache stores live non-terminal responses and returns HIT on repeat", async () => {
@@ -171,11 +251,21 @@ test("cache keys ignore unrelated params and bucket replay offsets", async () =>
     },
   }
 
-  const first = await handle(req("/api/livechat?_=a&offset=3201&cont=START"), {}, runtime, deps)
+  const first = await handle(
+    req("/api/livechat?_=a&replay=1&offset=3201&cont=START"),
+    {},
+    runtime,
+    deps,
+  )
   assert.equal(first.headers.get("X-SYC-Cache"), "MISS")
   await Promise.all(runtime.waits)
 
-  const second = await handle(req("/api/livechat?cont=START&offset=3999&_=b"), {}, ctx(), deps)
+  const second = await handle(
+    req("/api/livechat?cont=START&replay=1&offset=3999&_=b"),
+    {},
+    ctx(),
+    deps,
+  )
   assert.equal(second.headers.get("X-SYC-Cache"), "HIT")
   assert.equal(calls, 1)
 })
@@ -196,8 +286,8 @@ test("cold requests for the same normalized key share one in-flight upstream cal
     },
   }
 
-  const a = handle(req("/api/livechat?cont=BURST&offset=6100"), {}, ctx(), deps)
-  const b = handle(req("/api/livechat?offset=6999&cont=BURST&_ignored=1"), {}, ctx(), deps)
+  const a = handle(req("/api/livechat?cont=BURST&replay=1&offset=6100"), {}, ctx(), deps)
+  const b = handle(req("/api/livechat?replay=1&offset=6999&cont=BURST&_ignored=1"), {}, ctx(), deps)
   release()
   const [first, second] = await Promise.all([a, b])
   assert.equal(first.status, 200)
@@ -215,7 +305,6 @@ test("sub-second and terminal envelopes are not cached", async () => {
   })
   assert.equal(subSecond.headers.get("X-SYC-Cache"), "BYPASS")
   assert.equal(subSecond.headers.get("Cache-Control"), "no-store")
-  assert.equal(subSecondCtx.waits.length, 0)
   assert.equal(subSecondCache.puts, 0)
 
   const terminalCache = new MemoryCache()
@@ -226,7 +315,6 @@ test("sub-second and terminal envelopes are not cached", async () => {
   })
   assert.equal(terminal.headers.get("X-SYC-Cache"), "BYPASS")
   assert.equal(terminal.headers.get("Cache-Control"), "no-store")
-  assert.equal(terminalCtx.waits.length, 0)
   assert.equal(terminalCache.puts, 0)
 })
 

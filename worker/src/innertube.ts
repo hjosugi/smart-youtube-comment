@@ -26,6 +26,7 @@ export const INNERTUBE_CLIENT = {
 
 export interface InnerTubeClientConfig {
   clientVersion?: string
+  metrics?: { attempts: number; retries: number }
 }
 
 const FETCH_TIMEOUT_MS = 3500 // per-attempt bound; a hung request aborts and is retried
@@ -56,13 +57,20 @@ const context = (config: InnerTubeClientConfig = {}) => ({
 const isRetriable = (status: number) => status === 504 || (status >= 500 && status < 600)
 
 // POST with a per-attempt timeout + bounded, jittered retry (recursive).
-const postWithRetry = async (endpoint: string, body: unknown, attempt = 1): Promise<any> => {
+const postWithRetry = async (
+  endpoint: string,
+  body: unknown,
+  attempt = 1,
+  metrics?: InnerTubeClientConfig["metrics"],
+): Promise<any> => {
+  if (metrics) metrics.attempts += 1
   try {
     return await postOnce(endpoint, body)
   } catch (e: any) {
     if (!isRetriable(e?.status) || attempt >= MAX_ATTEMPTS) throw e
+    if (metrics) metrics.retries += 1
     await sleep(RETRY_BACKOFF_MS * attempt + Math.floor(Math.random() * RETRY_BACKOFF_MS))
-    return postWithRetry(endpoint, body, attempt + 1)
+    return postWithRetry(endpoint, body, attempt + 1, metrics)
   }
 }
 
@@ -138,7 +146,7 @@ export const resolveLiveChat = async (
   videoId: string,
   config: InnerTubeClientConfig = {},
 ): Promise<{ continuation: string | null; isReplay: boolean } | null> => {
-  const data = await postWithRetry("next", { ...context(config), videoId })
+  const data = await postWithRetry("next", { ...context(config), videoId }, 1, config.metrics)
   const lc = data?.contents?.twoColumnWatchNextResults?.conversationBar?.liveChatRenderer
   if (!lc) return null
   return { continuation: extractContinuation(lc.continuations).token, isReplay: isReplayChat(lc) }
@@ -159,7 +167,12 @@ export const pollLiveChat = async (
   config: InnerTubeClientConfig = {},
 ): Promise<PollEnvelope> => {
   if (opts.replay) return pollReplay(continuation, opts.offsetMs ?? 0, config)
-  const data = await postWithRetry("live_chat/get_live_chat", { ...context(config), continuation })
+  const data = await postWithRetry(
+    "live_chat/get_live_chat",
+    { ...context(config), continuation },
+    1,
+    config.metrics,
+  )
   const lc = data?.continuationContents?.liveChatContinuation
   const messages = (lc?.actions ?? []).map(parseAction).filter(Boolean) as ChatMessage[]
   const { token, timeoutMs } = extractContinuation(lc?.continuations)
@@ -171,11 +184,16 @@ const pollReplay = async (
   offsetMs: number,
   config: InnerTubeClientConfig,
 ): Promise<PollEnvelope> => {
-  const data = await postWithRetry("live_chat/get_live_chat_replay", {
-    ...context(config),
-    continuation,
-    currentPlayerState: { playerOffsetMs: String(Math.max(0, Math.floor(offsetMs))) },
-  })
+  const data = await postWithRetry(
+    "live_chat/get_live_chat_replay",
+    {
+      ...context(config),
+      continuation,
+      currentPlayerState: { playerOffsetMs: String(Math.max(0, Math.floor(offsetMs))) },
+    },
+    1,
+    config.metrics,
+  )
   const lc = data?.continuationContents?.liveChatContinuation
   const messages = (lc?.actions ?? [])
     .flatMap(replayItems)
@@ -273,6 +291,7 @@ interface MessageInput {
   text: string
   parts?: Part[]
   amount?: string | null
+  paidColor?: string | null
 }
 
 const message = ({
@@ -284,6 +303,7 @@ const message = ({
   text,
   parts,
   amount,
+  paidColor,
 }: MessageInput): ChatMessage => ({
   id: id ?? "",
   ts,
@@ -294,9 +314,20 @@ const message = ({
   text,
   parts: parts ?? [],
   amount: amount ?? null,
+  paidColor: paidColor ?? null,
 })
 
 const amountOf = (r: any): string | null => r.purchaseAmountText?.simpleText ?? null
+
+const cssColorOf = (value: unknown): string | null => {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return null
+  const rgb = n >>> 0
+  return `#${(rgb & 0xffffff).toString(16).padStart(6, "0")}`
+}
+
+const paidColorOf = (r: any): string | null =>
+  cssColorOf(r.bodyBackgroundColor ?? r.headerBackgroundColor ?? r.moneyChipBackgroundColor)
 
 // A standard author/timestamp/message renderer -> ChatMessage. Paid items often
 // carry money but no comment, so fall back to the amount (the renderer needs text).
@@ -319,6 +350,7 @@ const fromRenderer =
       text,
       parts: renderParts,
       amount,
+      paidColor: kind === "paid" ? paidColorOf(r) : null,
     })
   }
 

@@ -5,7 +5,12 @@ class FakeNode {
     this.tagName = tag
     this.children = []
     this.parentNode = null
-    this.style = {}
+    this.style = {
+      values: {},
+      setProperty(name, value) {
+        this.values[name] = value
+      },
+    }
     this.dataset = {}
     this.hidden = false
     this.className = ""
@@ -13,6 +18,7 @@ class FakeNode {
     this.clientHeight = 100
     this._scrollTop = 0
     this.scrollWrites = 0
+    this.listeners = new Map()
   }
 
   append(...nodes) {
@@ -45,6 +51,27 @@ class FakeNode {
     const i = this.parentNode.children.indexOf(this)
     if (i >= 0) this.parentNode.children.splice(i, 1)
     this.parentNode = null
+  }
+
+  addEventListener(type, fn) {
+    const list = this.listeners.get(type) || []
+    list.push(fn)
+    this.listeners.set(type, list)
+  }
+
+  dispatchEvent(event) {
+    event.target ??= this
+    event.currentTarget = this
+    event.stopPropagation ??= () => {}
+    event.preventDefault ??= () => {}
+    for (const fn of this.listeners.get(event.type) || []) fn(event)
+    return !event.defaultPrevented
+  }
+
+  click() {
+    const event = { type: "click", target: this, currentTarget: this, stopPropagation() {} }
+    this.onclick?.(event)
+    this.dispatchEvent(event)
   }
 
   get firstChild() {
@@ -97,6 +124,8 @@ const message = i => ({
   author: `author ${i}`,
   authorType: i % 2 ? "moderator" : "normal",
   kind: i % 5 === 0 ? "paid" : "text",
+  amount: i % 5 === 0 ? "$5.00" : null,
+  paidColor: i % 5 === 0 ? "#1565c0" : null,
   parts: [{ t: `message ${i}` }],
 })
 
@@ -108,6 +137,11 @@ list.pushMany([message(1), message(5), { id: "bad", text: "" }])
 assert("batch appends valid rows", list.count === 2, String(list.count))
 assert("batch performs one sticky scroll write", node.scrollWrites === 1, String(node.scrollWrites))
 assert("paid messages keep paid row class", node.children[1].className.includes("paid"))
+assert("paid messages render amount badge", node.children[1].children[1].textContent === "$5.00")
+assert(
+  "paid messages set tier color variable",
+  node.children[1].style.values["--syc-paid-color"] === "#1565c0",
+)
 
 list.push(message(3))
 assert("single push delegates to batch append", list.count === 3, String(list.count))
@@ -128,6 +162,24 @@ assert("batch pruning caps rows", list.count === 200, String(list.count))
 list.setVisible(false)
 list.pushMany([message(999)])
 assert("hidden list is cleared and ignores pushes", list.count === 0 && list.visible === false)
+
+{
+  const calls = { users: [], words: [] }
+  const actionRoot = document.createElement("section")
+  const actionList = createCommentList(actionRoot, {
+    onBlockUser: author => calls.users.push(author),
+    onBlockWord: word => calls.words.push(word),
+  })
+  actionList.push(message(77))
+  const row = actionRoot.children[0].children[0]
+  row.dispatchEvent({ type: "contextmenu" })
+  const panel = row.children[row.children.length - 1]
+  panel.children[0].click()
+  row.dispatchEvent({ type: "contextmenu" })
+  row.children[row.children.length - 1].children[1].click()
+  assert("row action blocks user", calls.users[0] === "author 77")
+  assert("row action blocks word", calls.words[0] === "message 77")
+}
 
 let allOk = true
 for (const c of checks) {

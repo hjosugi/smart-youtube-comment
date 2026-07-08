@@ -5,14 +5,6 @@
 import { chromium } from "playwright"
 import { serveWeb } from "./_serve.mjs"
 
-const waitFor = async (fn, timeoutMs = 5000) => {
-  const start = Date.now()
-  while (!fn()) {
-    if (Date.now() - start > timeoutMs) throw new Error("timed out waiting for condition")
-    await new Promise(r => setTimeout(r, 25))
-  }
-}
-
 let apiCalls = 0
 let crossOriginCalls = 0
 let swrCalls = 0
@@ -118,19 +110,11 @@ const crossOriginResult = await page.evaluate(
 )
 
 const shellFirst = await page.evaluate(() => fetch("/styles.css?v=first").then(r => r.text()))
+const shellCallsAfterFirst = shellAssetCalls
 shellAssetVersion = 2
 const shellSecond = await page.evaluate(() => fetch("/styles.css?v=second").then(r => r.text()))
-await waitFor(() => shellAssetCalls >= 2)
-const shellThird = await page.evaluate(async () => {
-  const deadline = Date.now() + 5000
-  let text = ""
-  while (Date.now() < deadline) {
-    text = await fetch("/styles.css?v=third").then(r => r.text())
-    if (text === "/* shell-2 */") return text
-    await new Promise(r => setTimeout(r, 50))
-  }
-  return text
-})
+const shellThird = await page.evaluate(() => fetch("/styles.css?v=third").then(r => r.text()))
+const shellCallsAfterCacheReads = shellAssetCalls
 
 const swrFirst = await page.evaluate(() => fetch("/__swr.txt").then(r => r.text()))
 swrVersion = 2
@@ -163,10 +147,11 @@ const checks = [
   ["API fetches are not cached", apiCalls === 2 && apiResult.join(",") === "1,2"],
   ["cross-origin fetch passes through", crossOriginCalls === 1 && crossOriginResult === "opaque"],
   [
-    "shell asset uses stale-while-revalidate without query-key growth",
+    "shell asset stays on one build-stamped cache version",
     shellFirst === "/* shell-1 */" &&
       shellSecond === "/* shell-1 */" &&
-      shellThird === "/* shell-2 */",
+      shellThird === "/* shell-1 */" &&
+      shellCallsAfterCacheReads === shellCallsAfterFirst,
   ],
   [
     "non-shell same-origin GET bypasses runtime cache",
@@ -198,6 +183,8 @@ if (!ok) {
       crossOriginCalls,
       crossOriginResult,
       shellAssetCalls,
+      shellCallsAfterFirst,
+      shellCallsAfterCacheReads,
       shellFirst,
       shellSecond,
       shellThird,

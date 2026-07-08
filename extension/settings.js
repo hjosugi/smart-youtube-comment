@@ -18,6 +18,7 @@
   const SCHEMA = [
     { key: "enabled",      group: "General",     label: "Overlay enabled",        type: "bool",                                   default: true },
     { key: "hideDefaultChat", group: "General",  label: "Hide YouTube chat while overlay is on", type: "bool",                     default: false },
+    { key: "pauseWithVideo", group: "General",   label: "Pause comments with video", type: "bool",                                 default: true },
     { key: "opacity",      group: "Display",     label: "Opacity",                type: "range", min: 20,  max: 100,  step: 5, unit: "%",  default: 100 },
     { key: "fontPx",       group: "Display",     label: "Font size",              type: "range", min: 14,  max: 48,   step: 1, unit: "px", default: 24 },
     { key: "fontFamily",   group: "Display",     label: "Font family",            type: "select",  default: "",
@@ -47,6 +48,7 @@
     { key: "maxQueue",     group: "Performance", label: "Pending comment queue",  type: "range", min: 100, max: 5000, step: 100,           default: 2400 },
     { key: "spawnPerFrame", group: "Performance", label: "Comments prepared per frame", type: "range", min: 1, max: 24, step: 1,          default: 10 },
     { key: "renderScalePct", group: "Performance", label: "Render resolution",    type: "range", min: 50,  max: 150,  step: 5, unit: "%",  default: 75 },
+    { key: "debugHud",     group: "Performance", label: "Debug stats HUD",        type: "bool",                                   default: false },
     { key: "maxTextChars", group: "Performance", label: "Max comment length",     type: "range", min: 80,  max: 500,  step: 20,            default: 260 },
     { key: "lineHeight",   group: "Layout",      label: "Lane height",            type: "range", min: 20,  max: 48,   step: 1, unit: "px", default: 30 },
     { key: "topPct",       group: "Layout",      label: "Top clear zone",         type: "range", min: 0,   max: 40,   step: 1, unit: "%",  default: 8 },
@@ -70,12 +72,12 @@
 
   async function load() {
     const store = area();
-    if (!store) return { ...DEFAULTS };
+    if (!store) return defaultValues();
     try {
       const got = await store.get(STORAGE_KEY);
-      return normalize(got?.[STORAGE_KEY]);
+      return got?.[STORAGE_KEY] ? normalize(got[STORAGE_KEY]) : defaultValues();
     } catch {
-      return { ...DEFAULTS };
+      return defaultValues();
     }
   }
 
@@ -134,6 +136,21 @@
     return clean;
   }
 
+  function prefersReducedMotion() {
+    try {
+      return globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+    } catch {
+      return false;
+    }
+  }
+
+  function defaultValues() {
+    return {
+      ...DEFAULTS,
+      enabled: prefersReducedMotion() ? false : DEFAULTS.enabled
+    };
+  }
+
   // Map user-facing settings onto the danmaku engine's config keys.
   function toEngineConfig(s) {
     const safe = normalize(s);
@@ -151,6 +168,7 @@
       maxActive: safe.maxActive,
       maxQueue: safe.maxQueue,
       spawnPerFrame: safe.spawnPerFrame,
+      debugHud: safe.debugHud,
       dpr: Math.max(0.5, Math.min(2, (globalThis.devicePixelRatio || 1) * safe.renderScalePct / 100)),
       maxTextChars: safe.maxTextChars,
       lineHeight: safe.lineHeight,

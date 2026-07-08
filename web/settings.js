@@ -70,12 +70,12 @@ import { clamp } from "./math.js";
 
   async function load() {
     const store = area();
-    if (!store) return { ...DEFAULTS };
+    if (!store) return defaultValues();
     try {
       const got = await store.get(STORAGE_KEY);
-      return normalize(got?.[STORAGE_KEY]);
+      return got?.[STORAGE_KEY] ? normalize(got[STORAGE_KEY]) : defaultValues();
     } catch {
-      return { ...DEFAULTS };
+      return defaultValues();
     }
   }
 
@@ -127,6 +127,21 @@ import { clamp } from "./math.js";
       else clean[spec.key] = spec.default;
     }
     return clean;
+  }
+
+  function prefersReducedMotion() {
+    try {
+      return globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches === true;
+    } catch {
+      return false;
+    }
+  }
+
+  function defaultValues() {
+    return {
+      ...DEFAULTS,
+      enabled: prefersReducedMotion() ? false : DEFAULTS.enabled
+    };
   }
 
   // Map user-facing settings onto the danmaku engine's config keys.

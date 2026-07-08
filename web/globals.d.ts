@@ -33,6 +33,7 @@ declare global {
   var SYCApp: unknown
   var SYC_TRUSTED_RELAY_ORIGINS: string[] | undefined
   var YT: any
+  var chrome: any
 }
 
 interface DanmakuOverlay {
@@ -70,12 +71,18 @@ export interface SettingSpec {
 }
 
 export interface FilterApi {
-  shouldDrop(author: string, text: string): boolean
-  load(): Promise<{ users: string[]; words: string[] }>
-  save(next: { users: string[] | string; words: string[] | string }): Promise<unknown>
+  shouldDrop(author: string, text: string, channelId?: string): boolean
+  load(): Promise<{ users: string[]; words: string[]; channels?: string[] }>
+  save(next: {
+    users: string[] | string
+    words: string[] | string
+    channels?: string[] | string
+  }): Promise<unknown>
   onChange(cb: (lists: unknown) => void): void
   cleanList(input: string[] | string): string[]
-  stats(): { users: number; words: number; nodes: number }
+  cleanChannelList(input: string[] | string): string[]
+  cleanWordList(input: string[] | string): string[]
+  stats(): { users: number; channels: number; words: number; regexes: number; nodes: number }
 }
 
 export {}

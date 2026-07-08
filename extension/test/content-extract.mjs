@@ -53,14 +53,19 @@ const makeChatRenderer = ({
   fallbackRole = null,
   fallbackAriaLabel = null,
   officialContainer = false,
+  amount = "",
+  paidColor = "",
+  channelId = "",
 } = {}) => {
   const message = element("span", {}, [text(textValue)])
   const authorNode = element("span", {}, [text(author)])
+  const amountNode = element("span", {}, [text(amount)])
   const fallbackBadge = fallbackRole
     ? element("span", { type: fallbackRole, "aria-label": fallbackAriaLabel })
     : null
   return {
     sentTag: tag,
+    paidColor,
     matches(selector) {
       return selector.split(",").map(part => part.trim()).includes(tag)
     },
@@ -74,11 +79,13 @@ const makeChatRenderer = ({
     },
     getAttribute(name) {
       if (name === "author-type") return authorType
+      if (name === "author-external-channel-id") return channelId
       return null
     },
     querySelector(selector) {
       if (selector === "#message") return message
       if (selector === "#author-name") return authorNode
+      if (selector === "#purchase-amount, #purchase-amount-column") return amount ? amountNode : null
       if (fallbackBadge) return fallbackBadge.querySelector(selector)
       return null
     },
@@ -99,6 +106,14 @@ const loadHelpers = () => {
       },
     },
     document: {},
+    getComputedStyle(node) {
+      return {
+        getPropertyValue(name) {
+          return name === "--yt-live-chat-paid-message-primary-color" ? node.paidColor : ""
+        },
+        backgroundColor: "",
+      }
+    },
     location: { pathname: "/watch" },
     sentMessages: [],
     window: {},
@@ -242,8 +257,36 @@ const { helpers, sandbox } = loadHelpers()
 assert.equal(helpers.extractAuthorType(makeChatRenderer({ authorType: "owner" })), "owner")
 assert.equal(helpers.extractAuthorType(makeChatRenderer({ fallbackRole: "member", fallbackAriaLabel: "メンバー" })), "member")
 assert.equal(helpers.extractAuthorType(makeChatRenderer({ fallbackAriaLabel: "Owner" })), "normal")
+assert.equal(
+  helpers.extractAmount(makeChatRenderer({ amount: " ¥1,000 " })),
+  "¥1,000",
+)
+assert.equal(
+  helpers.extractPaidColor(makeChatRenderer({ paidColor: "rgb(210, 144, 0)" })),
+  "#d29000",
+)
+assert.equal(
+  helpers.extractAuthorChannelId(makeChatRenderer({ channelId: "UCabc123" })),
+  "UCabc123",
+)
+sandbox.document.querySelector = () => null
+assert.equal(helpers.hasLiveChatShell(), false)
+sandbox.document.querySelector = selector => selector.includes("ytd-live-chat-frame") ? {} : null
+assert.equal(helpers.hasLiveChatShell(), true)
 assert.equal(helpers.isOfficialChatText({ author: "YouTube", text: "hello", kind: "text" }), true)
-assert.equal(helpers.isOfficialChatText({ author: "Alice", text: "welcome to live chat", kind: "text" }), true)
+assert.equal(
+  helpers.isOfficialChatText({ author: "Team YouTube", text: "community guidelines", kind: "text" }),
+  true,
+)
+assert.equal(helpers.isOfficialChatText({ author: "", text: "welcome to live chat", kind: "text" }), true)
+assert.equal(
+  helpers.isOfficialChatText({ author: "Alice", text: "welcome to live chat", kind: "text" }),
+  false,
+)
+assert.equal(
+  helpers.isOfficialChatText({ author: "Alice", text: "プライバシーの話", kind: "text" }),
+  false,
+)
 assert.equal(helpers.isOfficialChatText({ author: "Alice", text: "normal comment", kind: "text" }), false)
 
 helpers.resetProcessedNodes()
@@ -260,18 +303,30 @@ assert.equal(sandbox.sentMessages.length, 1)
 await helpers.processChatNode(makeChatRenderer({ textValue: "hello world", author: "Alice" }))
 assert.equal(sandbox.sentMessages.length, 2)
 
+await helpers.processChatNode(makeChatRenderer({
+  tag: "yt-live-chat-paid-message-renderer",
+  textValue: "great stream",
+  author: "Donor",
+  amount: "$5.00",
+  paidColor: "#1565c0",
+}))
+assert.equal(sandbox.sentMessages.length, 3)
+assert.equal(sandbox.sentMessages[2].payload.kind, "paid")
+assert.equal(sandbox.sentMessages[2].payload.amount, "$5.00")
+assert.equal(sandbox.sentMessages[2].payload.paidColor, "#1565c0")
+
 await helpers.processChatNode(makeChatRenderer({ textValue: "welcome to live chat", author: "Alice" }))
-assert.equal(sandbox.sentMessages.length, 2)
+assert.equal(sandbox.sentMessages.length, 4)
 
 helpers.resetProcessedNodes()
 await helpers.processChatNode(makeChatRenderer({
   textValue: `  ${"x".repeat(620)}  `,
   author: "  Bob\nName  ",
 }))
-assert.equal(sandbox.sentMessages.length, 3)
-assert.equal(sandbox.sentMessages[2].payload.text.length, 500)
-assert.equal(sandbox.sentMessages[2].payload.author, "Bob Name")
-assert.equal(sandbox.sentMessages[2].payload.kind, "text")
+assert.equal(sandbox.sentMessages.length, 5)
+assert.equal(sandbox.sentMessages[4].payload.text.length, 500)
+assert.equal(sandbox.sentMessages[4].payload.author, "Bob Name")
+assert.equal(sandbox.sentMessages[4].payload.kind, "text")
 
 {
   const startup = loadLiveChatStartup()
@@ -286,4 +341,4 @@ assert.equal(sandbox.sentMessages[2].payload.kind, "text")
   assert.equal(startup.intervals[0].delay, 2500)
 }
 
-console.log("content-extract ok (25 assertions)")
+console.log("content-extract ok (41 assertions)")

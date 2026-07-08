@@ -96,7 +96,7 @@ YouTube IFrame Player を埋め込む方式では、**画面ロック/アプリ�
 └──────────┼─────────────────────────────────────────────────────────────────────┘
            │ HTTPS
 ┌──────────▼──────────── Cloudflare Worker(極小・ステートレス) ─────────────────┐
-│   /api/livechat?video=<id>&cont=<token>                                         │
+│   /api/livechat?video=<id> / ?cont=<token> / ?cont=<token>&offset=<ms>&replay=1 │
 │     1. InnerTube `next` で初回 continuation を解決                              │
 │     2. InnerTube `get_live_chat` をポーリング中継                               │
 │     3. CORS ヘッダ付与して JSON を返す(整形は最小限、評価は載せない)          │
@@ -306,6 +306,7 @@ CF Worker が以下を中継する(クライアントには CORS 制約のため
 5. ✅ **タッチ設定UI**: `store.js`(localStorage シム)で `settings.js`/`filter.js` を**無改変流用**、
    schema 駆動の `controls.ts`/`ui.ts` ボトムシート。速度/表示/NG等をライブ反映+永続化を e2e 検証。
 6. 実機(iOS Safari / Android Chrome)で確認・チューニング(CF Pages へデプロイ → 実機)。
+   チェックリストと OffscreenCanvas 等の実測ゲートは `docs/DEVICE_TUNING.md` に従う。
 
 ### 9.1 無料枠での運用(measured)
 

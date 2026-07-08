@@ -4,9 +4,21 @@ const {
   sanitizeRenderPayload
 } = globalThis.SYCSanitize;
 
-// Toolbar icon opens the settings page (no popup defined).
+// Kept for old development builds without a popup; current releases use popup.html.
 chrome.action?.onClicked.addListener(() => {
   chrome.runtime.openOptionsPage();
+});
+
+async function toggleOverlaySetting() {
+  const Settings = globalThis.SYCSettings;
+  if (!Settings) return;
+  const current = await Settings.load();
+  await Settings.save({ ...current, enabled: !current.enabled });
+}
+
+chrome.commands?.onCommand.addListener((command) => {
+  if (command !== "toggle-overlay") return;
+  toggleOverlaySetting().catch(() => {});
 });
 
 function isAllowedSender(sender) {
@@ -23,7 +35,8 @@ if (globalThis.__SYC_TEST__) {
     sanitizeText,
     sanitizeNumber,
     sanitizeRenderPayload,
-    isAllowedSender
+    isAllowedSender,
+    toggleOverlaySetting
   };
 }
 

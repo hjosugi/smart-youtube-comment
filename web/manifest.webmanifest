@@ -4,6 +4,16 @@
   "description": "YouTube ライブチャットを評価して niconico 風の弾幕で流す",
   "start_url": "./",
   "scope": "./",
+  "share_target": {
+    "action": "./",
+    "method": "GET",
+    "enctype": "application/x-www-form-urlencoded",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "v"
+    }
+  },
   "display": "standalone",
   "orientation": "any",
   "background_color": "#0b0b0f",

@@ -2,7 +2,7 @@
   "use strict";
 
   // NG-user / NG-word filter. Designed for MANY entries while staying light:
-  //   * NG users  -> a Set (O(1) exact author match)
+  //   * NG users/channels -> Sets (O(1) exact author/channel match)
   //   * NG words  -> an Aho-Corasick automaton: built once from all words, then
   //                  each comment is scanned in O(text length) no matter how many
   //                  words are registered. That is the whole point — adding more
@@ -12,6 +12,9 @@
   // consumers read globalThis.SYCFilter.
 
   const STORAGE_KEY = "syc:filter";
+  const MAX_REGEX_RULES = 64;
+  const MAX_REGEX_SOURCE_LENGTH = 160;
+  const REGEX_BUDGET_MS = 2;
 
   // Optional starter presets the options UI can offer. NONE are applied by
   // default — the user opts in. Keep these generic and small.
@@ -27,8 +30,10 @@
   };
 
   let userSet = new Set();
+  let channelSet = new Set();
   let automaton = null;
-  let lists = { users: [], words: [] };
+  let regexRules = [];
+  let lists = { users: [], words: [], channels: [] };
 
   function localArea() {
     if (typeof chrome === "undefined" || !chrome.storage) return null;
@@ -45,6 +50,42 @@
       ? input
       : String(input || "").split("\n");
     return [...new Set(arr.map(norm).filter(Boolean))];
+  }
+
+  function normChannelId(value) {
+    return String(value || "").normalize("NFKC").replace(/\s+/g, "").trim();
+  }
+
+  function cleanChannelList(input) {
+    const arr = Array.isArray(input)
+      ? input
+      : String(input || "").split("\n");
+    return [...new Set(arr.map(normChannelId).filter(Boolean))];
+  }
+
+  function cleanWordList(input) {
+    const arr = Array.isArray(input)
+      ? input
+      : String(input || "").split("\n");
+    return [...new Set(arr.map(cleanWordEntry).filter(Boolean))];
+  }
+
+  function cleanWordEntry(value) {
+    const raw = String(value || "").normalize("NFKC").trim();
+    if (!raw) return "";
+    return parseRegexEntry(raw) ? raw : norm(raw);
+  }
+
+  function parseRegexEntry(value) {
+    const match = String(value || "").match(/^\/(.+)\/([imsu]*)$/);
+    if (!match) return null;
+    const [, source, flags] = match;
+    if (!source || source.length > MAX_REGEX_SOURCE_LENGTH) return null;
+    try {
+      return new RegExp(source, flags);
+    } catch {
+      return null;
+    }
   }
 
   // --- Aho-Corasick over Unicode code points -------------------------------
@@ -99,21 +140,43 @@
 
   function rebuild() {
     userSet = new Set(lists.users);
-    automaton = buildAutomaton(lists.words);
+    channelSet = new Set(lists.channels);
+    const fixedWords = [];
+    regexRules = [];
+    for (const word of lists.words) {
+      const regex = regexRules.length < MAX_REGEX_RULES ? parseRegexEntry(word) : null;
+      if (regex) regexRules.push(regex);
+      else fixedWords.push(word);
+    }
+    automaton = buildAutomaton(fixedWords);
   }
 
   function apply(raw) {
     lists = {
       users: cleanList(raw && raw.users),
-      words: cleanList(raw && raw.words)
+      words: cleanWordList(raw && raw.words),
+      channels: cleanChannelList(raw && raw.channels)
     };
     rebuild();
   }
 
   // The hot path — called per comment at extraction time.
-  function shouldDrop(author, text) {
+  function shouldDrop(author, text, channelId) {
+    const normalizedText = norm(text);
+    if (channelSet.size && channelSet.has(normChannelId(channelId))) return true;
     if (userSet.size && userSet.has(norm(author))) return true;
-    if (automaton && automatonMatches(automaton, norm(text))) return true;
+    if (automaton && automatonMatches(automaton, normalizedText)) return true;
+    if (regexRules.length && regexMatches(normalizedText)) return true;
+    return false;
+  }
+
+  function regexMatches(text) {
+    const now = globalThis.performance?.now?.bind(globalThis.performance) || Date.now;
+    const start = now();
+    for (const regex of regexRules) {
+      if (now() - start > REGEX_BUDGET_MS) return false;
+      if (regex.test(text)) return true;
+    }
     return false;
   }
 
@@ -155,7 +218,17 @@
     onChange,
     shouldDrop,
     cleanList,
+    cleanChannelList,
+    cleanWordList,
     get lists() { return lists; },
-    stats() { return { users: userSet.size, words: lists.words.length, nodes: automaton ? automaton.out.length : 0 }; }
+    stats() {
+      return {
+        users: userSet.size,
+        channels: channelSet.size,
+        words: lists.words.length,
+        regexes: regexRules.length,
+        nodes: automaton ? automaton.out.length : 0
+      };
+    }
   };
 })();

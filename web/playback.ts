@@ -6,7 +6,7 @@ import type { ChatMessage } from "./types.ts"
 export type Fate = "show" | "skip" | "drop"
 
 interface FateOptions {
-  seen: Set<string>
+  seen: { has: (id: string) => boolean }
   shouldDrop: (author: string, text: string) => boolean
   leadMs?: number
   lagMs?: number
@@ -33,3 +33,74 @@ export const makeFate =
 // playback far more (or less) than time actually elapsed.
 export const isSeek = (deltaPlaybackMs: number, deltaWallMs: number, thresholdMs = 2000): boolean =>
   Math.abs(deltaPlaybackMs - deltaWallMs) > thresholdMs
+
+export const createSeenTracker = (maxIds = 4000) => {
+  const generationMax = Math.max(1, Math.floor(maxIds / 2))
+  let current = new Set<string>()
+  let previous = new Set<string>()
+
+  return {
+    has(id: string): boolean {
+      return current.has(id) || previous.has(id)
+    },
+    add(id: string) {
+      if (current.has(id) || previous.has(id)) return
+      if (current.size >= generationMax) {
+        previous = current
+        current = new Set()
+      }
+      current.add(id)
+    },
+    clear() {
+      current.clear()
+      previous.clear()
+    },
+    get size() {
+      return current.size + previous.size
+    },
+  }
+}
+
+interface SeekWatcherOptions {
+  playbackMs: () => number
+  onSeek: () => void
+  isPlaying?: () => boolean
+  intervalMs?: number
+  thresholdMs?: number
+  now?: () => number
+  setTimer?: (callback: () => void, ms: number) => any
+  clearTimer?: (timer: any) => void
+}
+
+export const createSeekWatcher = ({
+  playbackMs,
+  onSeek,
+  isPlaying = () => true,
+  intervalMs = 700,
+  thresholdMs = 2000,
+  now = () => performance.now(),
+  setTimer = setInterval,
+  clearTimer = clearInterval,
+}: SeekWatcherOptions) => {
+  let lastT = playbackMs()
+  let lastWall = now()
+
+  const check = () => {
+    const t = playbackMs()
+    const wall = now()
+    const deltaPlayback = t - lastT
+    const deltaWall = wall - lastWall
+    const jumped = isPlaying()
+      ? isSeek(deltaPlayback, deltaWall, thresholdMs)
+      : Math.abs(deltaPlayback) > thresholdMs
+    lastT = t
+    lastWall = wall
+    if (jumped) onSeek()
+  }
+
+  const timer = setTimer(check, intervalMs)
+  return {
+    check,
+    stop: () => clearTimer(timer),
+  }
+}

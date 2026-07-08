@@ -41,6 +41,7 @@
     cacheMax: 900,        // max cached bitmaps
     maxQueue: 2400,       // pending comments waiting for rasterization
     spawnPerFrame: 10,    // cap expensive canvas text rasterization per frame
+    debugHud: false,
     maxTextChars: 260,    // prevent giant one-off bitmaps from stalling video
     dpr: Math.max(0.5, Math.min(2, (self.devicePixelRatio || 1) * 0.75))
   };
@@ -62,8 +63,26 @@
   const AUTHOR_BOOST = { owner: 0.40, moderator: 0.25, member: 0.10, normal: 0 };
   const TARGET_FRAME_MS = 1000 / 60;
   const MIN_CAP_FRAME_MS = 50;
+  const DEDUP_BUCKET_BITS = 8;
+  const DEDUP_BUCKET_MASKS = Array.from({ length: DEDUP_BUCKET_BITS + 1 }, (_, threshold) => {
+    const masks = [];
+    for (let mask = 0; mask < (1 << DEDUP_BUCKET_BITS); mask++) {
+      if (popCount(mask) <= threshold) masks.push(mask);
+    }
+    return masks;
+  });
 
   const clamp = (min, max, v) => (v < min ? min : v > max ? max : v);
+
+  function popCount(value) {
+    let count = 0;
+    for (let n = value; n; n &= n - 1) count++;
+    return count;
+  }
+
+  function signatureBucket(sig) {
+    return (sig >>> (32 - DEDUP_BUCKET_BITS)) & ((1 << DEDUP_BUCKET_BITS) - 1);
+  }
 
   function truncateText(text, maxChars) {
     const chars = [...String(text || "")];
@@ -76,11 +95,15 @@
       this.cfg = Object.assign({}, DEFAULTS, cfg);
       this.active = [];
       this.nextActive = [];
+      this.activeMinHeap = [];
+      this.nextSpriteId = 1;
       this.pending = [];
       this.pendingHead = 0;     // ring head index — avoids O(n) Array.shift()
       this.lanes = [];          // per-lane "free at" timestamps
       this.cache = new Map();   // text -> rasterized bitmap
       this.recent = new Int32Array(this.cfg.recentMax); // dedup signatures (ring)
+      this.recentBuckets = new Uint8Array(this.cfg.recentMax);
+      this.recentBucketMap = new Map();
       this.recentLen = 0;
       this.recentPos = 0;
       this.player = null;
@@ -137,10 +160,12 @@
       this.canvas = null; this.ctx = null;
       this.active.length = 0;
       this.nextActive.length = 0;
+      this.activeMinHeap.length = 0;
       this.pending.length = 0;
       this.pendingHead = 0;
       this.recentLen = 0;
       this.recentPos = 0;
+      this.recentBucketMap.clear();
       this.player = null;
     }
 
@@ -155,6 +180,18 @@
     _stopLongTaskObserver() {
       this._lto?.disconnect?.();
       this._lto = null;
+    }
+
+    // Drop all on-screen + pending comments. Keeps the canvas and renderer config.
+    clear() {
+      this.active.length = 0;
+      this.nextActive.length = 0;
+      this.activeMinHeap.length = 0;
+      this.pending.length = 0;
+      this.pendingHead = 0;
+      this.recentLen = 0;
+      this.recentPos = 0;
+      this.recentBucketMap.clear();
     }
 
     setConfig(partial) {
@@ -215,13 +252,9 @@
 
       if (this.cfg.dedup && textSignature && signatureDistance) {
         const sig = textSignature(safePayload.text) | 0;
-        const rec = this.recent, n = this.recentLen, th = this.cfg.simThreshold;
-        for (let i = 0; i < n; i++) {
-          if (signatureDistance(sig, rec[i]) <= th) { this.dropped++; return false; }
-        }
-        rec[this.recentPos] = sig;
-        this.recentPos = (this.recentPos + 1) % rec.length;
-        if (this.recentLen < rec.length) this.recentLen++;
+        const th = this.cfg.simThreshold;
+        if (this._hasRecentSimilar(sig, th)) { this.dropped++; return false; }
+        this._rememberSignature(sig);
       }
 
       const priority = this._priority(safePayload);
@@ -238,6 +271,40 @@
       this.pending.push({ payload: safePayload, priority });
       this.queued++;
       return true;
+    }
+
+    _hasRecentSimilar(sig, threshold) {
+      const bucket = signatureBucket(sig);
+      const masks = DEDUP_BUCKET_MASKS[Math.min(DEDUP_BUCKET_BITS, Math.max(0, threshold | 0))];
+      for (const mask of masks) {
+        const set = this.recentBucketMap.get(bucket ^ mask);
+        if (!set) continue;
+        for (const pos of set) {
+          if (pos < this.recentLen && signatureDistance(sig, this.recent[pos]) <= threshold) return true;
+        }
+      }
+      return false;
+    }
+
+    _rememberSignature(sig) {
+      const pos = this.recentPos;
+      if (this.recentLen === this.recent.length) {
+        const oldBucket = this.recentBuckets[pos];
+        const oldSet = this.recentBucketMap.get(oldBucket);
+        oldSet?.delete(pos);
+        if (oldSet?.size === 0) this.recentBucketMap.delete(oldBucket);
+      }
+      const bucket = signatureBucket(sig);
+      this.recent[pos] = sig;
+      this.recentBuckets[pos] = bucket;
+      let set = this.recentBucketMap.get(bucket);
+      if (!set) {
+        set = new Set();
+        this.recentBucketMap.set(bucket, set);
+      }
+      set.add(pos);
+      this.recentPos = (pos + 1) % this.recent.length;
+      if (this.recentLen < this.recent.length) this.recentLen++;
     }
 
     _priority(payload) {
@@ -275,11 +342,8 @@
 
     _spawn(payload, priority) {
       if (this.active.length >= this.dynamicCap) {
-        let mi = -1, mp = Infinity;
-        for (let i = 0; i < this.active.length; i++) {
-          if (this.active[i].priority < mp) { mp = this.active[i].priority; mi = i; }
-        }
-        if (mi >= 0 && priority > mp) this._swapRemove(this.active, mi); // evict weakest
+        const weakest = this._peekActiveMin();
+        if (weakest && priority > weakest.priority) this._removeActive(weakest); // evict weakest
         else { this.dropped++; return false; }                  // drop incoming
       }
 
@@ -289,11 +353,14 @@
       const color = (this.cfg.roleColors && payload.authorType && payload.authorType !== "normal")
         ? (COLORS[payload.authorType] ?? this.cfg.textColor)
         : this.cfg.textColor;
+      const paidColor = payload.kind === "paid" && payload.paidColor ? payload.paidColor : "";
+      const labelColor = paidColor || color;
+      const body = this._displayText(payload);
       const label = payload.author && payload.kind && payload.kind !== "text"
-        ? `${payload.author}: ${payload.text}`
-        : payload.text;
+        ? `${payload.author}: ${body}`
+        : body;
       const glow = emphasis >= 0.62 && this.frameEMA < 24; // skip glow when frames are heavy
-      const bmp = this._rasterize(label, color, fontPx, glow);
+      const bmp = this._rasterize(label, labelColor, fontPx, glow);
 
       const td = this.cfg.tierDurations;
       const baseMs = (td && td[payload.tier] != null) ? td[payload.tier] : (payload.durationMs || 8000);
@@ -311,12 +378,92 @@
       const vx = dist / dur; // px per ms (long text => larger dist => already slower via dur)
       this.lanes[lane] = now + (bmp.w + this.cfg.gapPx) / vx; // lane reusable after tail clears entry
 
-      this.active.push({
+      const entry = {
         bmp: bmp.bmp, w: bmp.w, h: bmp.h,
         x: startX, y: this.laneTop + lane * this.laneH + this.laneH / 2,
-        vx, dieAt: now + dur + 600, priority
-      });
+        vx, ttlMs: dur + 600, priority,
+        id: this.nextSpriteId++,
+        index: this.active.length,
+        active: true
+      };
+      this.active.push(entry);
+      this._heapPush(entry);
       return true;
+    }
+
+    _removeActive(entry) {
+      if (!entry?.active) return;
+      entry.active = false;
+      const index = this.active[entry.index] === entry ? entry.index : this.active.indexOf(entry);
+      if (index >= 0) this._swapRemoveActive(index);
+    }
+
+    _swapRemoveActive(index) {
+      const last = this.active.length - 1;
+      const removed = this.active[index];
+      removed.active = false;
+      if (index !== last) {
+        const moved = this.active[last];
+        this.active[index] = moved;
+        moved.index = index;
+      }
+      this.active.pop();
+    }
+
+    _peekActiveMin() {
+      const heap = this.activeMinHeap;
+      while (heap.length && !heap[0].active) this._heapPop();
+      return heap[0] || null;
+    }
+
+    _heapPush(entry) {
+      const heap = this.activeMinHeap;
+      heap.push(entry);
+      let index = heap.length - 1;
+      while (index > 0) {
+        const parent = (index - 1) >> 1;
+        if (this._heapLess(heap[parent], entry)) break;
+        heap[index] = heap[parent];
+        index = parent;
+      }
+      heap[index] = entry;
+    }
+
+    _heapPop() {
+      const heap = this.activeMinHeap;
+      const root = heap[0];
+      const last = heap.pop();
+      if (heap.length && last) {
+        heap[0] = last;
+        this._heapDown(0);
+      }
+      return root;
+    }
+
+    _heapDown(index) {
+      const heap = this.activeMinHeap;
+      const item = heap[index];
+      for (;;) {
+        let child = index * 2 + 1;
+        if (child >= heap.length) break;
+        const right = child + 1;
+        if (right < heap.length && this._heapLess(heap[right], heap[child])) child = right;
+        if (this._heapLess(item, heap[child])) break;
+        heap[index] = heap[child];
+        index = child;
+      }
+      heap[index] = item;
+    }
+
+    _heapLess(a, b) {
+      return a.priority < b.priority || (a.priority === b.priority && a.id < b.id);
+    }
+
+    _displayText(payload) {
+      const text = payload.text || "";
+      const amount = payload.kind === "paid" ? (payload.amount || "") : "";
+      if (!amount || text.trim() === amount.trim()) return text;
+      return `${amount} ${text}`;
     }
 
     _swapRemove(arr, index) {
@@ -412,15 +559,39 @@
       for (let i = 0; i < arr.length; i++) {
         const a = arr[i];
         a.x -= a.vx * dt;
-        if (a.x + a.w < 0 || ts > a.dieAt) continue; // expired -> dropped by compaction
+        a.ttlMs -= dt;
+        if (a.x + a.w < 0 || a.ttlMs <= 0) { a.active = false; continue; } // expired -> dropped by compaction
         ctx.drawImage(a.bmp, Math.round(a.x), Math.round(a.y - a.h / 2), a.w, a.h);
+        a.index = next.length;
         next.push(a);
         drawn++;
       }
       this._drawn = drawn;
+      if (this.cfg.debugHud) this._drawHud(ctx);
       this.active = next;
       this.nextActive = arr;
       this.raf = requestAnimationFrame(this._loop);
+    }
+
+    _drawHud(ctx) {
+      const s = this.stats();
+      const lines = [
+        `active ${s.active}/${s.cap}  queued ${s.queued}`,
+        `dropped ${s.dropped}  fps ${s.fps}`,
+        `p95 ${s.frameP95}ms  p99 ${s.frameP99}ms`
+      ];
+      const x = 8, y = 8, lineH = 14, pad = 6, width = 190;
+      ctx.globalAlpha = 0.86;
+      ctx.fillStyle = "rgba(0,0,0,0.72)";
+      ctx.fillRect(x, y, width, lines.length * lineH + pad * 2);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = "#7CFC8C";
+      ctx.font = "11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+      ctx.textBaseline = "top";
+      for (let i = 0; i < lines.length; i++) {
+        ctx.fillText(lines[i], x + pad, y + pad + i * lineH);
+      }
+      ctx.globalAlpha = this.cfg.opacity;
     }
   }
 

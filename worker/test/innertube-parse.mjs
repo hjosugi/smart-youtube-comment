@@ -63,12 +63,14 @@ test("paid messages and stickers preserve amount fallback text", () => {
           timestampUsec: "1700000000000000",
           authorName: { simpleText: "@bob" },
           purchaseAmountText: { simpleText: "¥1,000" },
+          bodyBackgroundColor: 0xff1565c0,
         },
       },
     },
   })
   assert.equal(paid.kind, "paid")
   assert.equal(paid.amount, "¥1,000")
+  assert.equal(paid.paidColor, "#1565c0")
   assert.equal(paid.text, "¥1,000")
 
   const sticker = parseAction({

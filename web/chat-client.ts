@@ -83,7 +83,10 @@ const buildUrl = (base, { cont, video, offset }) => {
   const url = new URL(base.replace(/\/$/, "") + "/api/livechat")
   if (cont) url.searchParams.set("cont", cont)
   else if (video) url.searchParams.set("video", video)
-  if (offset != null) url.searchParams.set("offset", String(offset))
+  if (offset != null) {
+    url.searchParams.set("offset", String(offset))
+    url.searchParams.set("replay", "1")
+  }
   return url
 }
 
@@ -96,6 +99,7 @@ export function createLiveChatClient(options = {}) {
   let paused = false
   let wake: any = null // resolve fn for the paused gate
   let inflight: any = null
+  let refreshRequested = false
 
   const waitWhilePaused = () => (paused ? new Promise<void>(r => (wake = r)) : Promise.resolve())
   const releasePause = () => {
@@ -140,14 +144,16 @@ export function createLiveChatClient(options = {}) {
   }
 
   const pollOnce = async params => {
-    inflight = new AbortController()
-    const timer = setTimeout(() => inflight.abort(), cfg.requestTimeoutMs)
+    const controller = new AbortController()
+    inflight = controller
+    const timer = setTimeout(() => controller.abort(), cfg.requestTimeoutMs)
     try {
-      return { ok: true, env: await fetchEnvelope(params, inflight.signal) }
+      return { ok: true, env: await fetchEnvelope(params, controller.signal) }
     } catch (error: any) {
       return { ok: false, error }
     } finally {
       clearTimeout(timer)
+      if (inflight === controller) inflight = null
     }
   }
 
@@ -162,11 +168,13 @@ export function createLiveChatClient(options = {}) {
     },
     // Poll now instead of waiting out the current interval (e.g. after a seek).
     refresh() {
+      refreshRequested = true
       wakeNap()
     },
     stop() {
       stopped = true
       paused = false
+      refreshRequested = false
       releasePause()
       wakeNap()
       inflight?.abort()
@@ -195,6 +203,7 @@ export function createLiveChatClient(options = {}) {
           await waitWhilePaused() // zero requests while paused
           if (stopped) break
 
+          refreshRequested = false
           const outcome = await pollOnce(paramsFor(state))
 
           // 404 = no live chat (chat disabled, not actually live, or members-only).
@@ -229,6 +238,10 @@ export function createLiveChatClient(options = {}) {
             nextInMs: wait,
             replay,
           })
+          if (refreshRequested) {
+            refreshRequested = false
+            continue
+          }
           await nap(wait)
         }
       })()

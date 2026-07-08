@@ -70,7 +70,18 @@ npm run test:ext
 ```
 
 `test:ext` opens a real Chromium with the unpacked extension and may require a
-desktop session.
+desktop session. It uses deterministic fake YouTube pages for the overlay/chat
+path by default.
+
+Opt-in real YouTube smoke:
+
+```sh
+SYC_REAL_YOUTUBE_URL="https://www.youtube.com/watch?v=..." npm run test:ext:youtube
+```
+
+Use a public live stream with active chat. This is intentionally outside
+`release:check` because it depends on YouTube availability, geo/account state,
+and whether chat is active during the run.
 
 Manual network probes are intentionally not part of `release:check` because
 they depend on real YouTube availability and network behavior:
@@ -193,9 +204,12 @@ Do not present this as production-ready yet:
 
 - YouTube DOM changes may break extraction
 - performance still needs real busy-stream profiling
+- YouTube pop-out chat tabs are not supported because the renderer needs the
+  original watch page's video player
 - Chrome Web Store listing assets, privacy copy, and data-use declarations still
   require one-time dashboard setup
-- no automated real-YouTube smoke test yet
+- real-YouTube smoke is opt-in because it depends on a currently active public
+  stream with accessible chat
 
 ## Store Release Gate
 

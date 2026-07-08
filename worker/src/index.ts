@@ -8,7 +8,7 @@
 //   GET /health                             -> lightweight worker health
 //   GET /api/livechat?video=<id>             -> resolve + first poll
 //   GET /api/livechat?cont=<token>           -> next live poll
-//   GET /api/livechat?cont=<token>&offset=ms -> next replay (VOD) poll at offset
+//   GET /api/livechat?cont=<token>&offset=ms&replay=1 -> next replay (VOD) poll
 // Response: { messages, continuation, timeoutMs, ended, isReplay }
 //
 // Edge cache (s-maxage = floor(timeoutMs / 1000)) collapses post-population
@@ -31,12 +31,15 @@ interface Env {
   SOURCE_VERSION?: string
   HEALTHCHECK_VIDEO_ID?: string
   INNERTUBE_CLIENT_VERSION?: string
+  ALLOWED_ORIGINS?: string
+  RATE_LIMIT_PER_MINUTE?: string
 }
 
 interface Params {
   cont: string | null
   video: string | null
   offset: number | null
+  replay: boolean
 }
 
 interface HandlerDeps {
@@ -45,6 +48,7 @@ interface HandlerDeps {
   healthProbe?: (videoId: string, config: InnerTubeClientConfig) => Promise<unknown>
   inflight?: Map<string, Promise<Response>>
   logError?: (...args: unknown[]) => void
+  logMetric?: (metric: Record<string, unknown>) => void
   now?: () => Date
 }
 
@@ -61,6 +65,7 @@ const MAX_CONT_LEN = 8192
 const REPLAY_CACHE_BUCKET_MS = 3000
 const NEGATIVE_CACHE_TTL_SECONDS = 1
 const inflightResponses = new Map<string, Promise<Response>>()
+const rateBuckets = new Map<string, { minute: number; count: number }>()
 
 // ---- pure helpers -----------------------------------------------------------
 
@@ -80,13 +85,15 @@ const readParams = (url: URL): Params => ({
   cont: url.searchParams.get("cont"),
   video: url.searchParams.get("video"),
   offset: url.searchParams.has("offset") ? Number(url.searchParams.get("offset")) : null,
+  replay: url.searchParams.get("replay") === "1" || url.searchParams.get("mode") === "replay",
 })
 
 // Returns an error message, or null when the params are acceptable.
-const validate = ({ cont, video, offset }: Params): string | null => {
+const validate = ({ cont, video, offset, replay }: Params): string | null => {
   if (cont != null && cont.length > MAX_CONT_LEN) return "cont too long"
   if (cont != null && !CONTINUATION_RE.test(cont)) return "invalid cont"
   if (offset != null && !Number.isFinite(offset)) return "invalid offset"
+  if (cont && offset != null && !replay) return "offset requires replay=1"
   if (!cont && !video) return "missing video or cont"
   if (!cont && !VIDEO_ID_RE.test(video ?? "")) return "invalid video id"
   return null
@@ -99,6 +106,7 @@ const cacheKeyFor = (url: URL, params: Params): Request => {
   const normalized = new URL(url.origin + url.pathname)
   if (params.cont) normalized.searchParams.set("cont", params.cont)
   else if (params.video) normalized.searchParams.set("video", params.video)
+  if (params.replay) normalized.searchParams.set("replay", "1")
   if (params.offset != null)
     normalized.searchParams.set("offset", String(normalizeOffset(params.offset)))
   return new Request(normalized.toString(), { method: "GET" })
@@ -125,15 +133,59 @@ const errorResponse = (e: any, params: Params): Response => {
   return json({ error: "upstream error" }, 502, headers)
 }
 
+const allowedOrigins = (env: Env): string[] =>
+  (env.ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean)
+
+const originAllowed = (request: Request, env: Env): boolean => {
+  const allowed = allowedOrigins(env)
+  if (!allowed.length) return true
+  const origin = request.headers.get("Origin")
+  if (!origin) return true
+  return allowed.includes(origin)
+}
+
+const clientKey = (request: Request): string =>
+  request.headers.get("CF-Connecting-IP") ??
+  request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+  "unknown"
+
+const rateLimitError = (request: Request, env: Env, now = Date.now()): Response | null => {
+  const limit = Math.max(0, Math.floor(Number(env.RATE_LIMIT_PER_MINUTE ?? 120)))
+  if (!limit) return null
+  const minute = Math.floor(now / 60000)
+  const key = `${clientKey(request)}:${minute}`
+  const current = rateBuckets.get(key)
+  const count = (current?.count ?? 0) + 1
+  rateBuckets.set(key, { minute, count })
+  if (rateBuckets.size > 2048) {
+    for (const [k, bucket] of rateBuckets) {
+      if (bucket.minute < minute) rateBuckets.delete(k)
+    }
+  }
+  if (count <= limit) return null
+  return json({ error: "rate limited" }, 429, {
+    "Retry-After": String(60 - Math.floor((now % 60000) / 1000)),
+    "X-SYC-RateLimit-Limit": String(limit),
+  })
+}
+
+const metricNumber = (value: string | null): number | null => {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
 // ---- effectful pieces -------------------------------------------------------
 
 // Resolve (?video=) or poll (?cont=) -> envelope, or null if there is no chat.
 const fetchEnvelope = async (
-  { cont, video, offset }: Params,
+  { cont, video, offset, replay }: Params,
   config: InnerTubeClientConfig,
 ): Promise<PollEnvelope | null> => {
   if (cont) {
-    return pollLiveChat(cont, offset != null ? { replay: true, offsetMs: offset } : {}, config)
+    return pollLiveChat(cont, replay ? { replay: true, offsetMs: offset ?? 0 } : {}, config)
   }
   const resolved = await resolveLiveChat(video ?? "", config)
   if (!resolved?.continuation) return null
@@ -217,6 +269,7 @@ export const handle = async (
   ctx: ExecutionContext,
   deps: HandlerDeps = {},
 ): Promise<Response> => {
+  if (!originAllowed(request, env)) return json({ error: "origin not allowed" }, 403)
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS })
   if (request.method !== "GET") return json({ error: "method not allowed" }, 405)
 
@@ -227,33 +280,69 @@ export const handle = async (
   if (url.pathname !== "/api/livechat") return json({ error: "not found" }, 404)
 
   const params = readParams(url)
+  const started = Date.now()
+  const emitMetric = (response: Response, extra: Record<string, unknown> = {}): Response => {
+    const metric = {
+      event: "livechat",
+      status: response.status,
+      elapsedMs: Date.now() - started,
+      cache: response.headers.get("X-SYC-Cache"),
+      inflight: response.headers.get("X-SYC-Inflight") ?? "MISS",
+      upstreamMs: metricNumber(response.headers.get("X-SYC-Upstream-Ms")),
+      upstreamAttempts: metricNumber(response.headers.get("X-SYC-Upstream-Attempts")),
+      upstreamRetries: metricNumber(response.headers.get("X-SYC-Upstream-Retries")),
+      replay: params.replay,
+      hasContinuation: Boolean(params.cont),
+      hasVideo: Boolean(params.video),
+      hasOffset: params.offset != null,
+      ...extra,
+    }
+    const logger =
+      deps.logMetric ?? ((m: Record<string, unknown>) => console.log(JSON.stringify(m)))
+    ctx.waitUntil(Promise.resolve().then(() => logger(metric)))
+    return response
+  }
+
   const invalid = validate(params)
-  if (invalid) return json({ error: invalid }, 400)
-  const innerTubeConfig = innerTubeConfigFromEnv(env)
+  if (invalid) return emitMetric(json({ error: invalid }, 400), { validationError: invalid })
+  const limited = rateLimitError(request, env)
+  if (limited) return emitMetric(limited, { rateLimited: true })
+  const upstreamMetrics = { attempts: 0, retries: 0 }
+  const innerTubeConfig = { ...innerTubeConfigFromEnv(env), metrics: upstreamMetrics }
 
   const cache: Cache = deps.cache ?? caches.default
   const cacheKey = cacheKeyFor(url, params)
   const cached = await cache.match(cacheKey)
-  if (cached) return withHeader(cached, "X-SYC-Cache", "HIT")
+  if (cached) return emitMetric(withHeader(cached, "X-SYC-Cache", "HIT"))
 
   const inflight = deps.inflight ?? inflightResponses
   const inflightKey = cacheKey.url
   const existing = inflight.get(inflightKey)
-  if (existing) return withHeader((await existing).clone(), "X-SYC-Inflight", "HIT")
+  if (existing) return emitMetric(withHeader((await existing).clone(), "X-SYC-Inflight", "HIT"))
 
   const pending = (async () => {
+    const upstreamStarted = Date.now()
     try {
       const result = await (deps.fetchEnvelope ?? fetchEnvelope)(params, innerTubeConfig)
-      if (!result) return json({ error: "no live chat (not live or chat disabled)" }, 404)
-      return cacheable(cache, cacheKey, ctx, result)
+      const response = !result
+        ? json({ error: "no live chat (not live or chat disabled)" }, 404)
+        : cacheable(cache, cacheKey, ctx, result)
+      response.headers.set("X-SYC-Upstream-Ms", String(Date.now() - upstreamStarted))
+      response.headers.set("X-SYC-Upstream-Attempts", String(upstreamMetrics.attempts))
+      response.headers.set("X-SYC-Upstream-Retries", String(upstreamMetrics.retries))
+      return response
     } catch (e: any) {
       ;(deps.logError ?? console.error)("livechat relay error:", e?.status ?? "", e?.message ?? e)
-      return cacheNegative(cache, cacheKey, ctx, errorResponse(e, params))
+      const response = cacheNegative(cache, cacheKey, ctx, errorResponse(e, params))
+      response.headers.set("X-SYC-Upstream-Ms", String(Date.now() - upstreamStarted))
+      response.headers.set("X-SYC-Upstream-Attempts", String(upstreamMetrics.attempts))
+      response.headers.set("X-SYC-Upstream-Retries", String(upstreamMetrics.retries))
+      return response
     }
   })()
   inflight.set(inflightKey, pending)
   try {
-    return (await pending).clone()
+    return emitMetric((await pending).clone())
   } finally {
     inflight.delete(inflightKey)
   }
@@ -274,4 +363,6 @@ export const _test = {
   cacheable,
   errorResponse,
   effectiveInnerTubeClientVersion,
+  originAllowed,
+  rateLimitError,
 }

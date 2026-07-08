@@ -61,14 +61,56 @@ export const createWakeLock = () => {
 
 // Show metadata/controls on the lock screen. (Playback continuation itself is not
 // guaranteed in the IFrame embed — see ARCHITECTURE.md §2.)
+const clearMediaAction = (session: any, action: string) => {
+  try {
+    session.setActionHandler?.(action, null)
+  } catch {}
+}
+
 export const setMediaSession = (meta: any = {}) => {
   if (!hasNavigator || !("mediaSession" in navigator) || typeof MediaMetadata === "undefined") {
     return false
   }
-  navigator.mediaSession.metadata = new MediaMetadata({
+  const session: any = navigator.mediaSession
+  session.metadata = new MediaMetadata({
     title: meta.title ?? "Live",
     artist: meta.artist ?? "Smart YouTube Comment",
     artwork: meta.artwork ?? [{ src: "icons/icon128.png", sizes: "128x128", type: "image/png" }],
   })
+  const actions = meta.actions || {}
+  for (const action of ["play", "pause", "seekbackward", "seekforward"]) {
+    if (typeof actions[action] === "function") {
+      try {
+        session.setActionHandler?.(action, actions[action])
+      } catch {}
+    } else {
+      clearMediaAction(session, action)
+    }
+  }
   return true
+}
+
+export const resolveYouTubeTitle = async (
+  videoId: string,
+  { fetchImpl = globalThis.fetch, timeoutMs = 3500 } = {},
+) => {
+  if (!videoId || typeof fetchImpl !== "function") return ""
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), Math.max(1, timeoutMs))
+  try {
+    const url = new URL("https://www.youtube.com/oembed")
+    url.searchParams.set("format", "json")
+    url.searchParams.set("url", `https://www.youtube.com/watch?v=${videoId}`)
+    const res = await fetchImpl(url, {
+      signal: controller.signal,
+      headers: { Accept: "application/json" },
+    })
+    if (!res?.ok) return ""
+    const body = await res.json().catch(() => null)
+    return typeof body?.title === "string" ? body.title.trim().slice(0, 160) : ""
+  } catch {
+    return ""
+  } finally {
+    clearTimeout(timer)
+  }
 }

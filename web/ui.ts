@@ -6,6 +6,9 @@ import { buildControl, groupBy } from "./controls.ts"
 import { el } from "./dom.ts"
 import { T, groupName, settingLabel } from "./i18n.ts"
 
+const BACKUP_APP = "smart-youtube-comment"
+const BACKUP_VERSION = 1
+
 const section = title => el("h3", { className: "sheet-h", textContent: title })
 
 const labelled = (label, control) =>
@@ -32,8 +35,34 @@ const sheetWith = (button, root, title) => {
   return sheet
 }
 
-const settingsSection = async (settings, sheet) => {
+const normalizeBackup = (settings, filter, text) => {
+  const data = JSON.parse(text)
+  if (!data || typeof data !== "object") throw new Error("invalid backup")
+  if (data.app && data.app !== BACKUP_APP) throw new Error("wrong backup app")
+  return {
+    settings: settings.normalize(data.settings),
+    filters: {
+      users: filter.cleanList(data.filters?.users || []),
+      words: filter.cleanWordList(data.filters?.words || []),
+      channels: filter.cleanChannelList(data.filters?.channels || []),
+    },
+  }
+}
+
+const downloadJson = data => {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })
+  const url = URL.createObjectURL(blob)
+  const a = el("a", {
+    href: url,
+    download: `smart-youtube-comment-settings-${new Date().toISOString().slice(0, 10)}.json`,
+  })
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
+const settingsSection = async (settings, sheet, state) => {
   const draft = { ...(await settings.load()) }
+  state.draft = draft
   let saveTimer: ReturnType<typeof setTimeout> | null = null
   settings.onChange(next => Object.assign(draft, next))
   const persist = () => {
@@ -70,6 +99,7 @@ const settingsSection = async (settings, sheet) => {
       }
     }
   }
+  state.rebuildSettings = rebuild
 
   const presets = el("div", { className: "presets" })
   for (const p of Object.values(settings.SPEED_PRESETS) as any[]) {
@@ -92,7 +122,7 @@ const settingsSection = async (settings, sheet) => {
   sheet.append(section(T.presets), presets, body)
 }
 
-const filterSection = async (filter, sheet) => {
+const filterSection = async (filter, sheet, state) => {
   const lists = await filter.load()
   const users = el("textarea", {
     className: "ng",
@@ -106,16 +136,115 @@ const filterSection = async (filter, sheet) => {
     placeholder: "1行1件 / one per line",
     rows: 3,
   })
+  const channels = el("textarea", {
+    className: "ng",
+    value: (lists.channels || []).join("\n"),
+    placeholder: "channel IDs / one per line",
+    rows: 3,
+  })
+  state.filterInputs = { users, words, channels }
   const save = el("button", { type: "button", className: "ng-save", textContent: T.ngSave })
-  save.addEventListener("click", () => filter.save({ users: users.value, words: words.value }))
-  sheet.append(section(T.ngFilter), labelled(T.ngUsers, users), labelled(T.ngWords, words), save)
+  save.addEventListener("click", () =>
+    filter.save({ users: users.value, words: words.value, channels: channels.value }),
+  )
+  sheet.append(
+    section(T.ngFilter),
+    labelled(T.ngUsers, users),
+    labelled(T.ngWords, words),
+    labelled(T.ngChannels, channels),
+    save,
+  )
+}
+
+const backupSection = (settings, filter, sheet, state) => {
+  const file = el("input", {
+    type: "file",
+    accept: "application/json,.json",
+    className: "backup-file",
+    hidden: true,
+  })
+  file.addEventListener("change", async () => {
+    const selected = file.files?.[0]
+    if (!selected) return
+    try {
+      const next = normalizeBackup(settings, filter, await selected.text())
+      Object.assign(state.draft, next.settings)
+      await settings.save({ ...state.draft })
+      state.rebuildSettings?.()
+      await filter.save(next.filters)
+      if (state.filterInputs) {
+        state.filterInputs.users.value = next.filters.users.join("\n")
+        state.filterInputs.words.value = next.filters.words.join("\n")
+        state.filterInputs.channels.value = next.filters.channels.join("\n")
+      }
+    } finally {
+      file.value = ""
+    }
+  })
+
+  const exportButton = el("button", {
+    type: "button",
+    textContent: T.exportData,
+  })
+  exportButton.dataset.action = "export-backup"
+  exportButton.addEventListener("click", async () => {
+    const filterLists = state.filterInputs
+      ? {
+          users: filter.cleanList(state.filterInputs.users.value),
+          words: filter.cleanWordList(state.filterInputs.words.value),
+          channels: filter.cleanChannelList(state.filterInputs.channels.value),
+        }
+      : await filter.load()
+    downloadJson({
+      app: BACKUP_APP,
+      version: BACKUP_VERSION,
+      surface: settings.PROFILE?.surface || "web",
+      exportedAt: new Date().toISOString(),
+      settings: settings.normalize(state.draft || (await settings.load())),
+      filters: filterLists,
+    })
+  })
+
+  const importButton = el("button", {
+    type: "button",
+    textContent: T.importData,
+  })
+  importButton.dataset.action = "import-backup"
+  importButton.addEventListener("click", () => file.click())
+
+  const resetButton = el("button", {
+    type: "button",
+    textContent: T.resetAll,
+  })
+  resetButton.dataset.action = "reset-backup"
+  resetButton.addEventListener("click", async () => {
+    Object.assign(state.draft, settings.DEFAULTS)
+    await settings.save({ ...state.draft })
+    state.rebuildSettings?.()
+    const empty = { users: [], words: [], channels: [] }
+    await filter.save(empty)
+    if (state.filterInputs) {
+      state.filterInputs.users.value = ""
+      state.filterInputs.words.value = ""
+      state.filterInputs.channels.value = ""
+    }
+  })
+
+  sheet.append(
+    section(T.backup),
+    el("div", { className: "backup-actions" }, [exportButton, importButton, resetButton, file]),
+  )
 }
 
 // `button` is the existing trigger in the top bar; the sheet attaches to `root`.
 export const mountSettings = ({ settings, filter, button, root = document.body }) => {
   const sheet = sheetWith(button, root, T.settings)
-  settingsSection(settings, sheet)
-  filterSection(filter, sheet)
+  const state: any = {}
+  void (async () => {
+    await settingsSection(settings, sheet, state)
+    await filterSection(filter, sheet, state)
+    backupSection(settings, filter, sheet, state)
+  })()
   return { open: () => (sheet.hidden = false), close: () => (sheet.hidden = true) }
 }
 

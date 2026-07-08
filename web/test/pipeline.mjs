@@ -17,6 +17,8 @@ const assert = (name, cond, extra = "") => checks.push({ name, ok: !!cond, extra
     author: "@a",
     authorType: "member",
     kind: "text",
+    amount: null,
+    paidColor: null,
   })
   assert("payload has text+authorType", p && p.text && p.authorType === "member")
   assert("payload has render plan fields", p && Number.isInteger(p.tier) && p.durationMs > 0)
@@ -24,6 +26,19 @@ const assert = (name, cond, extra = "") => checks.push({ name, ok: !!cond, extra
     "payload carries no internal score leak beyond contract",
     p && "score" in p && "emphasis" in p && !("reasons" in p),
   )
+}
+
+{
+  const p = render({
+    text: "keep going",
+    author: "@donor",
+    authorType: "normal",
+    kind: "paid",
+    amount: "$5.00",
+    paidColor: "#1565c0",
+  })
+  assert("paid payload preserves amount", p && p.amount === "$5.00")
+  assert("paid payload preserves color", p && p.paidColor === "#1565c0")
 }
 
 // renderBatch admits via the overlay and counts only accepted pushes

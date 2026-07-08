@@ -142,11 +142,27 @@ body {
   color: #e7e7ea;
   font-variant-numeric: tabular-nums;
 }
+.vctl-live {
+  flex: none;
+  padding: 2px 7px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: #fff;
+  background: color-mix(in srgb, var(--accent) 75%, #000);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.4;
+}
 .vctl-seek {
   flex: 1;
   min-width: 0;
   accent-color: var(--accent);
   height: 22px;
+}
+.vctl-seek[hidden],
+.vctl-time[hidden],
+.vctl-live[hidden] {
+  display: none;
 }
 
 /* --- comment list (non-danmaku feed below the player) --- */
@@ -167,18 +183,30 @@ body {
   display: none;
 }
 .clist-row {
+  position: relative;
   padding: 3px 0;
   border-bottom: 1px solid #15151c;
   word-break: break-word;
 }
 .clist-row.paid {
-  background: #2a1f0a;
+  background: color-mix(in srgb, var(--syc-paid-color, #d19000) 28%, #101014);
+  border-bottom-color: color-mix(in srgb, var(--syc-paid-color, #d19000) 55%, #15151c);
   border-radius: 6px;
   padding: 4px 6px;
 }
 .clist-author {
   font-weight: 700;
   margin-right: 7px;
+}
+.clist-amount {
+  display: inline-block;
+  margin-right: 7px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--syc-paid-color, #d19000);
+  color: #0d0d10;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 .clist-text {
   color: #e7e7ea;
@@ -188,6 +216,21 @@ body {
   width: auto;
   vertical-align: -0.25em;
   margin: 0 1px;
+}
+.clist-actions {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+.clist-actions button {
+  padding: 3px 7px;
+  border: 1px solid #2a2a35;
+  border-radius: 6px;
+  background: #0e0e14;
+  color: #e7e7ea;
+  font: inherit;
+  font-size: 12px;
 }
 
 .perf {
@@ -329,6 +372,19 @@ body {
   background: var(--accent);
   color: #fff;
   font-weight: 700;
+}
+.backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 6px;
+}
+.backup-actions button {
+  padding: 8px 12px;
+  border: 1px solid #2a2a35;
+  border-radius: 8px;
+  background: #0e0e14;
+  color: var(--fg);
 }
 
 .help-item {

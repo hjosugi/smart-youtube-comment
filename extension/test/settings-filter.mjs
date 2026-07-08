@@ -20,7 +20,7 @@ const makeArea = () => {
   }
 }
 
-const loadScripts = () => {
+const loadScripts = ({ reducedMotion = false } = {}) => {
   const sync = makeArea()
   const local = makeArea()
   const sandbox = {
@@ -33,6 +33,9 @@ const loadScripts = () => {
       },
     },
     devicePixelRatio: 1,
+    matchMedia(query) {
+      return { matches: reducedMotion && query === "(prefers-reduced-motion: reduce)" }
+    },
   }
   sandbox.globalThis = sandbox
 
@@ -57,6 +60,8 @@ assert.equal(settings.DEFAULTS.spawnPerFrame, 10)
 assert.equal(settings.DEFAULTS.renderScalePct, 75)
 assert.equal(settings.DEFAULTS.lineHeight, 30)
 assert.equal(settings.DEFAULTS.dedup, false)
+assert.equal(settings.DEFAULTS.pauseWithVideo, true)
+assert.equal(settings.DEFAULTS.debugHud, false)
 
 await settings.save({
   enabled: "false",
@@ -72,14 +77,29 @@ assert.equal((await settings.load()).textColor, "#abcdef")
 
 await filter.save({
   users: " Alice \nALICE\nBob ",
-  words: "Spam\n spam \n草草草草",
+  words: "Spam\n spam \n草草草草\n/w{5,}/\n/[invalid/",
+  channels: "UCBlocked\nUCBlocked\nUCExact",
 })
 assert.equal(local.data.has(filter.STORAGE_KEY), true)
 assert.equal(sync.data.has(filter.STORAGE_KEY), false)
 assert.deepEqual(Array.from(filter.lists.users), ["alice", "bob"])
-assert.deepEqual(Array.from(filter.lists.words), ["spam", "草草草草"])
+assert.deepEqual(Array.from(filter.lists.words), ["spam", "草草草草", "/w{5,}/", "/[invalid/"])
+assert.deepEqual(Array.from(filter.lists.channels), ["UCBlocked", "UCExact"])
 assert.equal(filter.shouldDrop("ALICE", "hello"), true)
 assert.equal(filter.shouldDrop("carol", "buy spam now"), true)
+assert.equal(filter.shouldDrop("carol", "wwwww"), true)
+assert.equal(filter.shouldDrop("carol", "this mentions /[invalid/ literally"), true)
+assert.equal(filter.shouldDrop("carol", "hello", "UCBlocked"), true)
+assert.equal(filter.shouldDrop("carol", "hello", "ucblocked"), false)
 assert.equal(filter.shouldDrop("carol", "hello"), false)
+assert.equal(filter.stats().regexes, 1)
 
-console.log("settings-filter ok (24 assertions)")
+{
+  const { sandbox: reducedSandbox } = loadScripts({ reducedMotion: true })
+  const reducedSettings = reducedSandbox.globalThis.SYCSettings
+  assert.equal((await reducedSettings.load()).enabled, false)
+  await reducedSettings.save({ enabled: true })
+  assert.equal((await reducedSettings.load()).enabled, true)
+}
+
+console.log("settings-filter ok (34 assertions)")

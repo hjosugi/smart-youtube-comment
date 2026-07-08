@@ -133,6 +133,7 @@ const schema = [
 ]
 const defaults = Object.fromEntries(schema.map((spec) => [spec.key, spec.default]))
 const saves = []
+const filterSaves = []
 const document = buildDocument()
 const sandbox = {
   clearTimeout,
@@ -144,7 +145,9 @@ const sandbox = {
   chrome: { i18n: { getMessage() { return "" } } },
 }
 sandbox.globalThis = sandbox
+sandbox.globalThis.__SYC_TEST__ = true
 sandbox.globalThis.SYCSettings = {
+  PROFILE: { surface: "extension" },
   SCHEMA: schema,
   DEFAULTS: defaults,
   SPEED_PRESETS: {
@@ -156,6 +159,37 @@ sandbox.globalThis.SYCSettings = {
   },
   async save(values) {
     saves.push(values)
+  },
+  normalize(values) {
+    return { ...defaults, ...(values || {}) }
+  },
+}
+sandbox.globalThis.SYCFilter = {
+  async load() {
+    return { users: ["old-user"], words: ["old-word"], channels: ["UCold"] }
+  },
+  async save(values) {
+    filterSaves.push(values)
+    return values
+  },
+  cleanList(input) {
+    const list = Array.isArray(input) ? input : String(input || "").split("\n")
+    return [...new Set(list.map(item => String(item).trim().toLowerCase()).filter(Boolean))]
+  },
+  cleanWordList(input) {
+    const list = Array.isArray(input) ? input : String(input || "").split("\n")
+    return [
+      ...new Set(
+        list
+          .map(item => String(item).trim())
+          .filter(Boolean)
+          .map(item => (item.startsWith("/") ? item : item.toLowerCase())),
+      ),
+    ]
+  },
+  cleanChannelList(input) {
+    const list = Array.isArray(input) ? input : String(input || "").split("\n")
+    return [...new Set(list.map(item => String(item).trim()).filter(Boolean))]
   },
 }
 
@@ -205,4 +239,34 @@ await wait(300)
 assert.equal(saves.length, 2)
 assert.equal(saves[1].speedPct, 150)
 
-console.log("options ok (12 assertions)")
+await sandbox.globalThis.__SYCOptionsTest.importBackupText(
+  JSON.stringify({
+    app: "smart-youtube-comment",
+    settings: { speedPct: 180, fastMs: 9000 },
+    filters: { users: [" Alice ", "alice"], words: "Spam\nspam\n/w{5,}/", channels: "UC1\nUC1" },
+  }),
+)
+assert.equal(saves.length, 3)
+assert.equal(saves[2].speedPct, 180)
+assert.equal(saves[2].fastMs, 9000)
+assert.equal(
+  JSON.stringify(filterSaves.at(-1)),
+  JSON.stringify({ users: ["alice"], words: ["spam", "/w{5,}/"], channels: ["UC1"] }),
+)
+
+const backup = await sandbox.globalThis.__SYCOptionsTest.buildBackupData()
+assert.equal(backup.app, "smart-youtube-comment")
+assert.equal(backup.settings.speedPct, 180)
+assert.equal(
+  JSON.stringify(backup.filters),
+  JSON.stringify({ users: ["alice"], words: ["spam", "/w{5,}/"], channels: ["UC1"] }),
+)
+
+await sandbox.globalThis.__SYCOptionsTest.resetAll()
+assert.equal(saves.at(-1).speedPct, 100)
+assert.equal(
+  JSON.stringify(filterSaves.at(-1)),
+  JSON.stringify({ users: [], words: [], channels: [] }),
+)
+
+console.log("options ok (21 assertions)")

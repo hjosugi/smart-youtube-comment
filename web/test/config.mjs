@@ -57,6 +57,16 @@ assert(
 )
 assert("readParams: mock default false", readParams("?v=" + ID).mock === false)
 assert("readParams: empty video for junk", readParams("?v=junk").video === "")
+assert(
+  "readParams: share target url param",
+  readParams(`?v=${encodeURIComponent(`https://youtu.be/${ID}?t=75s`)}`).video === ID,
+)
+assert(
+  "readParams: share text fallback",
+  readParams(
+    `?text=${encodeURIComponent(`watch this https://www.youtube.com/watch?v=${ID}&t=31s`)}`,
+  ).video === ID,
+)
 
 // start-time parsing (t= / start=)
 assert("start: plain seconds", parseStartSeconds(`https://youtu.be/${ID}?t=90`) === 90)
@@ -72,6 +82,10 @@ assert(
   })(),
 )
 assert("readParams: start from &t=", readParams(`?v=${ID}&t=42`).start === 42)
+assert(
+  "readParams: start from shared URL",
+  readParams(`?v=${encodeURIComponent(`https://youtu.be/${ID}?t=75s`)}`).start === 75,
+)
 assert("readParams: start default 0", readParams(`?v=${ID}`).start === 0)
 
 let allOk = true

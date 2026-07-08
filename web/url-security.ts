@@ -117,4 +117,8 @@ export const sanitizeMessageParts = (parts: Part[] | undefined): Part[] => {
 export const sanitizeChatMessage = (message: ChatMessage): ChatMessage => ({
   ...message,
   parts: sanitizeMessageParts(message.parts),
+  paidColor:
+    typeof message.paidColor === "string" && /^#[0-9a-f]{6}$/i.test(message.paidColor)
+      ? message.paidColor.toLowerCase()
+      : null,
 })

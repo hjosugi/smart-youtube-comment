@@ -16,6 +16,7 @@ globalThis.fetch = async url => {
     cont: u.searchParams.get("cont"),
     video: u.searchParams.get("video"),
     offset: u.searchParams.get("offset"),
+    replay: u.searchParams.get("replay"),
   })
   const env = {
     messages: [{ id: "m" + calls.length }],
@@ -68,10 +69,67 @@ globalThis.fetch = async url => {
   assert("refresh triggers an immediate re-poll", n2 > n1, `n1=${n1} n2=${n2}`)
 }
 
+// --- refresh() during an in-flight fetch skips the following nap ---
+{
+  calls = []
+  let releaseFetch
+  let first = true
+  const gate = new Promise(r => (releaseFetch = r))
+  globalThis.fetch = async url => {
+    const u = url instanceof URL ? url : new URL(url)
+    calls.push({
+      cont: u.searchParams.get("cont"),
+      video: u.searchParams.get("video"),
+      offset: u.searchParams.get("offset"),
+      replay: u.searchParams.get("replay"),
+    })
+    if (first) {
+      first = false
+      await gate
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        messages: [],
+        continuation: "c",
+        timeoutMs: 5000,
+        ended: false,
+      }),
+    }
+  }
+
+  const c = createLiveChatClient({ base: "http://x", minIntervalMs: 5000, quietThreshold: 0 })
+  c.start("VIDEOIDXXXX", {})
+  await sleep(30)
+  c.refresh()
+  releaseFetch()
+  await sleep(90)
+  c.stop()
+  assert("in-flight refresh skips the next long nap", calls.length >= 2, `calls=${calls.length}`)
+}
+
 // --- replay mode sends the player offset on polls ---
 {
   calls = []
   mode = "replay"
+  globalThis.fetch = async url => {
+    const u = url instanceof URL ? url : new URL(url)
+    calls.push({
+      cont: u.searchParams.get("cont"),
+      video: u.searchParams.get("video"),
+      offset: u.searchParams.get("offset"),
+      replay: u.searchParams.get("replay"),
+    })
+    const env = {
+      messages: [{ id: "m" + calls.length }],
+      continuation: "c",
+      timeoutMs: 40,
+      ended: false,
+      isReplay: mode === "replay",
+    }
+    return { ok: true, status: 200, json: async () => env }
+  }
   const c = createLiveChatClient({
     base: "http://x",
     minIntervalMs: 20,
@@ -89,6 +147,11 @@ globalThis.fetch = async url => {
   assert(
     "replay: subsequent polls carry offset",
     contCalls.length >= 1 && contCalls.every(x => x.offset === "42000"),
+    JSON.stringify(contCalls.slice(0, 3)),
+  )
+  assert(
+    "replay: offset polls carry replay=1",
+    contCalls.length >= 1 && contCalls.every(x => x.replay === "1"),
     JSON.stringify(contCalls.slice(0, 3)),
   )
 }

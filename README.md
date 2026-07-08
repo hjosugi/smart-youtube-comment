@@ -94,6 +94,12 @@ Real extension smoke test in Chromium:
 npm run test:ext
 ```
 
+Opt-in real YouTube smoke:
+
+```sh
+SYC_REAL_YOUTUBE_URL="https://www.youtube.com/watch?v=..." npm run test:ext:youtube
+```
+
 `test:ext` opens a real browser locally. In CI it skips by default unless
 `SYC_REQUIRE_EXTENSION_E2E=1` is set. To make `npm test` fail instead of
 skipping missing Chromium, set `SYC_REQUIRE_E2E=1`.
@@ -112,6 +118,13 @@ wrangler deploy --var INNERTUBE_CLIENT_VERSION:2.20260705.00.00
 `GET /health?deep=1&video=<11-char-id>` runs a canary `next` probe with the same
 effective client version; use it from an external scheduled monitor or Cloudflare
 Cron Trigger to detect client-version rejection before viewers hit it.
+
+Optional relay controls:
+
+- `ALLOWED_ORIGINS=https://your-pwa.example` rejects browser callers from other
+  origins.
+- `RATE_LIMIT_PER_MINUTE=120` limits each client IP per Worker isolate; set `0`
+  to disable.
 
 ## Local Sandbox
 
@@ -148,6 +161,12 @@ Expected behavior:
 - higher-quality or emphasized messages move slower
 - the seekbar-area toggle can hide/show danmaku
 - default YouTube chat hide/show follows settings
+
+Known limitation:
+
+- YouTube pop-out chat runs in a separate tab without the video player, so this
+  extension does not render pop-out chat messages over the original video tab.
+  Use the normal embedded chat on the watch page for the overlay.
 
 ## Release Build
 

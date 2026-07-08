@@ -193,7 +193,7 @@
     };
 
     attach();
-    return { attach, update };
+    return { attach, update, remove: () => button.remove() };
   }
 
   function applyDefaultChatSuppression(settings) {
@@ -211,9 +211,42 @@
     let settings = Settings ? await Settings.load() : { enabled: true, hideDefaultChat: false };
     if (Settings) overlay.setConfig(Settings.toEngineConfig(settings));
     ensureRuntimeStyles();
+    let trackedVideo = null;
+
+    const applyVideoPauseState = () => {
+      if (!settings.enabled || !settings.pauseWithVideo || !overlay.canvas) return;
+      if (trackedVideo?.paused) overlay.stop();
+      else overlay.start();
+    };
+
+    const bindVideoPause = () => {
+      const nextVideo = document.querySelector("video");
+      if (nextVideo === trackedVideo) {
+        applyVideoPauseState();
+        return;
+      }
+      trackedVideo?.removeEventListener?.("pause", applyVideoPauseState);
+      trackedVideo?.removeEventListener?.("play", applyVideoPauseState);
+      trackedVideo = nextVideo;
+      trackedVideo?.addEventListener?.("pause", applyVideoPauseState);
+      trackedVideo?.addEventListener?.("play", applyVideoPauseState);
+      applyVideoPauseState();
+    };
 
     const attach = () => {
-      toggle?.attach();
+      if (!hasLiveChatShell()) {
+        toggle?.remove();
+        overlay.detach();
+        applyDefaultChatSuppression({ ...settings, enabled: false });
+        return;
+      }
+      if (!toggle) {
+        toggle = createOverlayToggle(
+          () => settings,
+          (enabled) => saveSettings({ ...settings, enabled })
+        );
+      }
+      toggle.attach();
       applyDefaultChatSuppression(settings);
       if (!settings.enabled) return;
       const player = findPlayer();
@@ -221,6 +254,7 @@
           (player !== overlay.player || !overlay.canvas || !overlay.canvas.isConnected)) {
         overlay.attach(player);
       }
+      bindVideoPause();
     };
 
     const applySettings = (next) => {
@@ -231,6 +265,8 @@
       applyDefaultChatSuppression(next);
       if (next.enabled && !wasEnabled) attach();
       else if (!next.enabled && wasEnabled) overlay.detach();
+      else if (next.enabled && next.pauseWithVideo) bindVideoPause();
+      else if (next.enabled && !next.pauseWithVideo && overlay.canvas) overlay.start();
     };
 
     const saveSettings = async (next) => {
@@ -243,14 +279,24 @@
       }
     };
 
-    const toggle = createOverlayToggle(
-      () => settings,
-      (enabled) => saveSettings({ ...settings, enabled })
-    );
+    let toggle = null;
+
+    let attachTimer = 0;
+    const scheduleAttach = () => {
+      clearTimeout(attachTimer);
+      attachTimer = setTimeout(attach, 250);
+    };
+    const pageObserver = new MutationObserver(scheduleAttach);
+    pageObserver.observe(document.documentElement, {
+      childList: true,
+      subtree: true
+    });
 
     attach();
-    window.setInterval(attach, 1500);
-    window.addEventListener("yt-navigate-finish", attach);
+    window.addEventListener("yt-navigate-finish", () => {
+      overlay.clear();
+      scheduleAttach();
+    });
 
     Settings?.onChange((next) => {
       applySettings(next);
@@ -262,6 +308,12 @@
       if (settings.enabled && payload) overlay.push(payload);
       return false;
     });
+  }
+
+  function hasLiveChatShell() {
+    return Boolean(
+      document.querySelector?.("ytd-live-chat-frame, #chat iframe[src*='live_chat'], ytd-watch-flexy #chat")
+    );
   }
 
   // --- Chat extraction (all frames) -----------------------------------------
@@ -350,9 +402,12 @@
 
     const author = sanitizeText(extractText(node, "#author-name"), MAX_AUTHOR_LENGTH);
     const kind = extractKind(node);
+    const amount = kind === "paid" ? sanitizeText(extractAmount(node), 40) : "";
+    const paidColor = kind === "paid" ? extractPaidColor(node) : null;
+    const authorChannelId = extractAuthorChannelId(node);
     const authorType = extractAuthorType(node);
     if (isOfficialChatText({ author, text, kind })) return;
-    if (globalThis.SYCFilter?.shouldDrop(author, text)) return;
+    if (globalThis.SYCFilter?.shouldDrop(author, text, authorChannelId)) return;
 
     const scorer = getScorer();
     const result = scorer.score({ text, authorType, kind });
@@ -366,12 +421,12 @@
         author,
         kind,
         authorType,
+        amount: amount || null,
+        paidColor,
         tier: renderPlan.tier,
         durationMs: renderPlan.durationMs,
         score: renderPlan.score,
-        emphasis: renderPlan.emphasis,
-        reasons: renderPlan.reasons,
-        createdAt: Date.now()
+        emphasis: renderPlan.emphasis
       }
     });
   }
@@ -380,6 +435,34 @@
     if (node.matches?.("yt-live-chat-paid-message-renderer")) return "paid";
     if (node.matches?.("yt-live-chat-membership-item-renderer")) return "membership";
     return "text";
+  }
+
+  function extractAmount(node) {
+    return normalizeDisplayText(
+      node.querySelector?.("#purchase-amount, #purchase-amount-column")?.textContent || ""
+    );
+  }
+
+  function extractPaidColor(node) {
+    const style = globalThis.getComputedStyle?.(node);
+    const candidates = [
+      style?.getPropertyValue?.("--yt-live-chat-paid-message-primary-color"),
+      style?.getPropertyValue?.("--yt-live-chat-paid-message-secondary-color"),
+      style?.backgroundColor
+    ];
+    for (const color of candidates) {
+      const safe = globalThis.SYCSanitize?.sanitizeCssColor?.(color);
+      if (safe) return safe;
+    }
+    return null;
+  }
+
+  function extractAuthorChannelId(node) {
+    return normalizeDisplayText(
+      node.getAttribute?.("author-external-channel-id") ||
+      node.querySelector?.("#author-name")?.getAttribute?.("external-channel-id") ||
+      ""
+    );
   }
 
   function isUserChatMessageNode(node) {
@@ -399,9 +482,9 @@
 
   function isOfficialChatText({ author, text, kind }) {
     const normalizedAuthor = author.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
-    if (!author && kind === "text") return true;
+    if (!author && kind === "text") return OFFICIAL_TEXT_PATTERNS.some((pattern) => pattern.test(text));
     if (OFFICIAL_AUTHORS.has(normalizedAuthor)) return true;
-    return OFFICIAL_TEXT_PATTERNS.some((pattern) => pattern.test(text));
+    return false;
   }
 
   function extractAuthorType(node) {
@@ -452,8 +535,12 @@
   if (globalThis.__SYC_TEST__) {
     globalThis.__SYCContentTest = {
       extractMessageText,
+      extractAmount,
+      extractPaidColor,
+      extractAuthorChannelId,
       extractDisplayText,
       normalizeDisplayText,
+      hasLiveChatShell,
       extractAuthorType,
       isOfficialChatText,
       isUserChatMessageNode,
@@ -467,7 +554,7 @@
     };
   }
 
-  if (isTopFrame()) initRenderer();
+  if (isTopFrame() && !location.pathname.startsWith("/live_chat")) initRenderer();
   // Extraction only runs inside the live-chat iframe. A document-wide
   // MutationObserver on the heavy watch page caused jank for no benefit — there
   // are no chat nodes in the top frame.

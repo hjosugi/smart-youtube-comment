@@ -14,6 +14,10 @@ const manifest = JSON.parse(
 assert("name set", manifest.name === "Smart YouTube Comment")
 assert("start_url set", manifest.start_url === "./")
 assert("display standalone", manifest.display === "standalone")
+assert(
+  "share_target maps shared URL into launch param",
+  manifest.share_target?.method === "GET" && manifest.share_target?.params?.url === "v",
+)
 assert("theme/background colors", !!manifest.theme_color && !!manifest.background_color)
 assert("has >=1 icon", Array.isArray(manifest.icons) && manifest.icons.length >= 1)
 assert(
@@ -34,6 +38,10 @@ for (const icon of manifest.icons) {
 
 // the service worker shell only lists files that exist (no broken precache)
 const swSrc = await readFile(new URL("../../web/dist/sw.js", import.meta.url), "utf8")
+assert(
+  "SW cache name is build-stamped",
+  /const CACHE = "syc-shell-[0-9a-f]{16}"/.test(swSrc) && !swSrc.includes("__SYC_SHELL_VERSION__"),
+)
 const shell =
   (swSrc.match(/const SHELL = \[([\s\S]*?)\]/)?.[1] || "")
     .match(/"\.\/[^"]*"/g)

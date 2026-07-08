@@ -40,9 +40,10 @@ export const readParams = (
   options: { baseUrl?: string; trustedRelayOrigins?: Iterable<string> } = {},
 ) => {
   const p = new URLSearchParams(search)
+  const launch = p.get("v") || p.get("url") || p.get("text") || ""
   return {
-    video: parseVideoId(p.get("v") || ""),
-    start: parseStartSeconds(search) || parseStartSeconds(p.get("v") || ""),
+    video: parseVideoId(launch),
+    start: parseStartSeconds(search) || parseStartSeconds(launch),
     relay: sanitizeRelayBase(p.get("relay") || "", options),
     mock: p.get("mock") === "1",
     perf: p.get("perf") === "1",

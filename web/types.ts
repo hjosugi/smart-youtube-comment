@@ -21,6 +21,7 @@ export interface ChatMessage {
   text: string
   parts: Part[]
   amount: string | null
+  paidColor?: string | null
   /** replay/VOD only: the message's video timestamp (ms). */
   offsetMs?: number
 }
@@ -64,6 +65,8 @@ export interface RenderPayload {
   author: string
   kind: Kind
   authorType: AuthorType
+  amount?: string | null
+  paidColor?: string | null
   tier: number
   durationMs: number
   score: number

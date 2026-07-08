@@ -124,9 +124,20 @@ const assert = (name, cond, extra = "") => checks.push({ name, ok: !!cond, extra
 
 // --- filter: NG user (exact) + NG word (Aho-Corasick substring), normalized ---
 {
-  await F.save({ users: ["@SpamBot", " Troll "], words: ["discord.gg/", "草草草草"] })
+  await F.save({
+    users: ["@SpamBot", " Troll "],
+    words: ["discord.gg/", "草草草草", "/w{5,}/", "/[invalid/"],
+    channels: ["UCBlocked", "UCBlocked"],
+  })
   assert("filter: NG user exact (normalized case)", F.shouldDrop("@spambot", "hello") === true)
   assert("filter: NG user trimmed", F.shouldDrop("troll", "hi") === true)
+  assert("filter: NG channel exact", F.shouldDrop("@ok", "hello", "UCBlocked") === true)
+  assert("filter: NG channel is exact-case", F.shouldDrop("@ok", "hello", "ucblocked") === false)
+  assert("filter: NG regex match", F.shouldDrop("@ok", "wwwww") === true)
+  assert(
+    "filter: invalid regex stays literal",
+    F.shouldDrop("@ok", "this mentions /[invalid/ literally") === true,
+  )
   assert("filter: NG word substring match", F.shouldDrop("@ok", "join discord.gg/xyz now") === true)
   assert("filter: NG word unicode", F.shouldDrop("@ok", "うぽつ 草草草草草") === true)
   assert("filter: clean message passes", F.shouldDrop("@alice", "great stream today") === false)
@@ -134,7 +145,10 @@ const assert = (name, cond, extra = "") => checks.push({ name, ok: !!cond, extra
   const reloaded = await new Promise(r => setTimeout(async () => r(await F.load()), 0))
   assert(
     "filter: lists persisted",
-    reloaded.users.includes("@spambot") && reloaded.words.includes("discord.gg/"),
+    reloaded.users.includes("@spambot") &&
+      reloaded.words.includes("discord.gg/") &&
+      reloaded.words.includes("/w{5,}/") &&
+      reloaded.channels.includes("UCBlocked"),
   )
 }
 
@@ -178,12 +192,15 @@ const assert = (name, cond, extra = "") => checks.push({ name, ok: !!cond, extra
   )
   await F.save({ users: [], words: [] })
   assert("filter: empty lists never drop", F.shouldDrop("@anyone", "anything at all") === false)
-  await F.save({ users: [], words: ["abc", "abcdef"] })
+  await F.save({ users: [], words: ["abc", "abcdef"], channels: [] })
   assert(
     "filter: overlapping words both match",
     F.shouldDrop("@x", "zzabcdefzz") === true && F.shouldDrop("@x", "qabcq") === true,
   )
-  assert("filter: stats reflect lists", F.stats().words === 2)
+  assert(
+    "filter: stats reflect lists",
+    F.stats().words === 2 && F.stats().channels === 0 && F.stats().regexes === 0,
+  )
 }
 
 let allOk = true

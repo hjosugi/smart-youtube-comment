@@ -20,7 +20,8 @@ const ICON_PLAY =
 const ICON_PAUSE =
   '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>'
 
-export const mountControls = (stage, player, { hideMs = 3500 } = {}) => {
+export const mountControls = (stage, player, options: any = {}) => {
+  const { hideMs = 3500, isReplay = null } = options
   const wrap = el("div", { className: "vctl" })
   const bar = el("div", { className: "vctl-bar" })
   const playBtn = el("button", {
@@ -30,6 +31,7 @@ export const mountControls = (stage, player, { hideMs = 3500 } = {}) => {
   })
   const cur = el("span", { className: "vctl-time", textContent: "0:00" })
   const dur = el("span", { className: "vctl-time", textContent: "0:00" })
+  const live = el("span", { className: "vctl-live", textContent: "LIVE", hidden: true })
   const seek = el("input", {
     className: "vctl-seek",
     type: "range",
@@ -37,12 +39,17 @@ export const mountControls = (stage, player, { hideMs = 3500 } = {}) => {
     max: "1000",
     value: "0",
   })
-  bar.append(playBtn, cur, seek, dur)
+  bar.append(playBtn, cur, seek, dur, live)
   wrap.append(bar)
   stage.append(wrap)
 
   const isPlaying = () => player.getPlayerState?.() === PLAYING
   const duration = () => player.getDuration?.() || 0
+  const canSeek = () => {
+    const d = duration()
+    const replay = typeof isReplay === "function" ? isReplay() : true
+    return replay && Number.isFinite(d) && d > 0
+  }
   let hideTimer: any = null
   let scrubbing = false
   let lastCommittedSeek: { key: string; at: number } | null = null
@@ -72,8 +79,15 @@ export const mountControls = (stage, player, { hideMs = 3500 } = {}) => {
   playBtn.addEventListener("click", toggle)
 
   // Scrub: drag the seek bar, commit on release.
-  const previewSeek = () => (cur.textContent = fmtTime((seek.value / 1000) * duration()))
+  const previewSeek = () => {
+    if (canSeek()) cur.textContent = fmtTime((seek.value / 1000) * duration())
+  }
   const commitSeek = () => {
+    if (!canSeek()) {
+      scrubbing = false
+      show()
+      return
+    }
     const d = duration()
     const commitKey = `${seek.value}:${d}`
     const now = performance.now()
@@ -102,14 +116,27 @@ export const mountControls = (stage, player, { hideMs = 3500 } = {}) => {
 
   const tick = setInterval(() => {
     setIcon()
+    const seekable = canSeek()
+    seek.hidden = !seekable
+    seek.disabled = !seekable
+    dur.hidden = !seekable
+    live.hidden = seekable
+    wrap.classList.toggle("live", !seekable)
     dur.textContent = fmtTime(duration())
     if (scrubbing) return
     const d = duration()
     const t = player.getCurrentTime?.() || 0
-    if (d > 0) seek.value = String(Math.round((t / d) * 1000))
+    if (seekable) seek.value = String(Math.round((t / d) * 1000))
     cur.textContent = fmtTime(t)
   }, 500)
 
+  setIcon()
+  const seekable = canSeek()
+  seek.hidden = !seekable
+  seek.disabled = !seekable
+  dur.hidden = !seekable
+  live.hidden = seekable
+  wrap.classList.toggle("live", !seekable)
   show()
   return () => {
     clearInterval(tick)

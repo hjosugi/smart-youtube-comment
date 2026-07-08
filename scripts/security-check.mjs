@@ -72,11 +72,39 @@ function checkManifest() {
     if (csp.includes(forbidden)) fail(`extension_pages CSP must not contain ${forbidden}.`)
   }
 
-  const contentScript = manifest.content_scripts?.[0]
-  if (!contentScript || !sameArray(contentScript.matches, ["https://www.youtube.com/*"])) {
-    fail("content_scripts must remain scoped to https://www.youtube.com/*.")
+  const contentScripts = manifest.content_scripts ?? []
+  const rendererScript = contentScripts.find(script =>
+    sameArray(script.matches, ["https://www.youtube.com/watch*", "https://www.youtube.com/live/*"]),
+  )
+  const extractorScript = contentScripts.find(script =>
+    sameArray(script.matches, ["https://www.youtube.com/live_chat*"]),
+  )
+  if (!rendererScript) {
+    fail("renderer content_script must remain scoped to youtube watch/live top-frame pages.")
+  } else {
+    if (rendererScript.all_frames !== false)
+      fail("renderer content_script all_frames must be false.")
+    if (
+      !sameArray(rendererScript.js, [
+        "sanitize.js",
+        "scoring.js",
+        "danmaku.js",
+        "settings.js",
+        "content.js",
+      ])
+    ) {
+      fail("renderer content_script JS list changed unexpectedly.")
+    }
   }
-  if (contentScript?.all_frames !== true) fail("content_scripts all_frames must stay explicit.")
+  if (!extractorScript) {
+    fail("extractor content_script must remain scoped to youtube live_chat frames.")
+  } else {
+    if (extractorScript.all_frames !== true)
+      fail("extractor content_script all_frames must be true.")
+    if (!sameArray(extractorScript.js, ["sanitize.js", "scoring.js", "filter.js", "content.js"])) {
+      fail("extractor content_script JS list changed unexpectedly.")
+    }
+  }
 
   // The extension must not expose any web-accessible resources.
   const webResources = manifest.web_accessible_resources ?? []
@@ -113,7 +141,8 @@ function checkExtensionSource() {
     }
 
     // Allow the SVG XML namespace constant (used by createElementNS, never fetched).
-    const remoteUrl = /https?:\/\/(?!www\.youtube\.com\/\*|www\.w3\.org\/2000\/svg)/g
+    const remoteUrl =
+      /https?:\/\/(?!(?:www\.youtube\.com\/(?:watch\*|live\/\*|live_chat\*)|www\.w3\.org\/2000\/svg))/g
     for (const match of text.matchAll(remoteUrl)) {
       fail(`${rel(file)}:${lineNumber(text, match.index ?? 0)} contains a remote URL.`)
     }
