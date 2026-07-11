@@ -1,3 +1,6 @@
+<!-- i18n: language-switcher -->
+[English](DEVICE_TUNING.md) | [日本語](DEVICE_TUNING.ja.md)
+
 # Device Tuning Checklist
 
 Use this checklist before enabling heavier renderer work such as OffscreenCanvas.

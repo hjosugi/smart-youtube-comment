@@ -1,3 +1,6 @@
+<!-- i18n: language-switcher -->
+[English](README.md) | [日本語](README.ja.md)
+
 # Smart YouTube Comment Overlay
 
 Chrome MV3 extension prototype for a Nico-style YouTube live chat overlay. It

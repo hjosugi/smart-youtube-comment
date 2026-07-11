@@ -1,3 +1,6 @@
+<!-- i18n: language-switcher -->
+[English](PLAN.md) | [日本語](PLAN.ja.md)
+
 # Plan
 
 ## Current Architecture

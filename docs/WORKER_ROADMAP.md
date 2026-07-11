@@ -1,3 +1,6 @@
+<!-- i18n: language-switcher -->
+[English](WORKER_ROADMAP.md) | [日本語](WORKER_ROADMAP.ja.md)
+
 # Worker Roadmap
 
 ## Current Release

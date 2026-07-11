@@ -1,3 +1,6 @@
+<!-- i18n: language-switcher -->
+[English](SECURITY.md) | [日本語](SECURITY.ja.md)
+
 # Security Posture
 
 This project treats the Chrome extension as a browser supply-chain boundary.

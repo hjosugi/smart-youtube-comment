@@ -1,3 +1,6 @@
+<!-- i18n: language-switcher -->
+[English](STORE_AUTOMATION.md) | [日本語](STORE_AUTOMATION.ja.md)
+
 # Chrome Web Store Automation
 
 This repo can automate repeat Chrome Web Store updates after the one-time store

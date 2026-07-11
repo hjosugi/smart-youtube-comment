@@ -1,3 +1,6 @@
+<!-- i18n: language-switcher -->
+[English](PRIVACY.md) | [日本語](PRIVACY.ja.md)
+
 # Privacy Policy
 
 Smart YouTube Comment Overlay is a Chrome extension that displays YouTube live
