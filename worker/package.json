@@ -15,8 +15,8 @@
     "test": "node --test test/innertube-parse.mjs test/innertube-io.mjs test/index.mjs"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "4.20260702.1",
-    "wrangler": "4.107.0"
+    "@cloudflare/workers-types": "5.20260726.1",
+    "wrangler": "4.114.0"
   },
   "license": "0BSD"
 }
