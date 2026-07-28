@@ -1,3 +1,6 @@
+<!-- i18n: language-switcher -->
+[English](CLAUDE_EXTENSION_INSTRUCTIONS.en.md) | [日本語](CLAUDE_EXTENSION_INSTRUCTIONS.md)
+
 # Claude Extension Instructions - 2026-06-17
 
 このファイルは Claude に渡すための作業指示書です。Claude の主担当は

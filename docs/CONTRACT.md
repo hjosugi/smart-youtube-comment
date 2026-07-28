@@ -1,3 +1,6 @@
+<!-- i18n: language-switcher -->
+[English](CONTRACT.md) | [日本語](CONTRACT.ja.md)
+
 # Interface Contract
 
 This file documents the message and scoring shapes used inside the extension.

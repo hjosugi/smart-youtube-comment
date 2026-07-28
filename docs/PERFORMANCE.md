@@ -1,3 +1,6 @@
+<!-- i18n: language-switcher -->
+[English](PERFORMANCE.md) | [日本語](PERFORMANCE.ja.md)
+
 # Performance Notes
 
 The project is JavaScript-only. Scoring is cheap; browser extraction and

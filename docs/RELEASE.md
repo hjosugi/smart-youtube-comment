@@ -1,3 +1,6 @@
+<!-- i18n: language-switcher -->
+[English](RELEASE.md) | [日本語](RELEASE.ja.md)
+
 # Release Guide
 
 This is the local release path for the JavaScript-only Chrome extension.
