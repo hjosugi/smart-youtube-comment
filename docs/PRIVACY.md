@@ -6,6 +6,11 @@
 Smart YouTube Comment Overlay is a Chrome extension that displays YouTube live
 chat as an on-video comment overlay.
 
+This policy covers the Chrome Web Store item
+`nkphcfhnfjceplpgcjccnpfdkheafohp`:
+
+<https://chromewebstore.google.com/detail/nkphcfhnfjceplpgcjccnpfdkheafohp>
+
 ## Data Processed
 
 The extension processes the following data locally in the browser:

@@ -143,10 +143,12 @@ writeFileSync(
 
 ## Known Limitations
 
-- Prototype build
+- Pre-release build; the reviewed store build lives at
+  https://chromewebstore.google.com/detail/nkphcfhnfjceplpgcjccnpfdkheafohp
 - YouTube DOM changes may break extraction
 - Busy-stream performance still needs real Chrome profiling
-- Chrome Web Store submission requires the one-time store listing and privacy setup
+- Chrome Web Store submission is gated on review, so this zip can be ahead of
+  the published version
 `,
 )
 

@@ -5,6 +5,23 @@
 
 This is the local release path for the JavaScript-only Chrome extension.
 
+## Published Listing
+
+The extension is live on the Chrome Web Store:
+
+```text
+https://chromewebstore.google.com/detail/nkphcfhnfjceplpgcjccnpfdkheafohp
+```
+
+- extension ID: `nkphcfhnfjceplpgcjccnpfdkheafohp`
+- category: Entertainment
+- listing languages: English and Japanese
+- privacy policy: `docs/PRIVACY.md`
+- support site: the GitHub issue tracker
+
+The one-time listing, category, privacy, and data-use setup is done. Repeat
+releases only need a version bump and a `vX.Y.Z` tag.
+
 ## Release Strategy
 
 Use three stages:
@@ -12,9 +29,8 @@ Use three stages:
 1. **Local unpacked release**: load `extension/` directly in Chrome.
 2. **Zip release**: create `.release/smart-youtube-comment-vX.Y.Z.zip` and share
    it with testers who can load unpacked extensions.
-3. **Chrome Web Store release**: after the one-time store listing and OAuth
-   setup, upload and publish through `scripts/chrome-webstore.mjs` or GitHub
-   Actions.
+3. **Chrome Web Store release**: upload and publish through
+   `scripts/chrome-webstore.mjs` or GitHub Actions.
 
 The `.release/` directory is ignored by Git. Artifacts are reproducible from
 tracked extension source; there is no build step.
@@ -203,16 +219,16 @@ Tester install flow:
 
 ## Known Release Limitations
 
-Do not present this as production-ready yet:
+The listing is public, but the project is still early:
 
 - YouTube DOM changes may break extraction
 - performance still needs real busy-stream profiling
 - YouTube pop-out chat tabs are not supported because the renderer needs the
   original watch page's video player
-- Chrome Web Store listing assets, privacy copy, and data-use declarations still
-  require one-time dashboard setup
 - real-YouTube smoke is opt-in because it depends on a currently active public
   stream with accessible chat
+- the published store version only moves after Chrome Web Store review, so it
+  can trail `main` by one or more versions
 
 ## Store Release Gate
 
@@ -222,8 +238,40 @@ Submit store releases only after these are done:
 - concise privacy note: all scoring/filtering is local and no network calls are
   made by the extension
 - rollback plan for YouTube DOM breakage
-- one-time Chrome Web Store listing and OAuth setup from `docs/STORE_AUTOMATION.md`
+- publisher credentials still valid; confirm with
+  `npm run release:store:status` or the `status_only` workflow dispatch
 - a tagged Git release matching the manifest version
+
+## Store Release Troubleshooting
+
+`Upload to Chrome Web Store` failing with:
+
+```text
+403 PERMISSION_DENIED
+Permission denied on resource 'publishers/<id>/items/<id>' (or it might not exist).
+```
+
+means the token reached the API but the identity behind it is not allowed to
+touch that item. Check, in order:
+
+1. `CHROME_WEBSTORE_EXTENSION_ID` matches the published item
+   (`nkphcfhnfjceplpgcjccnpfdkheafohp`).
+2. `CHROME_WEBSTORE_PUBLISHER_ID` matches the publisher that owns the item.
+3. The service account in `GCP_SERVICE_ACCOUNT` is added as a member of that
+   publisher in the Chrome Web Store Developer Dashboard, and the invitation
+   was accepted.
+4. The Chrome Web Store API is enabled in the Google Cloud project.
+
+Re-check without touching the store package:
+
+```sh
+npm run release:store:status
+```
+
+The tag run is safe to retry after fixing credentials: re-push the tag, or use
+`workflow_dispatch` on `.github/workflows/chrome-webstore-release.yml`. A tag
+whose upload failed leaves the store listing untouched, so the previously
+approved version stays live.
 
 ## Rollback
 

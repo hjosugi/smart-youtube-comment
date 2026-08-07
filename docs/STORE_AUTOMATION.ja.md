@@ -7,6 +7,16 @@
 
 思考不要のステップバイステップの日本語ランブックについては、`docs/STORE_RELEASE_RUNBOOK_JA.md` を参照してください。
 
+## 現在のアイテム
+
+ストアのアイテムは作成済みで、公開されています：
+
+```text
+https://chromewebstore.google.com/detail/nkphcfhnfjceplpgcjccnpfdkheafohp
+```
+
+`CHROME_WEBSTORE_EXTENSION_ID` は `nkphcfhnfjceplpgcjccnpfdkheafohp`、`CHROME_WEBSTORE_PUBLISHER_ID` はそのアイテムを所有するパブリッシャーである必要があります。以下の「一度限りの手動設定」はすでに完了済みで、アイテムを作り直す場合や設定を監査する場合の参考として残しています。
+
 ## 自動化できること
 
 - バージョンの整合性チェック
@@ -115,6 +125,12 @@ git push origin main --tags
 - `CHROME_WEBSTORE_UPLOAD_POLL_DELAY_MS=5000`：ステータスポーリング間の遅延。
 
 デフォルトでは、公開は Chrome Web Store API 警告でブロックされます。これにより、自動化がポリシーや検証の警告を誤って公開リリースに変えることを防ぎます。
+
+## 失敗パターン
+
+`publishers/<publisher>/items/<item>` に対する `403 PERMISSION_DENIED` は、認証自体は成功したものの、その主体がアイテムを所有するパブリッシャーのメンバーでないか、ID の組み合わせが存在しないアイテムを指していることを意味します。シークレットかダッシュボードのメンバー設定を修正してください。バージョンを上げて回避しようとしないでください。詳しいチェックリストは `docs/RELEASE.ja.md` にあります。
+
+アップロードに失敗しても公開中のリスティングは変更されないため、審査済みの既存バージョンはそのまま残り、同じタグをやり直せます。
 
 ## ロールバック
 

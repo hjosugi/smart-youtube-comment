@@ -5,6 +5,10 @@
 
 Smart YouTube Comment Overlayは、YouTubeのライブチャットを動画上のコメントオーバーレイとして表示するChrome拡張機能です。
 
+本ポリシーは、Chrome ウェブストアのアイテム`nkphcfhnfjceplpgcjccnpfdkheafohp`を対象とします：
+
+<https://chromewebstore.google.com/detail/nkphcfhnfjceplpgcjccnpfdkheafohp>
+
 ## 処理されるデータ
 
 この拡張機能は、ブラウザ内で以下のデータをローカルに処理します：

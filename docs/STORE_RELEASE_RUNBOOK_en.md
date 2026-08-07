@@ -5,6 +5,27 @@
 
 Purpose: Avoid manual errors. Follow the steps from top to bottom, and for a normal release, simply push the `vX.Y.Z` tag.
 
+## Current State
+
+The item exists and is published on the store.
+
+```text
+https://chromewebstore.google.com/detail/nkphcfhnfjceplpgcjccnpfdkheafohp
+```
+
+```sh
+export CHROME_WEBSTORE_EXTENSION_ID="nkphcfhnfjceplpgcjccnpfdkheafohp"
+```
+
+First-Time Setup 1 through 3 are done. Read them only when recreating the item
+or when changing listing copy, screenshots, or privacy declarations.
+
+First-Time Setup 4 through 7 cover Google Cloud and GitHub Secrets. If
+`Upload to Chrome Web Store` fails with `403`, go straight to
+`Chrome Web Store API returns 403` under "In Case of Failure".
+
+Normally you only need "Regular Releases".
+
 ## Key Rules to Follow
 
 - The main method is "Service Account + GitHub OIDC." Do not use refresh tokens.

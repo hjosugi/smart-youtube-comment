@@ -3,13 +3,29 @@
 
 # スマートYouTubeコメントオーバーレイ
 
-NicoスタイルのYouTubeライブチャットオーバーレイのためのChrome MV3拡張機能プロトタイプです。メッセージをJavaScriptでローカルにスコアリングし、そのスコアを使用してコメントがビデオ上を速く、通常、または遅く移動するかを決定します。
+[![Chrome Web Store](https://img.shields.io/badge/Chrome%20Web%20Store-スマート%20YouTube%20コメントオーバーレイ-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/nkphcfhnfjceplpgcjccnpfdkheafohp)
+
+NicoスタイルのYouTubeライブチャットオーバーレイのためのChrome MV3拡張機能です。メッセージをJavaScriptでローカルにスコアリングし、そのスコアを使用してコメントがビデオ上を速く、通常、または遅く移動するかを決定します。
 
 目的は、有用なコメントを目立たせ、短い繰り返し反応、絵文字の洪水、または低価値のバーストが他のすべてを埋め尽くさないようにすることです。
 
+## インストール
+
+拡張機能はChrome ウェブストアで公開されています:
+
+<https://chromewebstore.google.com/detail/nkphcfhnfjceplpgcjccnpfdkheafohp>
+
+- 拡張機能ID: `nkphcfhnfjceplpgcjccnpfdkheafohp`
+- ストアのカテゴリ: エンタテイメント
+- リスティングの言語: 英語と日本語
+- サポート・不具合報告: <https://github.com/hjosugi/smart-youtube-comment/issues>
+- プライバシーポリシー: [docs/PRIVACY.ja.md](docs/PRIVACY.ja.md)
+
+ストアのリスティングはChrome ウェブストアの審査を通過した最新バージョンを示すため、このリポジトリのバージョンより古い場合があります。最新のソースを試すには、[Chromeに読み込む](#chromeに読み込む)の手順で`extension/`を未パッケージのまま読み込んでください。
+
 ## ステータス
 
-実装済み:
+Chrome ウェブストアで公開済みです。実装済み:
 
 - Chrome MV3拡張機能のスキャフォールド
 - `web/`内のモバイルPWA
@@ -127,6 +143,8 @@ http://127.0.0.1:4173/
 
 ## Chromeに読み込む
 
+公開済みのストア版ではなく、現在のソースを動かしたい場合はこの手順を使います。
+
 1. `chrome://extensions`を開きます。
 2. 開発者モードを有効にします。
 3. `未パッケージの読み込み`をクリックします。
@@ -161,7 +179,9 @@ Bunパス:
 bun run release:zip:bun
 ```
 
-アーティファクトは`.release/`に書き込まれ、Gitによって無視されます。詳細は[docs/RELEASE.md](docs/RELEASE.md)を参照してください。
+アーティファクトは`.release/`に書き込まれ、Gitによって無視されます。詳細は[docs/RELEASE.ja.md](docs/RELEASE.ja.md)を参照してください。
+
+ストアへのリリースは`vX.Y.Z`タグから[`.github/workflows/chrome-webstore-release.yml`](.github/workflows/chrome-webstore-release.yml)経由で実行されます。ストアのリスティングとパブリッシャーの初回設定は完了済みです。ワークフローが必要とする認証情報については[docs/STORE_AUTOMATION.ja.md](docs/STORE_AUTOMATION.ja.md)を参照してください。
 
 パッケージとマニフェストのバージョンを一緒に設定します:
 
