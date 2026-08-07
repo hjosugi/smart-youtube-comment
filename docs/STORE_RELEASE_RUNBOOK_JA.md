@@ -6,6 +6,27 @@
 目的: 手作業で迷わない。上から順番にチェックして、通常リリースは
 `vX.Y.Z` タグを押すだけにする。
 
+## 現状
+
+item は作成済みで、ストアで公開中。
+
+```text
+https://chromewebstore.google.com/detail/nkphcfhnfjceplpgcjccnpfdkheafohp
+```
+
+```sh
+export CHROME_WEBSTORE_EXTENSION_ID="nkphcfhnfjceplpgcjccnpfdkheafohp"
+```
+
+「初回だけ 1」から「初回だけ 3」は完了済み。読むのは、item を作り直すときか、
+リスティングの文言・画像・privacy を直すときだけでよい。
+
+「初回だけ 4」から「初回だけ 7」は Google Cloud と GitHub Secrets の設定なので、
+`Upload to Chrome Web Store` が `403` で落ちたら「失敗時」の
+`Chrome Web Store API が 403` を先に見る。
+
+通常は「毎回の通常リリース」だけを使う。
+
 ## まず守ること
 
 - 本線は「サービスアカウント + GitHub OIDC」。refresh token は使わない。

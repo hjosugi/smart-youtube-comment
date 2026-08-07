@@ -10,6 +10,19 @@ path only packages the existing `extension/` directory and submits the zip.
 For the no-thinking, step-by-step Japanese runbook, use
 `docs/STORE_RELEASE_RUNBOOK_JA.md`.
 
+## Current Item
+
+The store item exists and is published:
+
+```text
+https://chromewebstore.google.com/detail/nkphcfhnfjceplpgcjccnpfdkheafohp
+```
+
+`CHROME_WEBSTORE_EXTENSION_ID` must be `nkphcfhnfjceplpgcjccnpfdkheafohp`, and
+`CHROME_WEBSTORE_PUBLISHER_ID` must be the publisher that owns it. The one-time
+listing, category, privacy, and data-use setup below is already done; it is kept
+here as reference for recreating or auditing the item.
+
 ## What Can Be Automated
 
 - version consistency checks
@@ -133,6 +146,18 @@ the version bump back to the repository.
 By default, publishing blocks on Chrome Web Store API warnings. This keeps the
 automation from turning a policy or validation warning into an accidental public
 release.
+
+## Failure Modes
+
+`403 PERMISSION_DENIED` on
+`publishers/<publisher>/items/<item>` means authentication worked but the
+identity is not a member of the publisher that owns the item, or the IDs point
+at an item that does not exist. Fix the secrets or the dashboard membership;
+do not bump the version to work around it. Full checklist in
+`docs/RELEASE.md`.
+
+A failed upload leaves the published listing untouched, so the previously
+approved version stays live and the same tag can be retried.
 
 ## Rollback
 

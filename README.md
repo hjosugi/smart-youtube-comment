@@ -3,16 +3,34 @@
 
 # Smart YouTube Comment Overlay
 
-Chrome MV3 extension prototype for a Nico-style YouTube live chat overlay. It
-scores messages locally in JavaScript and uses that score to decide whether a
-comment should move quickly, normally, or slowly across the video.
+[![Chrome Web Store](https://img.shields.io/badge/Chrome%20Web%20Store-Smart%20YouTube%20Comment%20Overlay-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/nkphcfhnfjceplpgcjccnpfdkheafohp)
+
+Chrome MV3 extension for a Nico-style YouTube live chat overlay. It scores
+messages locally in JavaScript and uses that score to decide whether a comment
+should move quickly, normally, or slowly across the video.
 
 The goal is to keep useful comments visible without letting short repeated
 reactions, emoji floods, or low-value bursts bury everything else.
 
+## Install
+
+The extension is published on the Chrome Web Store:
+
+<https://chromewebstore.google.com/detail/nkphcfhnfjceplpgcjccnpfdkheafohp>
+
+- extension ID: `nkphcfhnfjceplpgcjccnpfdkheafohp`
+- store category: Entertainment
+- listing languages: English and Japanese
+- support and bug reports: <https://github.com/hjosugi/smart-youtube-comment/issues>
+- privacy policy: [docs/PRIVACY.md](docs/PRIVACY.md)
+
+The store listing tracks the last version that passed Chrome Web Store review,
+so it can trail the version in this repository. To run the newest source, load
+`extension/` unpacked as described in [Load In Chrome](#load-in-chrome).
+
 ## Status
 
-Implemented:
+Published on the Chrome Web Store. Implemented:
 
 - Chrome MV3 extension scaffold
 - mobile PWA under `web/`
@@ -148,6 +166,8 @@ live chat, and renders comments over a fake video surface.
 
 ## Load In Chrome
 
+Use this path to run the current source instead of the published store build.
+
 1. Open `chrome://extensions`.
 2. Enable Developer mode.
 3. Click `Load unpacked`.
@@ -187,6 +207,12 @@ bun run release:zip:bun
 
 Artifacts are written to `.release/`, which is ignored by Git. See
 [docs/RELEASE.md](docs/RELEASE.md).
+
+Store releases go out from a `vX.Y.Z` tag through
+[`.github/workflows/chrome-webstore-release.yml`](.github/workflows/chrome-webstore-release.yml).
+The store listing and publisher setup is already done; see
+[docs/STORE_AUTOMATION.md](docs/STORE_AUTOMATION.md) for the credentials the
+workflow needs.
 
 Set package and manifest versions together:
 

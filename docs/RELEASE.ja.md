@@ -5,13 +5,29 @@
 
 これはJavaScriptのみのChrome拡張機能のローカルリリースパスです。
 
+## 公開中のリスティング
+
+拡張機能はChrome ウェブストアで公開済みです：
+
+```text
+https://chromewebstore.google.com/detail/nkphcfhnfjceplpgcjccnpfdkheafohp
+```
+
+- 拡張機能ID：`nkphcfhnfjceplpgcjccnpfdkheafohp`
+- カテゴリ：エンタテイメント
+- リスティングの言語：英語と日本語
+- プライバシーポリシー：`docs/PRIVACY.ja.md`
+- サポートサイト：GitHubのイシュートラッカー
+
+一度限りのリスティング・カテゴリ・プライバシー・データ使用宣言の設定は完了済みです。以降のリリースはバージョンを上げて`vX.Y.Z`タグを押すだけです。
+
 ## リリース戦略
 
 3つのステージを使用します：
 
 1. **ローカルのアンパックリリース**：`extension/`をChromeに直接読み込みます。
 2. **Zipリリース**：`.release/smart-youtube-comment-vX.Y.Z.zip`を作成し、アンパック拡張機能を読み込むことができるテスターと共有します。
-3. **Chromeウェブストアリリース**：一度限りのストアリストとOAuth設定の後、`scripts/chrome-webstore.mjs`またはGitHub Actionsを通じてアップロードおよび公開します。
+3. **Chromeウェブストアリリース**：`scripts/chrome-webstore.mjs`またはGitHub Actionsを通じてアップロードおよび公開します。
 
 `.release/`ディレクトリはGitによって無視されます。アーティファクトは追跡された拡張機能のソースから再現可能であり、ビルドステップはありません。
 
@@ -190,13 +206,13 @@ Zipを共有する前に：
 
 ## 既知のリリース制限
 
-これをまだ本番準備完了として提示しないでください：
+リスティングは公開済みですが、プロジェクト自体はまだ初期段階です：
 
 - YouTubeのDOMの変更が抽出を破損する可能性があります
 - パフォーマンスはまだ実際の忙しいストリームのプロファイリングが必要です
 - YouTubeのポップアウトチャットタブはサポートされていません。なぜなら、レンダラーが元の視聴ページのビデオプレーヤーを必要とするからです
-- Chromeウェブストアのリスト資産、プライバシーコピー、およびデータ使用宣言は、まだ一度限りのダッシュボード設定を必要とします
 - 実際のYouTubeスモークはオプトインです。なぜなら、現在アクティブな公開ストリームとアクセス可能なチャットに依存するからです
+- ストアで公開されるバージョンはChrome ウェブストアの審査後にのみ更新されるため、`main`より1つ以上古い場合があります
 
 ## ストアリリースゲート
 
@@ -205,8 +221,32 @@ Zipを共有する前に：
 - 複数のストリームでの実際のストリームスモークテスト
 - 簡潔なプライバシーノート：すべてのスコアリング/フィルタリングはローカルで行われ、拡張機能によるネットワーク呼び出しは行われません
 - YouTubeのDOM破損に対するロールバックプラン
-- `docs/STORE_AUTOMATION.md`からの一度限りのChromeウェブストアリストとOAuth設定
+- パブリッシャーの認証情報が有効であること：`npm run release:store:status`または`status_only`のworkflow dispatchで確認します
 - マニフェストバージョンに一致するタグ付きGitリリース
+
+## ストアリリースのトラブルシューティング
+
+`Upload to Chrome Web Store`が次のエラーで失敗する場合：
+
+```text
+403 PERMISSION_DENIED
+Permission denied on resource 'publishers/<id>/items/<id>' (or it might not exist).
+```
+
+トークンはAPIに到達しているものの、その主体がそのアイテムを操作する権限を持っていない状態です。次の順に確認します：
+
+1. `CHROME_WEBSTORE_EXTENSION_ID`が公開中のアイテム（`nkphcfhnfjceplpgcjccnpfdkheafohp`）と一致していること。
+2. `CHROME_WEBSTORE_PUBLISHER_ID`がそのアイテムを所有するパブリッシャーと一致していること。
+3. `GCP_SERVICE_ACCOUNT`のサービスアカウントが、Chrome ウェブストア Developer Dashboardでそのパブリッシャーのメンバーとして追加され、招待が承認されていること。
+4. Google CloudプロジェクトでChrome Web Store APIが有効になっていること。
+
+ストアのパッケージに触れずに再確認します：
+
+```sh
+npm run release:store:status
+```
+
+認証情報を直した後は、タグを押し直すか、`.github/workflows/chrome-webstore-release.yml`の`workflow_dispatch`で再実行できます。アップロードに失敗したタグはストアのリスティングを変更しないため、審査済みの既存バージョンはそのまま公開され続けます。
 
 ## ロールバック
 

@@ -87,11 +87,14 @@ Chrome Web Store update publishing is automated through:
 - `npm run release:store`
 - `.github/workflows/chrome-webstore-release.yml`
 
-The remaining manual work is the one-time Chrome Web Store Developer Dashboard
-setup: item creation, store listing copy/assets, privacy/data-use declarations,
-service-account or OAuth credential setup, and GitHub secret entry. After that,
-a matching `vX.Y.Z` tag can run checks, build the zip, upload it, and submit it
-for review/publishing.
+The one-time Chrome Web Store Developer Dashboard setup is done. The item is
+published as `nkphcfhnfjceplpgcjccnpfdkheafohp`, and a matching `vX.Y.Z` tag
+runs checks, builds the zip, uploads it, and submits it for review/publishing.
+
+The remaining manual work per release is Chrome Web Store review itself, so the
+published version can trail `main`. Keep the publisher credentials for the
+release workflow valid; `docs/RELEASE.md` has the checklist for `403` upload
+failures.
 
 ## Worker Roadmap
 
