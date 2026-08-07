@@ -43,7 +43,9 @@
     "version:set:bun": "bun scripts/set-version.mjs",
     "test:ext": "node bench/e2e/extension.mjs",
     "test:ext:bun": "bun bench/e2e/extension.mjs",
-    "test:ext:youtube": "SYC_REAL_YOUTUBE_REQUIRED=1 node bench/e2e/extension.mjs"
+    "test:ext:youtube": "SYC_REAL_YOUTUBE_REQUIRED=1 node bench/e2e/extension.mjs",
+    "graphify:setup": "sh scripts/graphify.sh setup",
+    "graphify:update": "sh scripts/graphify.sh update"
   },
   "devDependencies": {
     "esbuild": "0.28.1",
