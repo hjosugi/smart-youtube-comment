@@ -36,6 +36,7 @@ if (e2eSkip && REQUIRE_E2E) {
 }
 
 const SUITES = [
+  ["unit", "scripts/test/security-policy.mjs"],
   ["unit", "worker/test/innertube-parse.mjs"],
   ["unit", "worker/test/innertube-io.mjs"],
   ["unit", "extension/test/background.mjs"],
