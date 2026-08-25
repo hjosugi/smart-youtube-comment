@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { extname, join, relative, resolve } from "node:path"
+import { lifecycleScriptPolicy } from "./security-policy.mjs"
 
 const root = resolve(new URL("..", import.meta.url).pathname)
 const extensionDir = resolve(root, "extension")
@@ -158,12 +159,6 @@ function checkPackagePolicy() {
   for (const relDir of [".", "web", "worker"]) checkPackageRoot(relDir)
 }
 
-const allowedInstallScripts = new Set([
-  "node_modules/esbuild",
-  "node_modules/sharp",
-  "node_modules/workerd",
-])
-
 function checkPackageRoot(relDir) {
   const label = relDir === "." ? "." : relDir
   const packagePath = resolve(root, relDir, "package.json")
@@ -219,9 +214,10 @@ function checkPackageRoot(relDir) {
     if (!meta.resolved?.startsWith("https://registry.npmjs.org/")) {
       fail(`${label}/package-lock.json entry ${path} must resolve from the npm registry.`)
     }
-    if (meta.hasInstallScript && !meta.optional && !allowedInstallScripts.has(path)) {
+    const installScriptPolicy = lifecycleScriptPolicy(path, meta)
+    if (installScriptPolicy === "fail") {
       fail(`${label}/package-lock.json entry ${path} has a lifecycle install script.`)
-    } else if (meta.hasInstallScript) {
+    } else if (installScriptPolicy === "warn") {
       warn(
         `${label}/package-lock.json entry ${path} has an install script; keep it dev-only or optional.`,
       )

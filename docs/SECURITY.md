@@ -45,7 +45,9 @@ The gate fails if:
 - extension source adds network fetches or remote script/style URLs.
 - npm package specs are not pinned exactly.
 - lockfile entries lack integrity metadata or use non-registry tarballs.
-- non-optional npm packages use lifecycle install scripts.
+- non-optional npm packages use lifecycle install scripts, unless the package is
+  dev-only and its package identity is explicitly allowlisted. The identity
+  check is independent of npm's direct or nested lockfile layout.
 
 ## Manual Review Checklist
 
