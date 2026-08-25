@@ -246,6 +246,13 @@ Permission denied on resource 'publishers/<id>/items/<id>' (or it might not exis
 npm run release:store:status
 ```
 
+この出力はそのままIssueに貼っても安全です。`scripts/chrome-webstore.mjs`が
+`CHROME_WEBSTORE_PUBLISHER_ID`・`GCP_SERVICE_ACCOUNT`・OAuthシークレットを、
+表示するペイロードとAPIエラーメッセージの両方で`***`に伏せ字化します。実値を
+手で書き戻さないでください。Publisher IDはUUIDであり、GitHubのsecret scanningは
+裸のUUIDを`OpenVSX Access Token`として検知するため、公開リポジトリでは
+シークレットスキャンのアラートが発生します。
+
 認証情報を直した後は、タグを押し直すか、`.github/workflows/chrome-webstore-release.yml`の`workflow_dispatch`で再実行できます。アップロードに失敗したタグはストアのリスティングを変更しないため、審査済みの既存バージョンはそのまま公開され続けます。
 
 ## ロールバック
