@@ -113,7 +113,13 @@ test("validation rejects malformed video, continuation, and offset before upstre
     ["/api/livechat", "missing video or cont"],
     ["/api/livechat?video=short", "invalid video id"],
     ["/api/livechat?cont=%3Cscript%3E", "invalid cont"],
+    ["/api/livechat?cont=NEXT%253Cscript%253E", "invalid cont"],
+    ["/api/livechat?cont=NEXT%250A", "invalid cont"],
+    ["/api/livechat?cont=NEXT%25", "invalid cont"],
+    ["/api/livechat?cont=NEXT%253G", "invalid cont"],
+    ["/api/livechat?cont=NEXT%25253D", "invalid cont"],
     [`/api/livechat?cont=${"A".repeat(8193)}`, "cont too long"],
+    [`/api/livechat?cont=${"A".repeat(8191)}%253D`, "cont too long"],
     ["/api/livechat?cont=NEXT&offset=NaN", "invalid offset"],
     ["/api/livechat?cont=NEXT&offset=3000", "offset requires replay=1"],
   ]) {
@@ -121,6 +127,44 @@ test("validation rejects malformed video, continuation, and offset before upstre
     assert.equal(response.status, 400)
     assert.deepEqual(await readJson(response), { error })
   }
+})
+
+test("returned escaped continuations can be polled and share the decoded cache key", async () => {
+  let calls = 0
+  const deps = {
+    cache: new MemoryCache(),
+    fetchEnvelope: async params => {
+      calls += 1
+      if (params.video) return envelope({ continuation: "NEXT%3D%3D" })
+      assert.equal(params.cont, "NEXT==")
+      return envelope({ continuation: "AFTER" })
+    },
+  }
+
+  const initial = await handle(req("/api/livechat?video=abc123def45"), {}, ctx(), deps)
+  const token = (await readJson(initial)).continuation
+  const pollContext = ctx()
+  const poll = await handle(
+    req(`/api/livechat?cont=${encodeURIComponent(token)}`),
+    {},
+    pollContext,
+    deps,
+  )
+  assert.equal(poll.status, 200)
+  assert.equal((await readJson(poll)).continuation, "AFTER")
+  await Promise.all(pollContext.waits)
+
+  for (const equivalentToken of ["NEXT==", "NEXT%3d%3d"]) {
+    const cached = await handle(
+      req(`/api/livechat?cont=${encodeURIComponent(equivalentToken)}`),
+      {},
+      ctx(),
+      deps,
+    )
+    assert.equal(cached.status, 200)
+    assert.equal(cached.headers.get("X-SYC-Cache"), "HIT")
+  }
+  assert.equal(calls, 2)
 })
 
 test("configured origin allowlist rejects browser callers outside the list", async () => {

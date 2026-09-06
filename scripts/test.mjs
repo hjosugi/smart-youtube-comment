@@ -39,6 +39,7 @@ const SUITES = [
   ["unit", "scripts/test/security-policy.mjs"],
   ["unit", "worker/test/innertube-parse.mjs"],
   ["unit", "worker/test/innertube-io.mjs"],
+  ["unit", "worker/test/index.mjs"],
   ["unit", "extension/test/background.mjs"],
   ["unit", "extension/test/content-extract.mjs"],
   ["unit", "extension/test/i18n.mjs"],

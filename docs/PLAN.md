@@ -31,6 +31,9 @@ The scorer runs locally in the content script and performs no network calls.
 
 ## Contract Migration Notes
 
+- Relay input now accepts YouTube continuation tokens containing percent escapes
+  by decoding one additional layer before validation and cache lookup. The poll
+  envelope and client encoding stay the same; no client migration is required.
 - `paidColor` is an optional display-only `ChatMessage` / render payload field
   for Super Chat tier color. Older messages without it remain valid; `amount`
   remains nullable as before.

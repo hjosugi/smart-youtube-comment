@@ -81,6 +81,13 @@ Terminal signal: when the stream ends YouTube stops issuing continuations, so th
 relay sets `ended: true` and `continuation: null`. The device MUST stop polling
 on this signal (do not re-poll the previous token — it is dead).
 
+Clients treat `continuation` as opaque and URL-encode it once when sending
+`cont`. YouTube may include percent escapes inside the token itself, such as
+`%3D` padding. After parsing the query string, the relay decodes at most one
+additional layer before validation, caching, and upstream polling. Malformed
+escapes, invalid token characters, and tokens over 8192 characters before this
+additional decoding receive a 400 response.
+
 Replay (VOD) mode: when a video is a past-live recording, the relay reports
 `isReplay: true`. The device then polls
 `GET /api/livechat?cont=<token>&offset=<ms>&replay=1` where `offset` is the

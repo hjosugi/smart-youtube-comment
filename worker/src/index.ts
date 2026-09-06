@@ -81,8 +81,20 @@ const withHeader = (resp: Response, key: string, value: string): Response => {
   return r
 }
 
+const normalizeContinuation = (cont: string | null): string | null => {
+  // YouTube tokens can contain their own escapes (such as %3D padding), in
+  // addition to the query-string encoding. Keep malformed/oversized input for
+  // validate() to reject, and decode at most one additional layer.
+  if (!cont || cont.length > MAX_CONT_LEN) return cont
+  try {
+    return decodeURIComponent(cont)
+  } catch {
+    return cont
+  }
+}
+
 const readParams = (url: URL): Params => ({
-  cont: url.searchParams.get("cont"),
+  cont: normalizeContinuation(url.searchParams.get("cont")),
   video: url.searchParams.get("video"),
   offset: url.searchParams.has("offset") ? Number(url.searchParams.get("offset")) : null,
   replay: url.searchParams.get("replay") === "1" || url.searchParams.get("mode") === "replay",
