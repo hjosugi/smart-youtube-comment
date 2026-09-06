@@ -1,6 +1,6 @@
 {
   "name": "smart-youtube-comment",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "license": "0BSD",
   "type": "module",
