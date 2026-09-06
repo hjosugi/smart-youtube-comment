@@ -268,6 +268,13 @@ Re-check without touching the store package:
 npm run release:store:status
 ```
 
+That output is safe to paste into an issue: `scripts/chrome-webstore.mjs` masks
+`CHROME_WEBSTORE_PUBLISHER_ID`, `GCP_SERVICE_ACCOUNT`, and the OAuth secrets as
+`***` in both printed payloads and API error messages. Never re-add those raw
+values by hand. The publisher ID is a UUID, and GitHub secret scanning reports
+bare UUIDs as `OpenVSX Access Token`, which opens a secret-scanning alert on a
+public repository.
+
 The tag run is safe to retry after fixing credentials: re-push the tag, or use
 `workflow_dispatch` on `.github/workflows/chrome-webstore-release.yml`. A tag
 whose upload failed leaves the store listing untouched, so the previously

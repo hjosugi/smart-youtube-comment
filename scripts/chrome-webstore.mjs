@@ -79,6 +79,26 @@ function requireValue(name, value) {
   return value
 }
 
+function sensitiveValues() {
+  return [
+    configValue("--publisher-id", "CHROME_WEBSTORE_PUBLISHER_ID"),
+    process.env.CHROME_WEBSTORE_CLIENT_SECRET,
+    process.env.CHROME_WEBSTORE_REFRESH_TOKEN,
+    process.env.CHROME_WEBSTORE_ACCESS_TOKEN,
+    process.env.GCP_SERVICE_ACCOUNT,
+  ].filter(value => typeof value === "string" && value.length >= 8)
+}
+
+function redact(text) {
+  let output = String(text)
+  for (const value of sensitiveValues()) {
+    for (const form of new Set([value, encodeURIComponent(value)])) {
+      output = output.split(form).join("***")
+    }
+  }
+  return output
+}
+
 function resolveZipPath() {
   const explicit = argValue("--zip") || process.env.CHROME_WEBSTORE_ZIP || ""
   const artifactPath = explicit
@@ -180,7 +200,9 @@ async function requestJson(url, { method = "GET", token, headers = {}, body } = 
   const response = await fetch(url, init)
   const payload = await parseResponse(response)
   if (!response.ok) {
-    throw new Error(`${method} ${url} failed with ${response.status}\n${formatPayload(payload)}`)
+    throw new Error(
+      redact(`${method} ${url} failed with ${response.status}\n${formatPayload(payload)}`),
+    )
   }
   return payload
 }
@@ -219,7 +241,7 @@ async function getAccessToken() {
 
 function printJson(label, payload) {
   console.log(`${label}:`)
-  console.log(formatPayload(payload))
+  console.log(redact(formatPayload(payload)))
 }
 
 function uploadState(payload) {
@@ -354,6 +376,6 @@ async function main() {
 }
 
 main().catch(error => {
-  console.error(error.message)
+  console.error(redact(error.message))
   process.exit(1)
 })
