@@ -16,7 +16,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260820.1",
-    "wrangler": "4.125.0"
+    "wrangler": "4.128.0"
   },
   "license": "0BSD"
 }
