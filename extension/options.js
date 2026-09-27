@@ -185,8 +185,9 @@
       return input;
     }
     if (spec.type === "text") {
-      const input = document.createElement("input");
-      input.type = "text";
+      const input = document.createElement("textarea");
+      input.rows = 3;
+      input.spellcheck = false;
       input.className = "text";
       input.value = value ?? "";
       input.placeholder = spec.placeholder || "system default";

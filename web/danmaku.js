@@ -54,6 +54,7 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
     spreadStrength: 0.35, // how strongly length affects speed (0..1)
     flowDirection: "rtl", // rtl (right to left) | ltr (left to right)
     density: "top",       // top | bottom | random lane packing
+    maxWidthPct: 1,       // clamp a comment's width to a fraction of the stage
     cacheMax: 900,        // max cached bitmaps
     maxQueue: 1000,       // pending comments waiting for rasterization
     spawnPerFrame: 6,     // cap expensive canvas text rasterization per frame
@@ -405,8 +406,12 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
         nameMode === "always" || (nameMode === "nontext" && payload.kind && payload.kind !== "text")
       );
       const parts = (named ? [{ t: `${payload.author}: ` }, ...msgParts] : msgParts).slice(0, 60);
+      // Pixel-width clamp for plain-text comments; emoji parts are left as-is.
+      const fitted = parts.every((p) => !p.u)
+        ? [{ t: this._fitWidth(parts.map((p) => p.t).join(""), fontPx) }]
+        : parts;
       const glow = emphasis >= 0.62 && this.frameEMA < 24; // skip glow when frames are heavy
-      const bmp = this._rasterize(parts, paidColor || color, fontPx, glow);
+      const bmp = this._rasterize(fitted, paidColor || color, fontPx, glow);
 
       const td = this.cfg.tierDurations;
       const baseMs = (td && td[payload.tier] != null) ? td[payload.tier] : (payload.durationMs || 8000);
@@ -538,6 +543,27 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
         if (f < bestFree) { bestFree = f; best = i; }
       }
       return best;
+    }
+
+    // Clamp a plain-text comment's width to maxWidthPct of the stage, trimming
+    // with an ellipsis. Emoji parts are left untouched.
+    _fitWidth(text, fontPx) {
+      const pct = this.cfg.maxWidthPct ?? 1;
+      if (pct >= 1 || !this.w || !text) return text;
+      const maxPx = this.w * pct;
+      const family = this.cfg.fontFamily || 'system-ui, -apple-system, "Segoe UI", sans-serif';
+      const weight = this.cfg.fontWeight || 700;
+      if (!this.measure) this.measure = document.createElement("canvas").getContext("2d");
+      this.measure.font = `${weight} ${fontPx}px ${family}`;
+      if (this.measure.measureText(text).width <= maxPx) return text;
+      const chars = [...text];
+      let lo = 1, hi = chars.length;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (this.measure.measureText(chars.slice(0, mid).join("")).width <= maxPx) lo = mid;
+        else hi = mid - 1;
+      }
+      return `${chars.slice(0, Math.max(1, lo - 1)).join("")}…`;
     }
 
     // parts: [{ t: text } | { u: emojiUrl }]. Text is drawn with outline/glow;

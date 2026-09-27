@@ -63,6 +63,8 @@
   "s_dedupThreshold": { "message": "重複判定の厳しさ" },
   "s_flowDirection": { "message": "流れる方向" },
   "s_density": { "message": "表示密度" },
+  "s_maxWidthPct": { "message": "コメントの最大幅" },
+  "s_layerCss": { "message": "レイヤ限定ユーザーCSS" },
   "sp_default": { "message": "標準" },
   "sp_niconico": { "message": "ニコニコ風（速い）" },
   "sp_relaxed": { "message": "読みやすさ重視" },

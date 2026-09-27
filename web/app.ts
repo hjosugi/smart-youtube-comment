@@ -44,9 +44,24 @@ const addNgWord = async (word: string) => {
 const list = createCommentList($("list"), { onBlockUser: addNgUser, onBlockWord: addNgWord })
 
 let cfg: Record<string, any> = settings.DEFAULTS
+const applyLayerCss = (css: any) => {
+  const text = typeof css === "string" ? css.slice(0, 4000) : ""
+  let el = document.getElementById("syc-layer-css")
+  if (!text) {
+    el?.remove()
+    return
+  }
+  if (!el) {
+    el = document.createElement("style")
+    el.id = "syc-layer-css"
+    document.head.appendChild(el)
+  }
+  el.textContent = text
+}
 const applySettings = (s: Record<string, any>) => {
   cfg = s
   overlay.setConfig(settings.toEngineConfig(s))
+  applyLayerCss(s.layerCss)
   list.setVisible(s.listEnabled)
 }
 
@@ -63,7 +78,7 @@ const onMessages = (msgs: ChatMessage[]) => {
   const renderMessages: ChatMessage[] = []
   for (const raw of msgs) {
     const m = sanitizeChatMessage(raw)
-    const f = fate(m, now)
+    const f = fate(m, now - (cfg.timeshiftMs || 0))
     if (f === "skip") continue
     remember(m.id)
     if (f !== "show") continue

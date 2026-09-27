@@ -231,6 +231,15 @@ const assertFlowDirectionAndDensity = (label, Overlay) => {
   top.laneCount = 4
   top.lanes = [0, 0, 0, 0]
   assert.equal(top._pickLane(0), 0, `${label}: top density fills the first lane first`)
+
+  const fit = new Overlay({ dpr: 1, dedup: false, maxWidthPct: 0.5 })
+  fit.w = 100 // max width 50px; the stub measures 10px per character
+  assert.equal(fit._fitWidth("abc", 24), "abc", `${label}: narrow comments are unchanged`)
+  assert.equal(
+    fit._fitWidth("abcdefghij", 24).endsWith("…"),
+    true,
+    `${label}: wide comments are trimmed with an ellipsis`,
+  )
 }
 
 const assertLruCache = (label, Overlay, rasterize) => {
@@ -656,4 +665,4 @@ assertActiveCapEviction("extension", extensionOverlay)
 assertLaneSelectionAndClear("extension", extensionOverlay)
 assertPendingCompaction("extension", extensionOverlay)
 
-console.log("danmaku ok (162 assertions)")
+console.log("danmaku ok (166 assertions)")

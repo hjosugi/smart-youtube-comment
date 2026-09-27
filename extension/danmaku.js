@@ -51,6 +51,7 @@
     spreadStrength: 0.35, // how strongly length affects speed (0..1)
     flowDirection: "rtl", // rtl (right to left) | ltr (left to right)
     density: "top",       // top | bottom | random lane packing
+    maxWidthPct: 1,       // clamp a comment's width to a fraction of the stage
     cacheMax: 900,        // max cached bitmaps
     maxQueue: 2400,       // pending comments waiting for rasterization
     spawnPerFrame: 10,    // cap expensive canvas text rasterization per frame
@@ -408,7 +409,7 @@
       );
       const label = named ? `${payload.author}: ${body}` : body;
       const glow = emphasis >= 0.62 && this.frameEMA < 24; // skip glow when frames are heavy
-      const bmp = this._rasterize(label, labelColor, fontPx, glow);
+      const bmp = this._rasterize(this._fitWidth(label, fontPx), labelColor, fontPx, glow);
 
       const td = this.cfg.tierDurations;
       const baseMs = (td && td[payload.tier] != null) ? td[payload.tier] : (payload.durationMs || 8000);
@@ -540,6 +541,27 @@
         if (f < bestFree) { bestFree = f; best = i; }
       }
       return best;
+    }
+
+    // Clamp a comment's rendered width to maxWidthPct of the stage, trimming with
+    // an ellipsis. Only runs when a comment is actually too wide.
+    _fitWidth(text, fontPx) {
+      const pct = this.cfg.maxWidthPct ?? 1;
+      if (pct >= 1 || !this.w || !text) return text;
+      const maxPx = this.w * pct;
+      const family = this.cfg.fontFamily || 'system-ui, -apple-system, "Segoe UI", sans-serif';
+      const weight = this.cfg.fontWeight || 700;
+      if (!this.measure) this.measure = document.createElement("canvas").getContext("2d");
+      this.measure.font = `${weight} ${fontPx}px ${family}`;
+      if (this.measure.measureText(text).width <= maxPx) return text;
+      const chars = [...text];
+      let lo = 1, hi = chars.length;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (this.measure.measureText(chars.slice(0, mid).join("")).width <= maxPx) lo = mid;
+        else hi = mid - 1;
+      }
+      return `${chars.slice(0, Math.max(1, lo - 1)).join("")}…`;
     }
 
     _rasterize(text, color, fontPx, glow) {

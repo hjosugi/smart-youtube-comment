@@ -70,6 +70,7 @@
     { key: "debugHud",     group: "Performance", label: "Debug stats HUD",        type: "bool",                                   default: false },
     { key: "maxTextChars", group: "Performance", label: "Max comment length",     type: "range", min: 80,  max: 500,  step: 20,            default: 260 },
     { key: "lineHeightScale", group: "Layout",    label: "Lane height (of font)",  type: "range", min: 100, max: 250,  step: 5, unit: "%", default: 125 },
+    { key: "maxWidthPct",  group: "Layout",      label: "Max comment width",      type: "range", min: 20,  max: 100,  step: 5, unit: "%", default: 100 },
     { key: "topPct",       group: "Layout",      label: "Top clear zone",         type: "range", min: 0,   max: 40,   step: 1, unit: "%",  default: 8 },
     { key: "bottomPct",    group: "Layout",      label: "Bottom clear zone",      type: "range", min: 0,   max: 40,   step: 1, unit: "%",  default: 14 },
     { key: "lengthSpread", group: "Behavior",    label: "Vary speed by length",   type: "bool",                                   default: true },
@@ -86,7 +87,8 @@
         { value: "top", label: "Pack from the top" },
         { value: "bottom", label: "Pack from the bottom" },
         { value: "random", label: "Random rows" }
-      ] }
+      ] },
+    { key: "layerCss",     group: "Behavior",    label: "Custom layer CSS",       type: "text",   default: "", maxLength: 4000 }
   ];
 
   const DEFAULTS = Object.fromEntries(SCHEMA.map((s) => [s.key, s.default]));
@@ -147,8 +149,8 @@
       : fallback;
   }
 
-  function normalizeText(value, fallback) {
-    return typeof value === "string" ? value.slice(0, 200) : fallback;
+  function normalizeText(value, fallback, maxLength = 200) {
+    return typeof value === "string" ? value.slice(0, maxLength) : fallback;
   }
 
   function normalize(values) {
@@ -159,7 +161,7 @@
       if (spec.type === "bool") clean[spec.key] = normalizeBool(value, spec.default);
       else if (spec.type === "range") clean[spec.key] = normalizeRange(spec, value);
       else if (spec.type === "color") clean[spec.key] = normalizeColor(value, spec.default);
-      else if (spec.type === "text") clean[spec.key] = normalizeText(value, spec.default);
+      else if (spec.type === "text") clean[spec.key] = normalizeText(value, spec.default, spec.maxLength);
       else if (spec.type === "select") clean[spec.key] = (spec.options || []).some((o) => o.value === value) ? value : spec.default;
       else clean[spec.key] = spec.default;
     }
@@ -218,6 +220,7 @@
       dpr: Math.max(0.5, Math.min(2, (globalThis.devicePixelRatio || 1) * safe.renderScalePct / 100)),
       maxTextChars: safe.maxTextChars,
       lineHeight: Math.round(safe.fontPx * safe.lineHeightScale / 100),
+      maxWidthPct: safe.maxWidthPct / 100,
       topPct: safe.topPct / 100,
       bottomPct: safe.bottomPct / 100,
       lengthSpread: safe.lengthSpread,

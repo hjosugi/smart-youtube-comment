@@ -61,7 +61,14 @@ const select = (spec, value, onInput) => {
   return row(spec.label, input)
 }
 
-const BUILDERS = { range, bool, color, select }
+const text = (spec, value, onInput) => {
+  const input = tag(el("textarea", { rows: 3, spellcheck: false, value: value ?? "" }), spec.key)
+  input.addEventListener("input", () => onInput(spec.key, input.value, false))
+  input.addEventListener("change", () => onInput(spec.key, input.value, true))
+  return row(spec.label, input)
+}
+
+const BUILDERS = { range, bool, color, select, text }
 
 export const buildControl = (spec, value, onInput) =>
   (BUILDERS[spec.type] ?? bool)(spec, value, onInput)

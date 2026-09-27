@@ -135,6 +135,18 @@
     (document.head || document.documentElement).appendChild(style);
   }
 
+  function applyLayerCss(css) {
+    const text = typeof css === "string" ? css.slice(0, 4000) : "";
+    let el = document.getElementById("syc-layer-css");
+    if (!text) { el?.remove(); return; }
+    if (!el) {
+      el = document.createElement("style");
+      el.id = "syc-layer-css";
+      (document.head || document.documentElement).appendChild(el);
+    }
+    el.textContent = text;
+  }
+
   function makeBubbleIcon() {
     const ns = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(ns, "svg");
@@ -211,6 +223,7 @@
     let settings = Settings ? await Settings.load() : { enabled: true, hideDefaultChat: false };
     if (Settings) overlay.setConfig(Settings.toEngineConfig(settings));
     ensureRuntimeStyles();
+    applyLayerCss(settings.layerCss);
     let trackedVideo = null;
 
     const applyVideoPauseState = () => {
@@ -261,6 +274,7 @@
       const wasEnabled = settings.enabled;
       settings = next;
       overlay.setConfig(Settings ? Settings.toEngineConfig(next) : {});
+      applyLayerCss(next.layerCss);
       toggle?.update();
       applyDefaultChatSuppression(next);
       if (next.enabled && !wasEnabled) attach();

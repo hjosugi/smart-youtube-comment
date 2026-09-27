@@ -124,11 +124,19 @@ Phase 2 — rendering expression:
 
 - Done: `flowDirection` (`rtl` / `ltr`) and `density` (`top` / `bottom` /
   `random`) in the engine spawn/lane logic.
-- Remaining: overlap handling, max-width wrap, custom emoji images in the
-  extension, layer-scoped user CSS.
+- Done: `maxWidthPct` clamps a comment to a fraction of the stage, trimming with
+  an ellipsis (pixel-measured, not char-counted).
+- Done: `layerCss` injects user CSS into the overlay layer (`<style>` with
+  `textContent`, 4000-char cap).
+- Remaining: multi-line wrap, custom emoji images in the extension.
 
-Phase 3 — interaction (planned): right-click pin & drag an individual comment,
-archive timeshift offset, on-device (Translator API) translation, PiP.
+Phase 3 — interaction:
+
+- Done: `timeshiftMs` (web only) shifts the chat replay gate so archive comments
+  can be shown earlier or later; the extension has no reliable per-message
+  timestamps, so it is PWA-only.
+- Remaining: right-click pin & drag an individual comment, on-device
+  (Translator API) translation, PiP.
 
 Migration note: `lineHeight` px settings are no longer read; stored values
 normalize to the new `lineHeightScale` default. The filter store gains `mode`

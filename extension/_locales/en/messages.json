@@ -63,6 +63,8 @@
   "s_dedupThreshold": { "message": "Duplicate strictness" },
   "s_flowDirection": { "message": "Flow direction" },
   "s_density": { "message": "Comment density" },
+  "s_maxWidthPct": { "message": "Max comment width" },
+  "s_layerCss": { "message": "Custom layer CSS" },
   "sp_default": { "message": "Default" },
   "sp_niconico": { "message": "Niconico (fast)" },
   "sp_relaxed": { "message": "Relaxed (readable)" },
