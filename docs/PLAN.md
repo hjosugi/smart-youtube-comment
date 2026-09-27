@@ -154,7 +154,7 @@ Phase 3 — interaction:
   the original text when the API or a language pack is unavailable. Nothing
   leaves the device, so the privacy stance is unchanged. Enabled by the
   `translateTo` setting (default off).
-- Remaining: PiP; multi-line wrap; custom emoji images in the extension.
+- Remaining: PiP.
 
 Migration note: `lineHeight` px settings are no longer read; stored values
 normalize to the new `lineHeightScale` default. The filter store gains `mode`
