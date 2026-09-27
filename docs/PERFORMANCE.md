@@ -75,6 +75,16 @@ The sandbox uses `extension/scoring.js` directly.
 - Glow/shadow should degrade under load.
 - Lane assignment is currently cheap because lane count is small. If lane count
   grows substantially, use a priority queue over lane free times.
+- The frame delta is honoured in full (up to `LONG_GAP_MS`) rather than clamped
+  to a fixed ceiling, so a main-thread hitch becomes one catch-up frame instead
+  of silently slowing every comment down. Gaps above `LONG_GAP_MS` are treated
+  as a pause. Keep `LONG_GAP_MS` well above a normal hitch (~500 ms) or the
+  bug returns.
+- Sprite positions are snapped to the *device* pixel grid (`Math.round(x * dpr)
+  / dpr`), not to CSS pixels. `dpr` is fractional by default (e.g. 1.5), so CSS
+  rounding leaves a sub-device-pixel offset that makes the compositor resample
+  the cached text bitmap with a shifting phase every frame — visible shimmer
+  and extra GPU work.
 
 ## Scorer Transport Gate
 

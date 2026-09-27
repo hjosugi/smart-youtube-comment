@@ -64,6 +64,7 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
   const AUTHOR_BOOST = { owner: 0.40, moderator: 0.25, member: 0.10, normal: 0 };
   const TARGET_FRAME_MS = 1000 / 60;
   const MIN_CAP_FRAME_MS = 50;
+  const LONG_GAP_MS = 500; // frame gap above this is a pause, not a hitch
   const DEDUP_BUCKET_BITS = 8;
   const DEDUP_BUCKET_MASKS = Array.from({ length: DEDUP_BUCKET_BITS + 1 }, (_, threshold) => {
     const masks = [];
@@ -574,18 +575,25 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
 
     _loop(ts) {
       if (!this.running) return;
-      const dt = this.lastTs ? Math.min(ts - this.lastTs, 50) : 16;
+      // Advance by the REAL elapsed time so a main-thread hitch becomes a single
+      // catch-up frame instead of silently slowing every comment down. A very
+      // long gap (hidden/frozen tab) is treated as a pause: no teleport and no
+      // expiry, so the scene survives.
+      const raw = this.lastTs ? ts - this.lastTs : 16;
+      const dt = raw > LONG_GAP_MS ? 0 : raw;
       this.lastTs = ts;
-      this.frameEMA = this.frameEMA * 0.9 + dt * 0.1;
+      const sample = Math.min(raw, MIN_CAP_FRAME_MS);
+      this.frameEMA = this.frameEMA * 0.9 + sample * 0.1;
       const fs = this.frameSamples;
-      fs[this.frameSamplePos] = dt;
+      fs[this.frameSamplePos] = sample;
       this.frameSamplePos = (this.frameSamplePos + 1) % fs.length;
       if (this.frameSampleLen < fs.length) this.frameSampleLen++;
 
       this._updateDynamicCap();
       this._drainPending();
 
-      const ctx = this.ctx, dpr = this.cfg.dpr, arr = this.active, next = this.nextActive;
+      const ctx = this.ctx, dpr = this.cfg.dpr, invDpr = 1 / dpr;
+      const arr = this.active, next = this.nextActive;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, this.w, this.h);
       ctx.globalAlpha = this.cfg.opacity;
@@ -596,7 +604,13 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
         a.x -= a.vx * dt;
         a.ttlMs -= dt;
         if (a.x + a.w < 0 || a.ttlMs <= 0) { a.active = false; continue; } // expired -> dropped by compaction
-        ctx.drawImage(a.bmp, Math.round(a.x), Math.round(a.y - a.h / 2), a.w, a.h);
+        // Snap to the DEVICE pixel grid: dpr is fractional (e.g. 1.5), so
+        // rounding in CSS px would leave a half-device-pixel offset and the
+        // browser would resample the cached text bitmap with a shifting phase
+        // every frame — that reads as constant shimmer/judder while scrolling.
+        const dx = Math.round(a.x * dpr) * invDpr;
+        const dy = Math.round((a.y - a.h / 2) * dpr) * invDpr;
+        ctx.drawImage(a.bmp, dx, dy, a.w, a.h);
         a.index = next.length;
         next.push(a);
         drawn++;

@@ -65,31 +65,82 @@ const assertAdaptiveCap = (label, Overlay) => {
   assert.equal(overlay.dynamicCap, 100, `${label}: fast frames should recover to maxActive`)
 }
 
-const assertClampedDeltaLifetime = (label, Overlay) => {
+const assertFrameDeltaPacing = (label, Overlay) => {
   const overlay = new Overlay({ dpr: 1, dedup: false })
   overlay.ctx = makeContext()
   overlay.running = true
   overlay.lastTs = 1000
-  overlay.active.push({
+  const sprite = {
     bmp: makeCanvas(),
     w: 20,
     h: 10,
-    x: 100,
+    x: 500,
     y: 20,
     vx: 1,
-    ttlMs: 80,
+    ttlMs: 5000,
+    priority: 1,
+  }
+  overlay.active.push(sprite)
+
+  // A real main-thread hitch must be honoured in full, otherwise every stall
+  // silently slows comments down (accumulating slow-motion).
+  overlay._loop(1120)
+  assert.equal(
+    overlay.active[0].x,
+    380,
+    `${label}: moderate frame hitches should advance by the full delta`,
+  )
+  assert.equal(
+    overlay.active[0].ttlMs,
+    4880,
+    `${label}: lifetime should track the full frame delta`,
+  )
+
+  // A hidden/frozen tab produces a huge gap: pause, do not teleport or expire.
+  overlay._loop(61_120)
+  assert.equal(overlay.active.length, 1, `${label}: long gaps should not expire active comments`)
+  assert.equal(overlay.active[0].x, 380, `${label}: long gaps should not teleport active comments`)
+  assert.equal(overlay.active[0].ttlMs, 4880, `${label}: long gaps should not advance lifetime`)
+}
+
+const assertDevicePixelSnapping = (label, Overlay) => {
+  const draws = []
+  const overlay = new Overlay({ dpr: 1.5, dedup: false, opacity: 1 })
+  overlay.ctx = {
+    ...makeContext(),
+    drawImage(bmp, x, y, w, h) {
+      draws.push({ bmp, x, y, w, h })
+    },
+  }
+  overlay.running = true
+  overlay.lastTs = 1000
+  overlay.active.push({
+    bmp: makeCanvas(),
+    w: 101,
+    h: 27,
+    x: 100.37,
+    y: 40.9,
+    vx: 0.2,
+    ttlMs: 5000,
     priority: 1,
   })
 
-  overlay._loop(61_000)
+  overlay._loop(1016)
 
+  assert.equal(draws.length, 1, `${label}: active sprite should be drawn once`)
+  const near = (a, b) => Math.abs(a - b) < 1e-9
   assert.equal(
-    overlay.active.length,
-    1,
-    `${label}: hidden-tab wall time should not expire active comments`,
+    near(draws[0].x * 1.5, Math.round(draws[0].x * 1.5)),
+    true,
+    `${label}: draw x should land on the device pixel grid`,
   )
-  assert.equal(overlay.active[0].x, 50, `${label}: movement should use clamped delta`)
-  assert.equal(overlay.active[0].ttlMs, 30, `${label}: lifetime should use clamped delta`)
+  assert.equal(
+    near(draws[0].y * 1.5, Math.round(draws[0].y * 1.5)),
+    true,
+    `${label}: draw y should land on the device pixel grid`,
+  )
+  assert.equal(draws[0].w, 101, `${label}: bitmap width should be preserved`)
+  assert.equal(draws[0].h, 27, `${label}: bitmap height should be preserved`)
 }
 
 const assertLruCache = (label, Overlay, rasterize) => {
@@ -463,7 +514,8 @@ assertScoringHelpers("web", webScoring)
 assertDedup("web", webOverlay)
 assertLongTaskObserverLifecycle("web", webOverlay, webObserverCounters)
 assertAdaptiveCap("web", webOverlay)
-assertClampedDeltaLifetime("web", webOverlay)
+assertFrameDeltaPacing("web", webOverlay)
+assertDevicePixelSnapping("web", webOverlay)
 assertLruCache("web", webOverlay, (overlay, text) =>
   overlay._rasterize([{ t: text }], "#fff", 24, false),
 )
@@ -488,7 +540,8 @@ assertScoringHelpers("extension", extensionScoring)
 assertDedup("extension", extensionOverlay)
 assertLongTaskObserverLifecycle("extension", extensionOverlay, extensionObserverCounters)
 assertAdaptiveCap("extension", extensionOverlay)
-assertClampedDeltaLifetime("extension", extensionOverlay)
+assertFrameDeltaPacing("extension", extensionOverlay)
+assertDevicePixelSnapping("extension", extensionOverlay)
 assertLruCache("extension", extensionOverlay, (overlay, text) =>
   overlay._rasterize(text, "#fff", 24, false),
 )
@@ -501,4 +554,4 @@ assertActiveCapEviction("extension", extensionOverlay)
 assertLaneSelectionAndClear("extension", extensionOverlay)
 assertPendingCompaction("extension", extensionOverlay)
 
-console.log("danmaku ok (112 assertions)")
+console.log("danmaku ok (126 assertions)")
