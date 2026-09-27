@@ -143,6 +143,65 @@ const assertDevicePixelSnapping = (label, Overlay) => {
   assert.equal(draws[0].h, 27, `${label}: bitmap height should be preserved`)
 }
 
+const assertTypeGatingAndRoleScale = (label, Overlay) => {
+  const overlay = new Overlay({ dpr: 1, dedup: false })
+  overlay.canvas = makeCanvas()
+
+  assert.equal(
+    overlay._typeVisible(payload("x", { kind: "paid" })),
+    true,
+    `${label}: super chats visible by default`,
+  )
+  assert.equal(
+    overlay._typeVisible(payload("x", { authorType: "member" })),
+    true,
+    `${label}: members visible by default`,
+  )
+
+  overlay.setConfig({
+    showPaid: false,
+    showMember: false,
+    roleScale: { member: 1.5, owner: 1, moderator: 1, paid: 2 },
+  })
+  assert.equal(
+    overlay._typeVisible(payload("x", { kind: "paid" })),
+    false,
+    `${label}: hidden super chats should be gated`,
+  )
+  assert.equal(
+    overlay._typeVisible(payload("x", { authorType: "member" })),
+    false,
+    `${label}: hidden members should be gated`,
+  )
+  assert.equal(
+    overlay._typeVisible(payload("x", { authorType: "normal" })),
+    true,
+    `${label}: normal users stay visible`,
+  )
+
+  assert.equal(
+    overlay._roleScale(payload("x", { authorType: "member" })),
+    1.5,
+    `${label}: member font scale should apply`,
+  )
+  assert.equal(
+    overlay._roleScale(payload("x", { kind: "paid" })),
+    2,
+    `${label}: paid font scale should apply to super chats`,
+  )
+  assert.equal(overlay._roleScale(payload("x")), 1, `${label}: normal font scale defaults to 1`)
+
+  // Gated types must be dropped before they reach the queue.
+  overlay.setConfig({ showPaid: false, showMember: true })
+  assert.equal(
+    overlay.push(payload("paid", { kind: "paid" })),
+    false,
+    `${label}: gated push is rejected`,
+  )
+  assert.equal(overlay.pending.length, 0, `${label}: gated comment should not be queued`)
+  assert.equal(overlay.push(payload("plain")), true, `${label}: visible comment is queued`)
+}
+
 const assertLruCache = (label, Overlay, rasterize) => {
   const overlay = new Overlay({ cacheMax: 2, dpr: 1, dedup: false })
 
@@ -192,6 +251,14 @@ const assertRasterCacheInvalidation = (label, Overlay, rasterize) => {
 
   overlay.setConfig({ lineHeight: 36 })
   assert.equal(overlay.cache.size, 0, `${label}: geometry changes should clear cached bitmaps`)
+
+  rasterize(overlay, "scale")
+  overlay.setConfig({ outlineColor: "#ff0000" })
+  assert.equal(overlay.cache.size, 0, `${label}: outline color changes should clear cached bitmaps`)
+
+  rasterize(overlay, "scale")
+  overlay.setConfig({ outlineBlur: 2 })
+  assert.equal(overlay.cache.size, 0, `${label}: outline blur changes should clear cached bitmaps`)
 }
 
 const assertResizeGating = (label, Overlay) => {
@@ -516,6 +583,7 @@ assertLongTaskObserverLifecycle("web", webOverlay, webObserverCounters)
 assertAdaptiveCap("web", webOverlay)
 assertFrameDeltaPacing("web", webOverlay)
 assertDevicePixelSnapping("web", webOverlay)
+assertTypeGatingAndRoleScale("web", webOverlay)
 assertLruCache("web", webOverlay, (overlay, text) =>
   overlay._rasterize([{ t: text }], "#fff", 24, false),
 )
@@ -542,6 +610,7 @@ assertLongTaskObserverLifecycle("extension", extensionOverlay, extensionObserver
 assertAdaptiveCap("extension", extensionOverlay)
 assertFrameDeltaPacing("extension", extensionOverlay)
 assertDevicePixelSnapping("extension", extensionOverlay)
+assertTypeGatingAndRoleScale("extension", extensionOverlay)
 assertLruCache("extension", extensionOverlay, (overlay, text) =>
   overlay._rasterize(text, "#fff", 24, false),
 )
@@ -554,4 +623,4 @@ assertActiveCapEviction("extension", extensionOverlay)
 assertLaneSelectionAndClear("extension", extensionOverlay)
 assertPendingCompaction("extension", extensionOverlay)
 
-console.log("danmaku ok (126 assertions)")
+console.log("danmaku ok (152 assertions)")

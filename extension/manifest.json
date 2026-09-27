@@ -34,6 +34,13 @@
         "mac": "Alt+Shift+D"
       },
       "description": "Toggle danmaku overlay"
+    },
+    "open-options": {
+      "suggested_key": {
+        "default": "Alt+Shift+O",
+        "mac": "Alt+Shift+O"
+      },
+      "description": "Open overlay settings"
     }
   },
   "options_ui": {

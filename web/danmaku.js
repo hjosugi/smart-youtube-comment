@@ -23,7 +23,7 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
     maxActive: 250,       // hard ceiling on concurrent sprites
     minActive: 80,        // adaptive floor (weak machines still usable)
     fontPx: 18,
-    lineHeight: 24,       // lane height incl. gap
+    lineHeight: 23,       // lane height incl. gap (18px font * 125%)
     topPct: 0.08,         // keep top 8% clear
     bottomPct: 0.14,      // keep bottom 14% clear (controls)
     gapPx: 28,            // min horizontal gap between same-lane comments
@@ -40,6 +40,17 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
     fontWeight: 700,      // 100..900
     outlineWidth: 3,      // text outline px (0 = none)
     outlineAlpha: 0.85,   // outline opacity 0..1
+    outlineColor: "#000000", // outline color
+    outlineBlur: 0,       // outline softness px (0 = hard edge)
+    authorName: "nontext", // never | nontext | always
+    sizeByScore: true,    // vary font size by comment score
+    showNormal: true,     // per-type visibility gates (applied in push())
+    showMember: true,
+    showModerator: true,
+    showOwner: true,
+    showPaid: true,
+    showMembership: true,
+    roleScale: { member: 1, moderator: 1, owner: 1, paid: 1 }, // per-type font multipliers
     spreadStrength: 0.35, // how strongly length affects speed (0..1)
     cacheMax: 900,        // max cached bitmaps
     maxQueue: 1000,       // pending comments waiting for rasterization
@@ -55,6 +66,8 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
     "fontWeight",
     "outlineWidth",
     "outlineAlpha",
+    "outlineColor",
+    "outlineBlur",
     "lineHeight",
     "textColor",
     "roleColors"
@@ -88,6 +101,14 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
     const chars = [...String(text || "")];
     if (chars.length <= maxChars) return text;
     return `${chars.slice(0, Math.max(1, maxChars - 3)).join("")}...`;
+  }
+
+  // "#rrggbb" + alpha -> "rgba(r,g,b,a)". Falls back to black for bad input.
+  function withAlpha(hex, alpha) {
+    const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex || ""));
+    if (!m) return `rgba(0,0,0,${alpha})`;
+    const r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16);
+    return `rgba(${r},${g},${b},${alpha})`;
   }
 
   class DanmakuOverlay {
@@ -247,6 +268,7 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
     // Admission control + spawn. Returns true if the comment was accepted.
     push(payload) {
       if (!this.canvas || !payload || !payload.text) return false;
+      if (!this._typeVisible(payload)) return false;
       const text = truncateText(payload.text, this.cfg.maxTextChars);
       const safePayload = text === payload.text ? payload : Object.assign({}, payload, { text });
 
@@ -316,6 +338,25 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
       );
     }
 
+    // Per-type visibility gate from settings. Super chats / memberships are keyed
+    // by kind; plain messages by author role.
+    _typeVisible(payload) {
+      if (payload.kind === "paid") return this.cfg.showPaid !== false;
+      if (payload.kind === "membership") return this.cfg.showMembership !== false;
+      switch (payload.authorType) {
+        case "owner": return this.cfg.showOwner !== false;
+        case "moderator": return this.cfg.showModerator !== false;
+        case "member": return this.cfg.showMember !== false;
+        default: return this.cfg.showNormal !== false;
+      }
+    }
+
+    _roleScale(payload) {
+      const scale = this.cfg.roleScale || {};
+      if (payload.kind === "paid") return scale.paid ?? 1;
+      return scale[payload.authorType] ?? 1;
+    }
+
     _drainPending() {
       if (this.pendingHead >= this.pending.length) { this._compactPending(); return; }
       let budget = this.cfg.spawnPerFrame;
@@ -348,18 +389,20 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
       }
 
       const emphasis = payload.emphasis ?? 0;
-      const scale = emphasis >= 0.62 ? 1.12 : emphasis <= 0.18 ? 0.9 : 1.0;
-      const fontPx = Math.round(this.cfg.fontPx * scale);
+      const scoreScale = this.cfg.sizeByScore
+        ? (emphasis >= 0.62 ? 1.12 : emphasis <= 0.18 ? 0.9 : 1.0)
+        : 1.0;
+      const fontPx = Math.round(this.cfg.fontPx * scoreScale * this._roleScale(payload));
       const color = (this.cfg.roleColors && payload.authorType && payload.authorType !== "normal")
         ? (AUTHOR_ROLE_COLORS[payload.authorType] ?? this.cfg.textColor)
         : this.cfg.textColor;
       const paidColor = payload.kind === "paid" && payload.paidColor ? payload.paidColor : "";
       const msgParts = this._displayParts(payload);
-      const parts = (
-        payload.author && payload.kind && payload.kind !== "text"
-          ? [{ t: `${payload.author}: ` }, ...msgParts]
-          : msgParts
-      ).slice(0, 60);
+      const nameMode = this.cfg.authorName || "nontext";
+      const named = payload.author && (
+        nameMode === "always" || (nameMode === "nontext" && payload.kind && payload.kind !== "text")
+      );
+      const parts = (named ? [{ t: `${payload.author}: ` }, ...msgParts] : msgParts).slice(0, 60);
       const glow = emphasis >= 0.62 && this.frameEMA < 24; // skip glow when frames are heavy
       const bmp = this._rasterize(parts, paidColor || color, fontPx, glow);
 
@@ -493,16 +536,18 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
       const weight = this.cfg.fontWeight || 700;
       const ow = this.cfg.outlineWidth ?? 3;
       const oa = this.cfg.outlineAlpha ?? 0.85;
+      const outlineColor = this.cfg.outlineColor || "#000000";
+      const ob = this.cfg.outlineBlur ?? 0;
       const sig = parts.map((p) => (p.u ? "" + p.u : p.t)).join("");
-      const key = `${fontPx}|${weight}|${ow}|${oa}|${glow ? 1 : 0}|${color}|${family}|${sig}`;
+      const key = `${fontPx}|${weight}|${ow}|${oa}|${outlineColor}|${ob}|${glow ? 1 : 0}|${color}|${family}|${sig}`;
       const hit = this._cacheGet(key);
       if (hit) return hit;
 
       const font = `${weight} ${fontPx}px ${family}`;
       if (!this.measure) this.measure = document.createElement("canvas").getContext("2d");
       this.measure.font = font;
-      const pad = (glow ? 10 : 6) + Math.ceil(ow / 2);
-      const h = Math.max(this.cfg.lineHeight, fontPx + 8);
+      const pad = (glow ? 10 : 6) + Math.ceil(ow / 2) + Math.ceil(ob);
+      const h = Math.max(this.cfg.lineHeight, fontPx + 8) + Math.ceil(ob);
       const emojiSize = Math.round(fontPx * 1.15);
       const emoji = globalThis.SYCEmoji;
 
@@ -535,10 +580,12 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
       for (const s of segs) {
         if (s.text != null) {
           if (ow > 0) {
-            o.shadowBlur = 0;
+            const stroke = withAlpha(outlineColor, oa);
             o.lineWidth = ow;
-            o.strokeStyle = `rgba(0,0,0,${oa})`;
+            o.strokeStyle = stroke;
+            if (ob > 0) { o.shadowColor = stroke; o.shadowBlur = ob; }
             o.strokeText(s.text, x, h / 2);
+            o.shadowBlur = 0;
           }
           if (glow) { o.shadowColor = "rgba(255,255,255,.55)"; o.shadowBlur = 6; } else o.shadowBlur = 0;
           o.fillStyle = color;

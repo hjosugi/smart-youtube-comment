@@ -45,6 +45,8 @@ const normalizeBackup = (settings, filter, text) => {
       users: filter.cleanList(data.filters?.users || []),
       words: filter.cleanWordList(data.filters?.words || []),
       channels: filter.cleanChannelList(data.filters?.channels || []),
+      mode: data.filters?.mode,
+      replacement: data.filters?.replacement,
     },
   }
 }
@@ -142,16 +144,34 @@ const filterSection = async (filter, sheet, state) => {
     placeholder: "channel IDs / one per line",
     rows: 3,
   })
-  state.filterInputs = { users, words, channels }
+  const mode = el("select", { className: "ng-mode" })
+  for (const value of filter.MODES || ["drop"]) {
+    mode.append(el("option", { value, textContent: T.ngModes?.[value] ?? value }))
+  }
+  mode.value = lists.mode || "drop"
+  const replacement = el("input", {
+    className: "ng-replacement",
+    type: "text",
+    value: lists.replacement ?? "",
+  })
+  state.filterInputs = { users, words, channels, mode, replacement }
   const save = el("button", { type: "button", className: "ng-save", textContent: T.ngSave })
   save.addEventListener("click", () =>
-    filter.save({ users: users.value, words: words.value, channels: channels.value }),
+    filter.save({
+      users: users.value,
+      words: words.value,
+      channels: channels.value,
+      mode: mode.value,
+      replacement: replacement.value,
+    }),
   )
   sheet.append(
     section(T.ngFilter),
     labelled(T.ngUsers, users),
     labelled(T.ngWords, words),
     labelled(T.ngChannels, channels),
+    labelled(T.ngMode, mode),
+    labelled(T.ngReplacement, replacement),
     save,
   )
 }
@@ -176,6 +196,10 @@ const backupSection = (settings, filter, sheet, state) => {
         state.filterInputs.users.value = next.filters.users.join("\n")
         state.filterInputs.words.value = next.filters.words.join("\n")
         state.filterInputs.channels.value = next.filters.channels.join("\n")
+        if (next.filters.mode) state.filterInputs.mode.value = next.filters.mode
+        if (typeof next.filters.replacement === "string") {
+          state.filterInputs.replacement.value = next.filters.replacement
+        }
       }
     } finally {
       file.value = ""
@@ -193,6 +217,8 @@ const backupSection = (settings, filter, sheet, state) => {
           users: filter.cleanList(state.filterInputs.users.value),
           words: filter.cleanWordList(state.filterInputs.words.value),
           channels: filter.cleanChannelList(state.filterInputs.channels.value),
+          mode: state.filterInputs.mode.value,
+          replacement: state.filterInputs.replacement.value,
         }
       : await filter.load()
     downloadJson({

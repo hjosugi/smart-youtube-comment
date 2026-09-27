@@ -67,9 +67,13 @@ const onMessages = (msgs: ChatMessage[]) => {
     if (f === "skip") continue
     remember(m.id)
     if (f !== "show") continue
-    globalThis.SYCEmoji?.preload(m.parts)
-    if (cfg.listEnabled) listBatch.push(m)
-    if (cfg.enabled) renderMessages.push(m)
+    const filtered = filter.apply(m.author, m.text)
+    if (filtered.drop) continue
+    const shown = filtered.text === m.text ? m : { ...m, text: filtered.text, parts: [] }
+    if (!shown.text.trim()) continue
+    globalThis.SYCEmoji?.preload(shown.parts)
+    if (cfg.listEnabled) listBatch.push(shown)
+    if (cfg.enabled) renderMessages.push(shown)
   }
   if (listBatch.length) list.pushMany(listBatch)
   if (renderMessages.length) renderBatch(render, overlay, renderMessages)

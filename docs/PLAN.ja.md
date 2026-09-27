@@ -83,6 +83,26 @@ Chrome Web Store の更新公開は以下を通じて自動化されています
 
 リリースごとに残る手動要素は Chrome Web Store の審査そのものなので、公開バージョンは `main` より古いことがあります。リリースワークフローが使うパブリッシャーの認証情報は有効なまま保ってください。`403` でアップロードが失敗する場合のチェックリストは `docs/RELEASE.ja.md` にあります。
 
+## 上流機能の取り込み
+
+参考: `ys-j/YoutubeLiveChatFlusher`（コードはコピーせず、機能のアイディアのみを独自実装）。各フェーズを独立してテスト・リリースできるように分割します。
+
+Phase 1 — 設定・レンダラの調整（v0.2.5 で完了）:
+
+- 種類別の表示ゲート（`showNormal` / `showMember` / `showModerator` / `showOwner` / `showPaid` / `showMembership`）。`DanmakuOverlay.push` で適用。
+- 種類別の文字倍率（`scaleMember` / `scaleModerator` / `scaleOwner` / `scalePaid`）と `sizeByScore`。
+- `authorName` モード（`never` / `nontext` / `always`）。
+- 縁取りの `outlineColor` と `outlineBlur`（ラスタキャッシュキーに含まれる）。
+- 絶対値の `lineHeight` 設定を `lineHeightScale` に置換。エンジンへは `fontPx * scale` から算出した px を渡します。
+- NGワードに `mode`（`drop` / `censor` / `replace`）と `replacement` を追加（ローカルのフィルターストア）。`SYCFilter.apply()` が `{ drop, text }` を返し、設定に応じて `content.js` / `web/app.ts` が伏字・置換を行います。
+- `open-options` コマンド（`Alt+Shift+O`）を `toggle-overlay` と並んで追加。
+
+Phase 2 — 描画表現（予定）: 流す方向、表示密度（上/下/ランダム）、オーバーラップ処理、最大幅での折り返し、拡張でのカスタム絵文字画像、レイヤ限定のユーザーCSS。
+
+Phase 3 — インタラクション（予定）: 右クリックで個別コメントのピン留め＆ドラッグ移動、アーカイブのタイムシフト、オンデバイス翻訳（Translator API）、PiP。
+
+マイグレーション: `lineHeight`（px）設定は読まれなくなり、保存済みの値は新しい `lineHeightScale` の既定値に正規化されます。フィルターストアに `mode` と `replacement` が加わりますが、これらを持たない古いレコードは `drop` と既定の置換文字に正規化されるため、移行作業は不要です。
+
 ## ワーカーのロードマップ
 
 `docs/WORKER_ROADMAP.md` は WebSocket + Durable Object のシングルフライト候補を追跡します。これは、キャッシュ/フライト中の崩壊が不十分であることを証明する HTTP リレーのメトリクスにゲートされています。

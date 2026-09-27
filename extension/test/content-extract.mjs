@@ -194,6 +194,7 @@ const loadLiveChatStartup = () => {
     }),
     createFallbackScorer: () => ({ score: () => ({ score: 0.7, emphasis: 0.2, reasons: ["test"] }) }),
   }
+  const shouldDropStub = (_author, textValue) => filterLoaded && textValue.includes("blocked")
   sandbox.globalThis.SYCFilter = {
     load() {
       filterLoadStarted = true
@@ -205,8 +206,9 @@ const loadLiveChatStartup = () => {
       })
     },
     onChange() {},
-    shouldDrop(_author, textValue) {
-      return filterLoaded && textValue.includes("blocked")
+    shouldDrop: shouldDropStub,
+    apply(author, textValue, channelId) {
+      return { drop: shouldDropStub(author, textValue, channelId), text: textValue }
     },
   }
 

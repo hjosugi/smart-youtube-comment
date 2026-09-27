@@ -407,17 +407,22 @@
     const authorChannelId = extractAuthorChannelId(node);
     const authorType = extractAuthorType(node);
     if (isOfficialChatText({ author, text, kind })) return;
-    if (globalThis.SYCFilter?.shouldDrop(author, text, authorChannelId)) return;
+    const filtered = globalThis.SYCFilter?.apply
+      ? globalThis.SYCFilter.apply(author, text, authorChannelId)
+      : null;
+    if (filtered?.drop) return;
+    const shownText = filtered?.text ?? text;
+    if (!shownText.trim()) return;
 
     const scorer = getScorer();
-    const result = scorer.score({ text, authorType, kind });
-    const renderPlan = buildRenderPlan(text, result);
+    const result = scorer.score({ text: shownText, authorType, kind });
+    const renderPlan = buildRenderPlan(shownText, result);
     if (!renderPlan) return;
 
     safeRuntimeSend({
       type: "smart-comment:chat-message",
       payload: {
-        text,
+        text: shownText,
         author,
         kind,
         authorType,

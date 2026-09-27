@@ -99,7 +99,7 @@ const assert = (name, cond, extra = "") => checks.push({ name, ok: !!cond, extra
       S.DEFAULTS.maxQueue === 1000 &&
       S.DEFAULTS.spawnPerFrame === 6 &&
       S.DEFAULTS.renderScalePct === 60 &&
-      S.DEFAULTS.lineHeight === 24 &&
+      S.DEFAULTS.lineHeightScale === 125 &&
       S.DEFAULTS.dedup === true,
   )
 
@@ -200,6 +200,15 @@ const assert = (name, cond, extra = "") => checks.push({ name, ok: !!cond, extra
   assert(
     "filter: stats reflect lists",
     F.stats().words === 2 && F.stats().channels === 0 && F.stats().regexes === 0,
+  )
+
+  await F.save({ users: "", words: ["spam"], channels: "", mode: "censor", replacement: "#" })
+  assert("filter: censor mode masks words", F.apply("@ok", "buy spam now").text === "buy #### now")
+  await F.save({ users: "", words: ["spam"], channels: "", mode: "replace", replacement: "[NG]" })
+  assert(
+    "filter: replace mode substitutes words",
+    F.apply("@ok", "buy spam now").text === "buy [NG] now" &&
+      F.apply("@ok", "clean").drop === false,
   )
 }
 

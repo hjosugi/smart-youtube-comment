@@ -58,7 +58,10 @@ assert.equal(settings.DEFAULTS.maxActive, 2000)
 assert.equal(settings.DEFAULTS.maxQueue, 2400)
 assert.equal(settings.DEFAULTS.spawnPerFrame, 10)
 assert.equal(settings.DEFAULTS.renderScalePct, 75)
-assert.equal(settings.DEFAULTS.lineHeight, 30)
+assert.equal(settings.DEFAULTS.lineHeightScale, 125)
+assert.equal(settings.DEFAULTS.outlineColor, "#000000")
+assert.equal(settings.DEFAULTS.authorName, "nontext")
+assert.equal(settings.toEngineConfig(settings.DEFAULTS).lineHeight, 30)
 assert.equal(settings.DEFAULTS.dedup, false)
 assert.equal(settings.DEFAULTS.pauseWithVideo, true)
 assert.equal(settings.DEFAULTS.debugHud, false)
@@ -94,6 +97,16 @@ assert.equal(filter.shouldDrop("carol", "hello", "ucblocked"), false)
 assert.equal(filter.shouldDrop("carol", "hello"), false)
 assert.equal(filter.stats().regexes, 1)
 
+await filter.save({ users: "", words: "spam", channels: "", mode: "censor", replacement: "#" })
+assert.equal(filter.apply("carol", "buy spam now").text, "buy #### now")
+assert.equal(filter.shouldDrop("carol", "buy spam now"), false)
+
+await filter.save({ users: "", words: "spam", channels: "", mode: "replace", replacement: "[NG]" })
+assert.equal(filter.apply("carol", "buy spam now").text, "buy [NG] now")
+
+await filter.save({ users: "alice", words: "spam", channels: "", mode: "censor", replacement: "#" })
+assert.equal(filter.apply("ALICE", "spam spam").drop, true)
+
 {
   const { sandbox: reducedSandbox } = loadScripts({ reducedMotion: true })
   const reducedSettings = reducedSandbox.globalThis.SYCSettings
@@ -102,4 +115,4 @@ assert.equal(filter.stats().regexes, 1)
   assert.equal((await reducedSettings.load()).enabled, true)
 }
 
-console.log("settings-filter ok (34 assertions)")
+console.log("settings-filter ok (41 assertions)")

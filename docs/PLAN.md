@@ -99,6 +99,39 @@ published version can trail `main`. Keep the publisher credentials for the
 release workflow valid; `docs/RELEASE.md` has the checklist for `403` upload
 failures.
 
+## Upstream Feature Adoption
+
+Reference: `ys-j/YoutubeLiveChatFlusher` (independent implementation; no code is
+copied, only feature ideas). Work is split into phases so each one is
+independently testable and releasable.
+
+Phase 1 — settings/renderer polish (done in v0.2.5):
+
+- Per-type visibility gates (`showNormal`, `showMember`, `showModerator`,
+  `showOwner`, `showPaid`, `showMembership`), enforced in `DanmakuOverlay.push`.
+- Per-type font multipliers (`scaleMember`, `scaleModerator`, `scaleOwner`,
+  `scalePaid`) and a `sizeByScore` toggle.
+- `authorName` mode (`never` / `nontext` / `always`).
+- Outline `outlineColor` and `outlineBlur` (part of the raster cache key).
+- `lineHeightScale` replaces the absolute `lineHeight` px setting; the engine
+  still receives `lineHeight` px, derived as `fontPx * scale`.
+- NG words gain `mode` (`drop` / `censor` / `replace`) and `replacement` in the
+  local filter store; `SYCFilter.apply()` returns `{ drop, text }` and
+  `content.js` / `web/app.ts` mask instead of dropping when configured.
+- `open-options` command (`Alt+Shift+O`) alongside `toggle-overlay`.
+
+Phase 2 — rendering expression (planned): flow direction, density
+(top/bottom/random), overlap handling, max-width wrap, custom emoji images in
+the extension, layer-scoped user CSS.
+
+Phase 3 — interaction (planned): right-click pin & drag an individual comment,
+archive timeshift offset, on-device (Translator API) translation, PiP.
+
+Migration note: `lineHeight` px settings are no longer read; stored values
+normalize to the new `lineHeightScale` default. The filter store gains `mode`
+and `replacement`; older records without them normalize to `drop` and the
+default replacement, so no migration step is required.
+
 ## Worker Roadmap
 
 `docs/WORKER_ROADMAP.md` tracks the WebSocket + Durable Object single-flight

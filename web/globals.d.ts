@@ -72,11 +72,16 @@ export interface SettingSpec {
 
 export interface FilterApi {
   shouldDrop(author: string, text: string, channelId?: string): boolean
+  apply(author: string, text: string, channelId?: string): { drop: boolean; text: string }
+  mode: string
+  replacement: string
   load(): Promise<{ users: string[]; words: string[]; channels?: string[] }>
   save(next: {
     users: string[] | string
     words: string[] | string
     channels?: string[] | string
+    mode?: string
+    replacement?: string
   }): Promise<unknown>
   onChange(cb: (lists: unknown) => void): void
   cleanList(input: string[] | string): string[]

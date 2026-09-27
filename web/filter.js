@@ -15,6 +15,10 @@
   const MAX_REGEX_RULES = 64;
   const MAX_REGEX_SOURCE_LENGTH = 160;
   const REGEX_BUDGET_MS = 2;
+  const MODES = ["drop", "censor", "replace"];
+  const DEFAULT_MODE = "drop";
+  const DEFAULT_REPLACEMENT = "＊";
+  const MAX_REPLACEMENT_LENGTH = 8;
 
   // Optional starter presets the options UI can offer. NONE are applied by
   // default — the user opts in. Keep these generic and small.
@@ -33,6 +37,9 @@
   let channelSet = new Set();
   let automaton = null;
   let regexRules = [];
+  let masker = null;
+  let mode = DEFAULT_MODE;
+  let replacement = DEFAULT_REPLACEMENT;
   let lists = { users: [], words: [], channels: [] };
 
   function localArea() {
@@ -149,25 +156,68 @@
       else fixedWords.push(word);
     }
     automaton = buildAutomaton(fixedWords);
+    masker = buildMasker();
   }
 
-  function apply(raw) {
+  function escapeRegExp(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  // One combined pattern over the ORIGINAL text, used only by the censor/replace
+  // modes and only after the fast Aho-Corasick path already found a match.
+  function buildMasker() {
+    if (!lists.words.length) return null;
+    const parts = [];
+    for (const word of lists.words) {
+      const regex = parseRegexEntry(word);
+      // Strip flags and force the ones needed for textual masking.
+      parts.push(regex ? `(?:${regex.source})` : escapeRegExp(word));
+    }
+    try {
+      return new RegExp(parts.join("|"), "gi");
+    } catch {
+      return null;
+    }
+  }
+
+  function maskText(text) {
+    if (!masker) return text;
+    const fill = replacement || "*";
+    masker.lastIndex = 0;
+    if (mode === "replace") return text.replace(masker, fill);
+    // censor: replace each matched run with the fill character, one per char.
+    return text.replace(masker, (match) => fill.repeat([...match].length || 1));
+  }
+
+  function setState(raw) {
     lists = {
       users: cleanList(raw && raw.users),
       words: cleanWordList(raw && raw.words),
       channels: cleanChannelList(raw && raw.channels)
     };
+    mode = MODES.includes(raw && raw.mode) ? raw.mode : DEFAULT_MODE;
+    const rep = raw && typeof raw.replacement === "string" ? raw.replacement.slice(0, MAX_REPLACEMENT_LENGTH) : "";
+    replacement = rep || DEFAULT_REPLACEMENT;
     rebuild();
   }
 
-  // The hot path — called per comment at extraction time.
+  // The hot path — called per comment at extraction time. Returns whether the
+  // comment should be dropped, and the (possibly masked) text to display next.
+  function apply(author, text, channelId) {
+    const original = String(text || "");
+    if (channelSet.size && channelSet.has(normChannelId(channelId))) return { drop: true, text: original };
+    if (userSet.size && userSet.has(norm(author))) return { drop: true, text: original };
+    const normalizedText = norm(original);
+    const hit =
+      (automaton && automatonMatches(automaton, normalizedText)) ||
+      (regexRules.length > 0 && regexMatches(normalizedText));
+    if (!hit) return { drop: false, text: original };
+    if (mode === "drop") return { drop: true, text: original };
+    return { drop: false, text: maskText(original) };
+  }
+
   function shouldDrop(author, text, channelId) {
-    const normalizedText = norm(text);
-    if (channelSet.size && channelSet.has(normChannelId(channelId))) return true;
-    if (userSet.size && userSet.has(norm(author))) return true;
-    if (automaton && automatonMatches(automaton, normalizedText)) return true;
-    if (regexRules.length && regexMatches(normalizedText)) return true;
-    return false;
+    return apply(author, text, channelId).drop;
   }
 
   function regexMatches(text) {
@@ -185,18 +235,18 @@
     if (area) {
       try {
         const got = await area.get(STORAGE_KEY);
-        apply(got && got[STORAGE_KEY]);
+        setState(got && got[STORAGE_KEY]);
       } catch {
-        apply(null);
+        setState(null);
       }
     }
     return lists;
   }
 
   async function save(next) {
-    apply(next);
+    setState(next);
     const area = localArea();
-    if (area) await area.set({ [STORAGE_KEY]: lists });
+    if (area) await area.set({ [STORAGE_KEY]: { ...lists, mode, replacement } });
     return lists;
   }
 
@@ -204,7 +254,7 @@
     if (typeof chrome === "undefined" || !chrome.storage) return;
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName === "local" && changes[STORAGE_KEY]) {
-        apply(changes[STORAGE_KEY].newValue);
+        setState(changes[STORAGE_KEY].newValue);
         callback?.(lists);
       }
     });
@@ -212,22 +262,27 @@
 
   globalThis.SYCFilter = {
     STORAGE_KEY,
+    MODES,
     PRESETS,
     load,
     save,
     onChange,
+    apply,
     shouldDrop,
     cleanList,
     cleanChannelList,
     cleanWordList,
     get lists() { return lists; },
+    get mode() { return mode; },
+    get replacement() { return replacement; },
     stats() {
       return {
         users: userSet.size,
         channels: channelSet.size,
         words: lists.words.length,
         regexes: regexRules.length,
-        nodes: automaton ? automaton.out.length : 0
+        nodes: automaton ? automaton.out.length : 0,
+        mode
       };
     }
   };

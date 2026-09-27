@@ -26,6 +26,12 @@
     statusTimer = setTimeout(() => { el.textContent = ""; }, 1200);
   }
 
+  function hexToRgba(hex, alpha) {
+    const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex || ""));
+    if (!m) return `rgba(0,0,0,${alpha})`;
+    return `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${alpha})`;
+  }
+
   function updatePreview() {
     const el = document.getElementById("preview-text");
     if (!el) return;
@@ -36,8 +42,10 @@
     el.style.color = g("textColor", "#ffffff");
     el.style.opacity = String(g("opacity", 100) / 100);
     const ow = g("outlineWidth", 3), oa = g("outlineOpacity", 85) / 100;
-    el.style.webkitTextStroke = ow > 0 ? `${ow}px rgba(0,0,0,${oa})` : "0";
+    const oc = g("outlineColor", "#000000"), blur = g("outlineBlur", 0);
+    el.style.webkitTextStroke = ow > 0 ? `${ow}px ${hexToRgba(oc, oa)}` : "0";
     el.style.paintOrder = "stroke fill";
+    el.style.textShadow = blur > 0 ? `0 0 ${blur}px ${hexToRgba(oc, oa)}` : "";
   }
 
   function currentSettings() {
@@ -55,11 +63,13 @@
 
   function currentFilters() {
     const F = globalThis.SYCFilter;
-    if (!F || !filterInputs) return { users: [], words: [] };
+    if (!F || !filterInputs) return { users: [], words: [], channels: [], mode: "drop", replacement: "" };
     return {
       users: F.cleanList(filterInputs.users.input.value),
       words: F.cleanWordList(filterInputs.words.input.value),
-      channels: F.cleanChannelList(filterInputs.channels.input.value)
+      channels: F.cleanChannelList(filterInputs.channels.input.value),
+      mode: filterInputs.mode.select.value,
+      replacement: filterInputs.replacement.input.value
     };
   }
 
@@ -68,6 +78,8 @@
     filterInputs.users.input.value = (lists.users || []).join("\n");
     filterInputs.words.input.value = (lists.words || []).join("\n");
     filterInputs.channels.input.value = (lists.channels || []).join("\n");
+    if (lists.mode) filterInputs.mode.select.value = lists.mode;
+    if (typeof lists.replacement === "string") filterInputs.replacement.input.value = lists.replacement;
   }
 
   async function buildBackupData() {
@@ -105,7 +117,9 @@
       filters: {
         users: F ? F.cleanList(data.filters?.users || []) : [],
         words: F ? F.cleanWordList(data.filters?.words || []) : [],
-        channels: F ? F.cleanChannelList(data.filters?.channels || []) : []
+        channels: F ? F.cleanChannelList(data.filters?.channels || []) : [],
+        mode: data.filters?.mode,
+        replacement: data.filters?.replacement
       }
     };
   }
@@ -293,23 +307,41 @@
       "Blocked channel IDs (one per line)",
       (lists.channels || []).join("\n")
     );
-    filterInputs = { users, words, channels };
+
+    const modeSelect = document.createElement("select");
+    for (const value of F.MODES || ["drop"]) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = t(`f_mode_${value}`, value);
+      modeSelect.appendChild(option);
+    }
+    modeSelect.value = lists.mode || "drop";
+    const modeField = document.createElement("label");
+    modeField.className = "fcol";
+    const modeSpan = document.createElement("span");
+    modeSpan.textContent = t("f_mode", "Blocked-word action");
+    modeField.append(modeSpan, modeSelect);
+
+    const replacement = makeFilterField("f_replacement", "Replacement text", lists.replacement ?? "");
+    replacement.input.rows = 1;
+    replacement.input.placeholder = F.replacement;
+    filterInputs = {
+      users, words, channels,
+      mode: { select: modeSelect },
+      replacement: { input: replacement.input }
+    };
     insertBeforeActions(users.field);
     insertBeforeActions(words.field);
     insertBeforeActions(channels.field);
+    insertBeforeActions(modeField);
+    insertBeforeActions(replacement.field);
 
-    const save = debounce(() =>
-      saveWithStatus(() =>
-        F.save({
-          users: users.input.value,
-          words: words.input.value,
-          channels: channels.input.value
-        })
-      ),
-    SAVE_DEBOUNCE_MS);
+    const save = debounce(() => saveWithStatus(() => F.save(currentFilters())), SAVE_DEBOUNCE_MS);
     users.input.addEventListener("input", save);
     words.input.addEventListener("input", save);
     channels.input.addEventListener("input", save);
+    modeSelect.addEventListener("change", save);
+    replacement.input.addEventListener("input", save);
 
     if (F.PRESETS && Object.keys(F.PRESETS).length) {
       const bar = document.createElement("div");

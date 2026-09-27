@@ -37,6 +37,17 @@
     fontWeight: 700,      // 100..900
     outlineWidth: 3,      // text outline px (0 = none)
     outlineAlpha: 0.85,   // outline opacity 0..1
+    outlineColor: "#000000", // outline color
+    outlineBlur: 0,       // outline softness px (0 = hard edge)
+    authorName: "nontext", // never | nontext | always
+    sizeByScore: true,    // vary font size by comment score
+    showNormal: true,     // per-type visibility gates (applied in push())
+    showMember: true,
+    showModerator: true,
+    showOwner: true,
+    showPaid: true,
+    showMembership: true,
+    roleScale: { member: 1, moderator: 1, owner: 1, paid: 1 }, // per-type font multipliers
     spreadStrength: 0.35, // how strongly length affects speed (0..1)
     cacheMax: 900,        // max cached bitmaps
     maxQueue: 2400,       // pending comments waiting for rasterization
@@ -53,6 +64,8 @@
     "fontWeight",
     "outlineWidth",
     "outlineAlpha",
+    "outlineColor",
+    "outlineBlur",
     "lineHeight",
     "textColor",
     "roleColors"
@@ -89,6 +102,14 @@
     const chars = [...String(text || "")];
     if (chars.length <= maxChars) return text;
     return `${chars.slice(0, Math.max(1, maxChars - 3)).join("")}...`;
+  }
+
+  // "#rrggbb" + alpha -> "rgba(r,g,b,a)". Falls back to black for bad input.
+  function withAlpha(hex, alpha) {
+    const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex || ""));
+    if (!m) return `rgba(0,0,0,${alpha})`;
+    const r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16);
+    return `rgba(${r},${g},${b},${alpha})`;
   }
 
   class DanmakuOverlay {
@@ -248,6 +269,7 @@
     // Admission control + spawn. Returns true if the comment was accepted.
     push(payload) {
       if (!this.canvas || !payload || !payload.text) return false;
+      if (!this._typeVisible(payload)) return false;
       const text = truncateText(payload.text, this.cfg.maxTextChars);
       const safePayload = text === payload.text ? payload : Object.assign({}, payload, { text });
 
@@ -317,6 +339,25 @@
       );
     }
 
+    // Per-type visibility gate from settings. Super chats / memberships are keyed
+    // by kind; plain messages by author role.
+    _typeVisible(payload) {
+      if (payload.kind === "paid") return this.cfg.showPaid !== false;
+      if (payload.kind === "membership") return this.cfg.showMembership !== false;
+      switch (payload.authorType) {
+        case "owner": return this.cfg.showOwner !== false;
+        case "moderator": return this.cfg.showModerator !== false;
+        case "member": return this.cfg.showMember !== false;
+        default: return this.cfg.showNormal !== false;
+      }
+    }
+
+    _roleScale(payload) {
+      const scale = this.cfg.roleScale || {};
+      if (payload.kind === "paid") return scale.paid ?? 1;
+      return scale[payload.authorType] ?? 1;
+    }
+
     _drainPending() {
       if (this.pendingHead >= this.pending.length) { this._compactPending(); return; }
       let budget = this.cfg.spawnPerFrame;
@@ -349,17 +390,21 @@
       }
 
       const emphasis = payload.emphasis ?? 0;
-      const scale = emphasis >= 0.62 ? 1.12 : emphasis <= 0.18 ? 0.9 : 1.0;
-      const fontPx = Math.round(this.cfg.fontPx * scale);
+      const scoreScale = this.cfg.sizeByScore
+        ? (emphasis >= 0.62 ? 1.12 : emphasis <= 0.18 ? 0.9 : 1.0)
+        : 1.0;
+      const fontPx = Math.round(this.cfg.fontPx * scoreScale * this._roleScale(payload));
       const color = (this.cfg.roleColors && payload.authorType && payload.authorType !== "normal")
         ? (COLORS[payload.authorType] ?? this.cfg.textColor)
         : this.cfg.textColor;
       const paidColor = payload.kind === "paid" && payload.paidColor ? payload.paidColor : "";
       const labelColor = paidColor || color;
       const body = this._displayText(payload);
-      const label = payload.author && payload.kind && payload.kind !== "text"
-        ? `${payload.author}: ${body}`
-        : body;
+      const nameMode = this.cfg.authorName || "nontext";
+      const named = payload.author && (
+        nameMode === "always" || (nameMode === "nontext" && payload.kind && payload.kind !== "text")
+      );
+      const label = named ? `${payload.author}: ${body}` : body;
       const glow = emphasis >= 0.62 && this.frameEMA < 24; // skip glow when frames are heavy
       const bmp = this._rasterize(label, labelColor, fontPx, glow);
 
@@ -489,35 +534,39 @@
       const weight = this.cfg.fontWeight || 700;
       const ow = this.cfg.outlineWidth ?? 3;
       const oa = this.cfg.outlineAlpha ?? 0.85;
-      const key = `${fontPx}|${weight}|${ow}|${oa}|${glow ? 1 : 0}|${color}|${family}|${text}`;
+      const outlineColor = this.cfg.outlineColor || "#000000";
+      const ob = this.cfg.outlineBlur ?? 0;
+      const key = `${fontPx}|${weight}|${ow}|${oa}|${outlineColor}|${ob}|${glow ? 1 : 0}|${color}|${family}|${text}`;
       const hit = this._cacheGet(key);
       if (hit) return hit;
       const font = `${weight} ${fontPx}px ${family}`;
       if (!this.measure) this.measure = document.createElement("canvas").getContext("2d");
       this.measure.font = font;
-      const pad = (glow ? 10 : 6) + Math.ceil((this.cfg.outlineWidth ?? 3) / 2);
-      const h = Math.max(this.cfg.lineHeight, fontPx + 8);
+      const pad = (glow ? 10 : 6) + Math.ceil(ow / 2) + Math.ceil(ob);
+      const h = Math.max(this.cfg.lineHeight, fontPx + 8) + Math.ceil(ob);
       const w = Math.ceil(this.measure.measureText(text).width) + pad * 2;
       const dpr = this.cfg.dpr;
-      const oc = document.createElement("canvas");
-      oc.width = Math.max(1, Math.ceil(w * dpr));
-      oc.height = Math.ceil(h * dpr);
-      const o = oc.getContext("2d");
+      const bmp = document.createElement("canvas");
+      bmp.width = Math.max(1, Math.ceil(w * dpr));
+      bmp.height = Math.ceil(h * dpr);
+      const o = bmp.getContext("2d");
       o.scale(dpr, dpr);
       o.font = font;
       o.textBaseline = "middle";
       o.lineJoin = "round";
       if (glow) { o.shadowColor = "rgba(255,255,255,.55)"; o.shadowBlur = 6; }
       if (ow > 0) {
+        const stroke = withAlpha(outlineColor, oa);
         o.lineWidth = ow;
-        o.strokeStyle = `rgba(0,0,0,${oa})`;
+        o.strokeStyle = stroke;
+        if (ob > 0) { o.shadowColor = stroke; o.shadowBlur = ob; }
         o.strokeText(text, pad, h / 2);
+        o.shadowBlur = 0;
       }
-      o.shadowBlur = 0;
       o.fillStyle = color;
       o.fillText(text, pad, h / 2);
 
-      const entry = { bmp: oc, w, h };
+      const entry = { bmp, w, h };
       this._cacheSet(key, entry);
       return entry;
     }

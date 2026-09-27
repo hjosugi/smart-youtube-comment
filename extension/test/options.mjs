@@ -259,7 +259,13 @@ assert.equal(backup.app, "smart-youtube-comment")
 assert.equal(backup.settings.speedPct, 180)
 assert.equal(
   JSON.stringify(backup.filters),
-  JSON.stringify({ users: ["alice"], words: ["spam", "/w{5,}/"], channels: ["UC1"] }),
+  JSON.stringify({
+    users: ["alice"],
+    words: ["spam", "/w{5,}/"],
+    channels: ["UC1"],
+    mode: "drop",
+    replacement: "",
+  }),
 )
 
 await sandbox.globalThis.__SYCOptionsTest.resetAll()

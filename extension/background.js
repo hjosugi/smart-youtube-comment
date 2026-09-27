@@ -17,8 +17,13 @@ async function toggleOverlaySetting() {
 }
 
 chrome.commands?.onCommand.addListener((command) => {
-  if (command !== "toggle-overlay") return;
-  toggleOverlaySetting().catch(() => {});
+  if (command === "toggle-overlay") {
+    toggleOverlaySetting().catch(() => {});
+    return;
+  }
+  if (command === "open-options") {
+    chrome.runtime.openOptionsPage();
+  }
 });
 
 function isAllowedSender(sender) {
