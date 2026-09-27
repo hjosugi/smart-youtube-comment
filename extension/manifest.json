@@ -61,6 +61,7 @@
         "scoring.js",
         "danmaku.js",
         "settings.js",
+        "translate.js",
         "content.js"
       ],
       "run_at": "document_idle",

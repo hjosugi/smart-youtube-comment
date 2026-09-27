@@ -29,6 +29,11 @@ declare global {
 
   var SYCSettings: SettingsApi
   var SYCFilter: FilterApi
+  var SYCTranslate: {
+    translate(text: string, targetLanguage: string): Promise<string>
+    available(): boolean
+    reset(): void
+  }
   var SYCChat: unknown
   var SYCApp: unknown
   var SYC_TRUSTED_RELAY_ORIGINS: string[] | undefined

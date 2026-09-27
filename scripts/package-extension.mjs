@@ -34,6 +34,7 @@ const required = [
   "danmaku.js",
   "settings.js",
   "filter.js",
+  "translate.js",
   "content.js",
   "options.html",
   "options.js",

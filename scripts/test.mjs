@@ -51,6 +51,7 @@ const SUITES = [
   ["unit", "web/test/url-security.mjs"],
   ["unit", "web/test/commentlist.mjs"],
   ["unit", "web/test/danmaku.mjs"],
+  ["unit", "web/test/translate.mjs"],
   ["unit", "web/test/player.mjs"],
   ["unit", "web/test/videoctl.mjs"],
   ["unit", "web/test/i18n.mjs"],

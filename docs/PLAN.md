@@ -142,7 +142,13 @@ Phase 3 — interaction:
   Note: this works in the extension (content script on the watch page). In the
   PWA the YouTube iframe owns pointer events, so pin/drag needs a dedicated
   capture layer before it can work there.
-- Remaining: on-device (Translator API) translation, PiP.
+- Done: on-device translation via the browser's built-in Translator /
+  LanguageDetector APIs (Chrome, experimental). `extension/translate.js` (shared
+  verbatim with `web/`) caches results, detects the source language, and returns
+  the original text when the API or a language pack is unavailable. Nothing
+  leaves the device, so the privacy stance is unchanged. Enabled by the
+  `translateTo` setting (default off).
+- Remaining: PiP; multi-line wrap; custom emoji images in the extension.
 
 Migration note: `lineHeight` px settings are no longer read; stored values
 normalize to the new `lineHeightScale` default. The filter store gains `mode`

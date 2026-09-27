@@ -91,6 +91,7 @@ function checkManifest() {
         "scoring.js",
         "danmaku.js",
         "settings.js",
+        "translate.js",
         "content.js",
       ])
     ) {

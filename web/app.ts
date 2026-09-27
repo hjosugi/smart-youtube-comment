@@ -90,10 +90,37 @@ const onMessages = (msgs: ChatMessage[]) => {
     if (cfg.listEnabled) listBatch.push(shown)
     if (cfg.enabled) renderMessages.push(shown)
   }
-  if (listBatch.length) list.pushMany(listBatch)
-  if (renderMessages.length) renderBatch(render, overlay, renderMessages)
+  finishBatch(listBatch, renderMessages)
 }
 
+const finishBatch = (listBatch: ChatMessage[], renderMessages: ChatMessage[]) => {
+  const target = cfg.translateTo
+  const Tr = globalThis.SYCTranslate
+  if (!target || !Tr?.translate) {
+    if (listBatch.length) list.pushMany(listBatch)
+    if (renderMessages.length) renderBatch(render, overlay, renderMessages)
+    return
+  }
+  translateChain = translateChain.then(async () => {
+    const [translatedList, translatedRender] = await Promise.all([
+      translateBatch(listBatch, target),
+      translateBatch(renderMessages, target),
+    ])
+    if (translatedList.length) list.pushMany(translatedList)
+    if (translatedRender.length) renderBatch(render, overlay, translatedRender)
+  })
+}
+
+// On-device translation is async; chain batches so display order is preserved.
+// SYCTranslate.translate never rejects and returns the source when unavailable.
+let translateChain: Promise<void> = Promise.resolve()
+const translateBatch = (batch: ChatMessage[], target: string): Promise<ChatMessage[]> =>
+  Promise.all(
+    batch.map(async (m: ChatMessage) => {
+      const text = await globalThis.SYCTranslate.translate(m.text, target)
+      return text && text !== m.text ? { ...m, text, parts: [] } : m
+    }),
+  )
 // --- sources ---
 const wakeLock = createWakeLock()
 let stop = () => {}

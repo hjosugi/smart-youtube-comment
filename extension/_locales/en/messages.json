@@ -66,6 +66,7 @@
   "s_maxWidthPct": { "message": "Max comment width" },
   "s_layerCss": { "message": "Custom layer CSS" },
   "s_pinComments": { "message": "Right-click to pin a comment" },
+  "s_translateTo": { "message": "Translate comments (on-device)" },
   "sp_default": { "message": "Default" },
   "sp_niconico": { "message": "Niconico (fast)" },
   "sp_relaxed": { "message": "Relaxed (readable)" },

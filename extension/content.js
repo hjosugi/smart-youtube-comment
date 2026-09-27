@@ -319,9 +319,25 @@
     chrome.runtime.onMessage.addListener((message) => {
       if (message?.type !== "smart-comment:render-message") return false;
       const payload = sanitizeRenderPayload(message.payload);
-      if (settings.enabled && payload) overlay.push(payload);
+      if (settings.enabled && payload) pushPayload(payload);
       return false;
     });
+
+    // On-device translation happens here (top frame), where settings live. The
+    // engine keeps its raster cache keyed on text, so repeated messages reuse
+    // bitmaps. translate() never throws and returns the source when unavailable.
+    const pushPayload = (payload) => {
+      const target = settings.translateTo;
+      const T = globalThis.SYCTranslate;
+      if (!target || !T?.translate) {
+        overlay.push(payload);
+        return;
+      }
+      T.translate(payload.text, target).then((text) => {
+        if (!settings.enabled || !overlay.canvas || settings.translateTo !== target) return;
+        overlay.push(text && text !== payload.text ? { ...payload, text } : payload);
+      });
+    };
   }
 
   function hasLiveChatShell() {

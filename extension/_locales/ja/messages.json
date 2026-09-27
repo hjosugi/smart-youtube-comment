@@ -66,6 +66,7 @@
   "s_maxWidthPct": { "message": "コメントの最大幅" },
   "s_layerCss": { "message": "レイヤ限定ユーザーCSS" },
   "s_pinComments": { "message": "右クリックでコメントをピン留め" },
+  "s_translateTo": { "message": "コメントを翻訳（オンデバイス）" },
   "sp_default": { "message": "標準" },
   "sp_niconico": { "message": "ニコニコ風（速い）" },
   "sp_relaxed": { "message": "読みやすさ重視" },

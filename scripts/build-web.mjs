@@ -38,6 +38,7 @@ const SCRIPTS = [
   "filter.js",
   "store.js",
   "emoji.js",
+  "translate.js",
   "sw.js",
 ]
 const STATIC = ["index.html", "styles.css", "manifest.webmanifest"]

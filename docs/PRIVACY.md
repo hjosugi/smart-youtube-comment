@@ -27,6 +27,10 @@ Comment scoring, filtering, and rendering run on the user's device. Chat text,
 author names, block lists, and settings are not sent to the developer or to an
 external server.
 
+Optional on-device translation uses the browser's built-in Translator and
+LanguageDetector APIs, which run locally. When those APIs are unavailable the
+original text is shown and nothing is sent anywhere.
+
 ## Web App Relay
 
 The standalone web app can request live-chat data through a configured relay
