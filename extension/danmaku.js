@@ -48,6 +48,7 @@
     showPaid: true,
     showMembership: true,
     roleScale: { member: 1, moderator: 1, owner: 1, paid: 1 }, // per-type font multipliers
+    pinComments: true,    // right-click to pin & drag an individual comment
     spreadStrength: 0.35, // how strongly length affects speed (0..1)
     flowDirection: "rtl", // rtl (right to left) | ltr (left to right)
     density: "top",       // top | bottom | random lane packing
@@ -151,6 +152,11 @@
       this.frameSampleLen = 0;
       this.frameSamplePos = 0;
       this._lto = null;
+      this.drag = null;         // active pin-drag state
+      this._onContextMenu = null;
+      this._onPointerDown = null;
+      this._onPointerMove = null;
+      this._onPointerUp = null;
       this._loop = this._loop.bind(this);
       this.w = 1; this.h = 1; this.laneCount = 1; this.laneTop = 0; this.laneH = this.cfg.lineHeight;
     }
@@ -172,12 +178,14 @@
       this._resize();
       this._ro = new ResizeObserver(() => this._resize());
       this._ro.observe(player);
+      this._bindPointer(player);
       this._startLongTaskObserver();
       this.start();
     }
 
     detach() {
       this.stop();
+      this._unbindPointer();
       this._stopLongTaskObserver();
       this._ro?.disconnect();
       this._ro = null;
@@ -388,7 +396,8 @@
     _spawn(payload, priority) {
       if (this.active.length >= this.dynamicCap) {
         const weakest = this._peekActiveMin();
-        if (weakest && priority > weakest.priority) this._removeActive(weakest); // evict weakest
+        // Pinned comments are user-held and never evicted; drop the newcomer.
+        if (weakest && !weakest.pinned && priority > weakest.priority) this._removeActive(weakest); // evict weakest
         else { this.dropped++; return false; }                  // drop incoming
       }
 
@@ -522,6 +531,93 @@
       arr.pop();
     }
 
+    // --- right-click pin & drag (opt-in via cfg.pinComments) ------------------
+    // Capture phase so we run before YouTube's own player handlers and can
+    // preventDefault only when a comment was actually hit.
+    _bindPointer(player) {
+      this._onContextMenu = (e) => this._handleContextMenu(e);
+      this._onPointerDown = (e) => this._handlePointerDown(e);
+      this._onPointerMove = (e) => this._handlePointerMove(e);
+      this._onPointerUp = () => this._endDrag();
+      player.addEventListener("contextmenu", this._onContextMenu, true);
+      player.addEventListener("pointerdown", this._onPointerDown, true);
+    }
+
+    _unbindPointer() {
+      const player = this.player;
+      this._endDrag();
+      if (player) {
+        if (this._onContextMenu) player.removeEventListener("contextmenu", this._onContextMenu, true);
+        if (this._onPointerDown) player.removeEventListener("pointerdown", this._onPointerDown, true);
+      }
+      this._onContextMenu = null;
+      this._onPointerDown = null;
+    }
+
+    _localPoint(event) {
+      const rect = this.canvas?.getBoundingClientRect?.();
+      if (!rect) return null;
+      return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    }
+
+    // Topmost comment under a canvas-local point, or null.
+    _hitTest(x, y) {
+      const arr = this.active;
+      for (let i = arr.length - 1; i >= 0; i--) {
+        const a = arr[i];
+        if (x >= a.x && x <= a.x + a.w && y >= a.y - a.h / 2 && y <= a.y + a.h / 2) return a;
+      }
+      return null;
+    }
+
+    _togglePin(sprite) {
+      sprite.pinned = !sprite.pinned;
+      // A released comment needs enough lifetime to leave the stage again.
+      if (!sprite.pinned) sprite.ttlMs = Math.max(sprite.ttlMs, 3000);
+    }
+
+    _handleContextMenu(event) {
+      if (!this.cfg.pinComments) return;
+      const point = this._localPoint(event);
+      const sprite = point && this._hitTest(point.x, point.y);
+      if (!sprite) return;
+      event.preventDefault();
+      event.stopPropagation();
+      this._togglePin(sprite);
+    }
+
+    _handlePointerDown(event) {
+      if (!this.cfg.pinComments || event.button !== 0) return;
+      const point = this._localPoint(event);
+      const sprite = point && this._hitTest(point.x, point.y);
+      if (!sprite || !sprite.pinned) return;
+      event.preventDefault();
+      event.stopPropagation();
+      this.drag = {
+        sprite,
+        offsetX: point.x - sprite.x,
+        offsetY: point.y - (sprite.y - sprite.h / 2)
+      };
+      window.addEventListener("pointermove", this._onPointerMove);
+      window.addEventListener("pointerup", this._onPointerUp);
+    }
+
+    _handlePointerMove(event) {
+      const drag = this.drag;
+      if (!drag) return;
+      const point = this._localPoint(event);
+      if (!point) return;
+      drag.sprite.x = point.x - drag.offsetX;
+      drag.sprite.y = point.y - drag.offsetY + drag.sprite.h / 2;
+    }
+
+    _endDrag() {
+      if (!this.drag) return;
+      this.drag = null;
+      window.removeEventListener("pointermove", this._onPointerMove);
+      window.removeEventListener("pointerup", this._onPointerUp);
+    }
+
     _pickLane(now) {
       const n = this.laneCount;
       const mode = this.cfg.density || "top";
@@ -651,10 +747,12 @@
       let drawn = 0;
       for (let i = 0; i < arr.length; i++) {
         const a = arr[i];
-        a.x += a.vx * dt * dir;
-        a.ttlMs -= dt;
-        const gone = dir < 0 ? a.x + a.w < 0 : a.x > this.w;
-        if (gone || a.ttlMs <= 0) { a.active = false; continue; } // expired -> dropped by compaction
+        if (!a.pinned) {
+          a.x += a.vx * dt * dir;
+          a.ttlMs -= dt;
+          const gone = dir < 0 ? a.x + a.w < 0 : a.x > this.w;
+          if (gone || a.ttlMs <= 0) { a.active = false; continue; } // expired -> dropped by compaction
+        }
         // Snap to the DEVICE pixel grid: dpr is fractional (e.g. 1.5), so
         // rounding in CSS px would leave a half-device-pixel offset and the
         // browser would resample the cached text bitmap with a shifting phase

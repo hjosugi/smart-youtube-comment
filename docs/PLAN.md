@@ -135,8 +135,14 @@ Phase 3 — interaction:
 - Done: `timeshiftMs` (web only) shifts the chat replay gate so archive comments
   can be shown earlier or later; the extension has no reliable per-message
   timestamps, so it is PWA-only.
-- Remaining: right-click pin & drag an individual comment, on-device
-  (Translator API) translation, PiP.
+- Done: right-click a comment to pin it in place (it stops moving and will not
+  expire or be evicted), then drag it with the left button; the same toggle
+  releases it. Gated by the `pinComments` setting and bound in the capture
+  phase so YouTube's own player handlers do not fire when a comment is hit.
+  Note: this works in the extension (content script on the watch page). In the
+  PWA the YouTube iframe owns pointer events, so pin/drag needs a dedicated
+  capture layer before it can work there.
+- Remaining: on-device (Translator API) translation, PiP.
 
 Migration note: `lineHeight` px settings are no longer read; stored values
 normalize to the new `lineHeightScale` default. The filter store gains `mode`

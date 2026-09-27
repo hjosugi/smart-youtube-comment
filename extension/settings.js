@@ -49,6 +49,7 @@
         { value: "always", label: "Always" }
       ] },
     { key: "sizeByScore",  group: "Display",     label: "Vary size by score",     type: "bool",                                   default: true },
+    { key: "pinComments",  group: "Behavior",    label: "Right-click to pin a comment", type: "bool",                             default: true },
     { key: "showNormal",   group: "Types",       label: "Show normal users",      type: "bool",                                   default: true },
     { key: "showMember",   group: "Types",       label: "Show members",           type: "bool",                                   default: true },
     { key: "showModerator", group: "Types",      label: "Show moderators",        type: "bool",                                   default: true },
@@ -199,6 +200,7 @@
       outlineBlur: safe.outlineBlur,
       authorName: safe.authorName,
       sizeByScore: safe.sizeByScore,
+      pinComments: safe.pinComments,
       showNormal: safe.showNormal,
       showMember: safe.showMember,
       showModerator: safe.showModerator,

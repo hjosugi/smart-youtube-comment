@@ -242,6 +242,44 @@ const assertFlowDirectionAndDensity = (label, Overlay) => {
   )
 }
 
+const assertPinAndHitTest = (label, Overlay) => {
+  const overlay = new Overlay({ dpr: 1, dedup: false })
+  overlay.ctx = makeContext()
+  overlay.running = true
+  overlay.lastTs = 1000
+  overlay.active.push({
+    bmp: makeCanvas(),
+    w: 100,
+    h: 20,
+    x: 50,
+    y: 100,
+    vx: 1,
+    ttlMs: 5000,
+    priority: 1,
+    id: 1,
+    index: 0,
+    active: true,
+  })
+
+  assert.equal(
+    overlay._hitTest(60, 100)?.id,
+    1,
+    `${label}: hit test finds the comment under the point`,
+  )
+  assert.equal(overlay._hitTest(500, 400), null, `${label}: hit test misses empty space`)
+
+  const sprite = overlay._hitTest(60, 100)
+  overlay._togglePin(sprite)
+  assert.equal(sprite.pinned, true, `${label}: toggle pins a comment`)
+
+  overlay._loop(1016)
+  assert.equal(overlay.active[0].x, 50, `${label}: pinned comments do not move`)
+  assert.equal(overlay.active[0].ttlMs, 5000, `${label}: pinned comments do not expire`)
+
+  overlay._togglePin(sprite)
+  assert.equal(sprite.pinned, false, `${label}: a second toggle unpins`)
+}
+
 const assertLruCache = (label, Overlay, rasterize) => {
   const overlay = new Overlay({ cacheMax: 2, dpr: 1, dedup: false })
 
@@ -625,6 +663,7 @@ assertFrameDeltaPacing("web", webOverlay)
 assertDevicePixelSnapping("web", webOverlay)
 assertTypeGatingAndRoleScale("web", webOverlay)
 assertFlowDirectionAndDensity("web", webOverlay)
+assertPinAndHitTest("web", webOverlay)
 assertLruCache("web", webOverlay, (overlay, text) =>
   overlay._rasterize([{ t: text }], "#fff", 24, false),
 )
@@ -653,6 +692,7 @@ assertFrameDeltaPacing("extension", extensionOverlay)
 assertDevicePixelSnapping("extension", extensionOverlay)
 assertTypeGatingAndRoleScale("extension", extensionOverlay)
 assertFlowDirectionAndDensity("extension", extensionOverlay)
+assertPinAndHitTest("extension", extensionOverlay)
 assertLruCache("extension", extensionOverlay, (overlay, text) =>
   overlay._rasterize(text, "#fff", 24, false),
 )
@@ -665,4 +705,4 @@ assertActiveCapEviction("extension", extensionOverlay)
 assertLaneSelectionAndClear("extension", extensionOverlay)
 assertPendingCompaction("extension", extensionOverlay)
 
-console.log("danmaku ok (166 assertions)")
+console.log("danmaku ok (178 assertions)")
