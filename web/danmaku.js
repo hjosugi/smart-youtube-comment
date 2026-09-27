@@ -52,6 +52,8 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
     showMembership: true,
     roleScale: { member: 1, moderator: 1, owner: 1, paid: 1 }, // per-type font multipliers
     spreadStrength: 0.35, // how strongly length affects speed (0..1)
+    flowDirection: "rtl", // rtl (right to left) | ltr (left to right)
+    density: "top",       // top | bottom | random lane packing
     cacheMax: 900,        // max cached bitmaps
     maxQueue: 1000,       // pending comments waiting for rasterization
     spawnPerFrame: 6,     // cap expensive canvas text rasterization per frame
@@ -417,8 +419,9 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
 
       const now = performance.now();
       const lane = this._pickLane(now);
-      const startX = this.w;
-      const dist = startX + bmp.w + this.cfg.gapPx;
+      const dir = this.cfg.flowDirection === "ltr" ? 1 : -1;
+      const startX = dir < 0 ? this.w : -bmp.w;
+      const dist = this.w + bmp.w + this.cfg.gapPx;
       const vx = dist / dur; // px per ms (long text => larger dist => already slower via dur)
       this.lanes[lane] = now + (bmp.w + this.cfg.gapPx) / vx; // lane reusable after tail clears entry
 
@@ -517,11 +520,21 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
     }
 
     _pickLane(now) {
+      const n = this.laneCount;
+      const mode = this.cfg.density || "top";
       // Prefer a lane that is already clear; otherwise the one that frees soonest.
+      const free = mode === "random" ? [] : null;
+      for (let k = 0; k < n; k++) {
+        const i = mode === "bottom" ? n - 1 - k : k;
+        if (this.lanes[i] <= now) {
+          if (free) free.push(i);
+          else return i;
+        }
+      }
+      if (free && free.length) return free[Math.floor(Math.random() * free.length)];
       let best = 0, bestFree = Infinity;
-      for (let i = 0; i < this.laneCount; i++) {
+      for (let i = 0; i < n; i++) {
         const f = this.lanes[i];
-        if (f <= now) return i;
         if (f < bestFree) { bestFree = f; best = i; }
       }
       return best;
@@ -641,6 +654,7 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
 
       const ctx = this.ctx, dpr = this.cfg.dpr, invDpr = 1 / dpr;
       const arr = this.active, next = this.nextActive;
+      const dir = this.cfg.flowDirection === "ltr" ? 1 : -1;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, this.w, this.h);
       ctx.globalAlpha = this.cfg.opacity;
@@ -648,9 +662,10 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
       let drawn = 0;
       for (let i = 0; i < arr.length; i++) {
         const a = arr[i];
-        a.x -= a.vx * dt;
+        a.x += a.vx * dt * dir;
         a.ttlMs -= dt;
-        if (a.x + a.w < 0 || a.ttlMs <= 0) { a.active = false; continue; } // expired -> dropped by compaction
+        const gone = dir < 0 ? a.x + a.w < 0 : a.x > this.w;
+        if (gone || a.ttlMs <= 0) { a.active = false; continue; } // expired -> dropped by compaction
         // Snap to the DEVICE pixel grid: dpr is fractional (e.g. 1.5), so
         // rounding in CSS px would leave a half-device-pixel offset and the
         // browser would resample the cached text bitmap with a shifting phase

@@ -74,7 +74,18 @@ import { clamp } from "./math.js";
     { key: "lengthSpread", group: "Behavior",    label: "Vary speed by length",   type: "bool",                                   default: true },
     { key: "spreadStrength", group: "Behavior",  label: "Length speed strength",  type: "range", min: 0,   max: 100,  step: 5, unit: "%", default: 35 },
     { key: "dedup",        group: "Behavior",    label: "Drop near-duplicates",   type: "bool",                                   default: true },
-    { key: "dedupThreshold", group: "Behavior",  label: "Duplicate strictness",   type: "range", min: 1,   max: 8,    step: 1,            default: 3 }
+    { key: "dedupThreshold", group: "Behavior",  label: "Duplicate strictness",   type: "range", min: 1,   max: 8,    step: 1,            default: 3 },
+    { key: "flowDirection", group: "Behavior",   label: "Flow direction",         type: "select",  default: "rtl",
+      options: [
+        { value: "rtl", label: "Right to left" },
+        { value: "ltr", label: "Left to right" }
+      ] },
+    { key: "density",      group: "Behavior",    label: "Comment density",        type: "select",  default: "top",
+      options: [
+        { value: "top", label: "Pack from the top" },
+        { value: "bottom", label: "Pack from the bottom" },
+        { value: "random", label: "Random rows" }
+      ] }
   ];
 
   const DEFAULTS = Object.fromEntries(SCHEMA.map((s) => [s.key, s.default]));
@@ -204,7 +215,9 @@ import { clamp } from "./math.js";
       lengthSpread: safe.lengthSpread,
       spreadStrength: safe.spreadStrength / 100,
       dedup: safe.dedup,
-      simThreshold: safe.dedupThreshold
+      simThreshold: safe.dedupThreshold,
+      flowDirection: safe.flowDirection,
+      density: safe.density
     };
   }
 

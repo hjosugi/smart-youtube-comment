@@ -97,7 +97,10 @@ Phase 1 — 設定・レンダラの調整（v0.2.5 で完了）:
 - NGワードに `mode`（`drop` / `censor` / `replace`）と `replacement` を追加（ローカルのフィルターストア）。`SYCFilter.apply()` が `{ drop, text }` を返し、設定に応じて `content.js` / `web/app.ts` が伏字・置換を行います。
 - `open-options` コマンド（`Alt+Shift+O`）を `toggle-overlay` と並んで追加。
 
-Phase 2 — 描画表現（予定）: 流す方向、表示密度（上/下/ランダム）、オーバーラップ処理、最大幅での折り返し、拡張でのカスタム絵文字画像、レイヤ限定のユーザーCSS。
+Phase 2 — 描画表現:
+
+- 完了: `flowDirection`（`rtl` / `ltr`）と `density`（`top` / `bottom` / `random`）をエンジンの生成・レーン処理に追加。
+- 残り: オーバーラップ処理、最大幅での折り返し、拡張でのカスタム絵文字画像、レイヤ限定のユーザーCSS。
 
 Phase 3 — インタラクション（予定）: 右クリックで個別コメントのピン留め＆ドラッグ移動、アーカイブのタイムシフト、オンデバイス翻訳（Translator API）、PiP。
 

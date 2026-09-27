@@ -202,6 +202,37 @@ const assertTypeGatingAndRoleScale = (label, Overlay) => {
   assert.equal(overlay.push(payload("plain")), true, `${label}: visible comment is queued`)
 }
 
+const assertFlowDirectionAndDensity = (label, Overlay) => {
+  const ltr = new Overlay({ dpr: 1, dedup: false, flowDirection: "ltr", lengthSpread: false })
+  ltr.canvas = makeCanvas()
+  ltr.ctx = makeContext()
+  ltr.w = 320
+  ltr.h = 180
+  ltr.laneTop = 0
+  ltr.laneH = 24
+  ltr.laneCount = 3
+  ltr.lanes = [0, 0, 0]
+  ltr.dynamicCap = 10
+
+  assert.equal(ltr._spawn(payload("hello"), 0.5), true, `${label}: ltr spawn accepted`)
+  assert.equal(ltr.active[0].x < 0, true, `${label}: ltr comments start left of the stage`)
+  const before = ltr.active[0].x
+  ltr.running = true
+  ltr.lastTs = 1000
+  ltr._loop(1016)
+  assert.equal(ltr.active[0].x > before, true, `${label}: ltr comments move to the right`)
+
+  const bottom = new Overlay({ dpr: 1, dedup: false, density: "bottom" })
+  bottom.laneCount = 4
+  bottom.lanes = [0, 0, 0, 0]
+  assert.equal(bottom._pickLane(0), 3, `${label}: bottom density fills the lowest lane first`)
+
+  const top = new Overlay({ dpr: 1, dedup: false, density: "top" })
+  top.laneCount = 4
+  top.lanes = [0, 0, 0, 0]
+  assert.equal(top._pickLane(0), 0, `${label}: top density fills the first lane first`)
+}
+
 const assertLruCache = (label, Overlay, rasterize) => {
   const overlay = new Overlay({ cacheMax: 2, dpr: 1, dedup: false })
 
@@ -584,6 +615,7 @@ assertAdaptiveCap("web", webOverlay)
 assertFrameDeltaPacing("web", webOverlay)
 assertDevicePixelSnapping("web", webOverlay)
 assertTypeGatingAndRoleScale("web", webOverlay)
+assertFlowDirectionAndDensity("web", webOverlay)
 assertLruCache("web", webOverlay, (overlay, text) =>
   overlay._rasterize([{ t: text }], "#fff", 24, false),
 )
@@ -611,6 +643,7 @@ assertAdaptiveCap("extension", extensionOverlay)
 assertFrameDeltaPacing("extension", extensionOverlay)
 assertDevicePixelSnapping("extension", extensionOverlay)
 assertTypeGatingAndRoleScale("extension", extensionOverlay)
+assertFlowDirectionAndDensity("extension", extensionOverlay)
 assertLruCache("extension", extensionOverlay, (overlay, text) =>
   overlay._rasterize(text, "#fff", 24, false),
 )
@@ -623,4 +656,4 @@ assertActiveCapEviction("extension", extensionOverlay)
 assertLaneSelectionAndClear("extension", extensionOverlay)
 assertPendingCompaction("extension", extensionOverlay)
 
-console.log("danmaku ok (152 assertions)")
+console.log("danmaku ok (162 assertions)")

@@ -120,9 +120,12 @@ Phase 1 — settings/renderer polish (done in v0.2.5):
   `content.js` / `web/app.ts` mask instead of dropping when configured.
 - `open-options` command (`Alt+Shift+O`) alongside `toggle-overlay`.
 
-Phase 2 — rendering expression (planned): flow direction, density
-(top/bottom/random), overlap handling, max-width wrap, custom emoji images in
-the extension, layer-scoped user CSS.
+Phase 2 — rendering expression:
+
+- Done: `flowDirection` (`rtl` / `ltr`) and `density` (`top` / `bottom` /
+  `random`) in the engine spawn/lane logic.
+- Remaining: overlap handling, max-width wrap, custom emoji images in the
+  extension, layer-scoped user CSS.
 
 Phase 3 — interaction (planned): right-click pin & drag an individual comment,
 archive timeshift offset, on-device (Translator API) translation, PiP.
