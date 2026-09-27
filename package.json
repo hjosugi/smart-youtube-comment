@@ -49,7 +49,7 @@
   },
   "devDependencies": {
     "esbuild": "0.28.2",
-    "oxfmt": "0.68.0",
+    "oxfmt": "0.70.0",
     "oxlint": "1.83.0",
     "playwright": "1.63.0",
     "typescript": "7.0.2",
