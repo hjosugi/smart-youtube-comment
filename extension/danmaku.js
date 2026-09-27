@@ -53,6 +53,7 @@
     flowDirection: "rtl", // rtl (right to left) | ltr (left to right)
     density: "top",       // top | bottom | random lane packing
     maxWidthPct: 1,       // clamp a comment's width to a fraction of the stage
+    wrapText: false,      // wrap overflowing text instead of trimming it
     cacheMax: 900,        // max cached bitmaps
     maxQueue: 2400,       // pending comments waiting for rasterization
     spawnPerFrame: 10,    // cap expensive canvas text rasterization per frame
@@ -81,6 +82,7 @@
   const TARGET_FRAME_MS = 1000 / 60;
   const MIN_CAP_FRAME_MS = 50;
   const LONG_GAP_MS = 500; // frame gap above this is a pause, not a hitch
+  const MAX_WRAP_LINES = 3; // hard cap on wrapped lines per comment
   const DEDUP_BUCKET_BITS = 8;
   const DEDUP_BUCKET_MASKS = Array.from({ length: DEDUP_BUCKET_BITS + 1 }, (_, threshold) => {
     const masks = [];
@@ -411,14 +413,14 @@
         : this.cfg.textColor;
       const paidColor = payload.kind === "paid" && payload.paidColor ? payload.paidColor : "";
       const labelColor = paidColor || color;
-      const body = this._displayText(payload);
+      const msgParts = this._displayParts(payload);
       const nameMode = this.cfg.authorName || "nontext";
       const named = payload.author && (
         nameMode === "always" || (nameMode === "nontext" && payload.kind && payload.kind !== "text")
       );
-      const label = named ? `${payload.author}: ${body}` : body;
+      const parts = (named ? [{ t: `${payload.author}: ` }, ...msgParts] : msgParts).slice(0, 60);
       const glow = emphasis >= 0.62 && this.frameEMA < 24; // skip glow when frames are heavy
-      const bmp = this._rasterize(this._fitWidth(label, fontPx), labelColor, fontPx, glow);
+      const bmp = this._rasterize(parts, labelColor, fontPx, glow);
 
       const td = this.cfg.tierDurations;
       const baseMs = (td && td[payload.tier] != null) ? td[payload.tier] : (payload.durationMs || 8000);
@@ -523,6 +525,17 @@
       const amount = payload.kind === "paid" ? (payload.amount || "") : "";
       if (!amount || text.trim() === amount.trim()) return text;
       return `${amount} ${text}`;
+    }
+
+    // Message body as render parts: { t } text or { u, a } custom emoji image.
+    // Falls back to plain text when the payload carries no parts.
+    _displayParts(payload) {
+      const parts = Array.isArray(payload.parts) && payload.parts.length
+        ? payload.parts
+        : [{ t: payload.text }];
+      const amount = payload.kind === "paid" ? (payload.amount || "") : "";
+      if (!amount || String(payload.text || "").trim() === amount.trim()) return parts;
+      return [{ t: `${amount} ` }, ...parts];
     }
 
     _swapRemove(arr, index) {
@@ -639,43 +652,101 @@
       return best;
     }
 
-    // Clamp a comment's rendered width to maxWidthPct of the stage, trimming with
-    // an ellipsis. Only runs when a comment is actually too wide.
-    _fitWidth(text, fontPx) {
+    // Break plain text into rendered lines. With wrapText off the text is
+    // trimmed to one line with an ellipsis; with it on the text wraps into up to
+    // MAX_WRAP_LINES lines and the last one is ellipsized if it still overflows.
+    _layoutLines(text, fontPx) {
       const pct = this.cfg.maxWidthPct ?? 1;
-      if (pct >= 1 || !this.w || !text) return text;
-      const maxPx = this.w * pct;
       const family = this.cfg.fontFamily || 'system-ui, -apple-system, "Segoe UI", sans-serif';
       const weight = this.cfg.fontWeight || 700;
       if (!this.measure) this.measure = document.createElement("canvas").getContext("2d");
       this.measure.font = `${weight} ${fontPx}px ${family}`;
-      if (this.measure.measureText(text).width <= maxPx) return text;
+      const measure = (s) => this.measure.measureText(s).width;
+      if (pct >= 1 || !this.w || !text) return [text];
+      const maxPx = this.w * pct;
+      if (measure(text) <= maxPx) return [text];
       const chars = [...text];
-      let lo = 1, hi = chars.length;
-      while (lo < hi) {
-        const mid = (lo + hi + 1) >> 1;
-        if (this.measure.measureText(chars.slice(0, mid).join("")).width <= maxPx) lo = mid;
-        else hi = mid - 1;
+      if (!this.cfg.wrapText) {
+        let lo = 1, hi = chars.length;
+        while (lo < hi) {
+          const mid = (lo + hi + 1) >> 1;
+          if (measure(chars.slice(0, mid).join("")) <= maxPx) lo = mid;
+          else hi = mid - 1;
+        }
+        return [`${chars.slice(0, Math.max(1, lo - 1)).join("")}…`];
       }
-      return `${chars.slice(0, Math.max(1, lo - 1)).join("")}…`;
+      const all = [];
+      let current = "";
+      for (const ch of chars) {
+        if (current && measure(current + ch) > maxPx) { all.push(current); current = ch; }
+        else current += ch;
+      }
+      if (current) all.push(current);
+      if (all.length <= MAX_WRAP_LINES) return all;
+      const kept = all.slice(0, MAX_WRAP_LINES);
+      let last = kept[MAX_WRAP_LINES - 1];
+      while (last.length > 1 && measure(`${last}…`) > maxPx) last = last.slice(0, -1);
+      kept[MAX_WRAP_LINES - 1] = `${last}…`;
+      return kept;
     }
 
-    _rasterize(text, color, fontPx, glow) {
+    // Trim a plain string to the configured max width (kept for tests/consumers).
+    _fitWidth(text, fontPx) {
+      return this._layoutLines(text, fontPx).join("");
+    }
+
+    // parts: [{ t: text } | { u: emojiUrl }]. Text is drawn with outline/glow;
+    // custom-emoji parts are drawn as images. A bitmap referencing an emoji image
+    // that has not loaded yet is NOT cached, so it re-rasterizes (with the image)
+    // next time the same comment appears.
+    _rasterize(parts, color, fontPx, glow) {
       const family = this.cfg.fontFamily || 'system-ui, -apple-system, "Segoe UI", sans-serif';
       const weight = this.cfg.fontWeight || 700;
       const ow = this.cfg.outlineWidth ?? 3;
       const oa = this.cfg.outlineAlpha ?? 0.85;
       const outlineColor = this.cfg.outlineColor || "#000000";
       const ob = this.cfg.outlineBlur ?? 0;
-      const key = `${fontPx}|${weight}|${ow}|${oa}|${outlineColor}|${ob}|${glow ? 1 : 0}|${color}|${family}|${text}`;
+      const sig = parts.map((p) => (p.u ? "\u0001" + p.u : p.t)).join("");
+      const key = `${fontPx}|${weight}|${ow}|${oa}|${outlineColor}|${ob}|${glow ? 1 : 0}|${color}|${family}|${sig}`;
       const hit = this._cacheGet(key);
       if (hit) return hit;
+
       const font = `${weight} ${fontPx}px ${family}`;
       if (!this.measure) this.measure = document.createElement("canvas").getContext("2d");
       this.measure.font = font;
       const pad = (glow ? 10 : 6) + Math.ceil(ow / 2) + Math.ceil(ob);
-      const h = Math.max(this.cfg.lineHeight, fontPx + 8) + Math.ceil(ob);
-      const w = Math.ceil(this.measure.measureText(text).width) + pad * 2;
+      const lineH = Math.max(this.cfg.lineHeight, fontPx + 8);
+      const emoji = globalThis.SYCEmoji;
+      const emojiSize = Math.round(fontPx * 1.15);
+
+      let lines;
+      if (parts.some((p) => p.u)) {
+        // Emoji messages stay on one line; emoji are measured as fixed squares.
+        let width = 0;
+        let ready = true;
+        const segs = parts.map((p) => {
+          if (p.u) {
+            const img = emoji ? emoji.get(p.u) : null;
+            const loaded = !!(img && img.complete && img.naturalWidth);
+            if (!loaded) ready = false;
+            width += emojiSize + 2;
+            return { img: loaded ? img : null, text: null, w: emojiSize + 2 };
+          }
+          const segW = this.measure.measureText(p.t).width;
+          width += segW;
+          return { img: null, text: p.t, w: segW };
+        });
+        lines = [{ segs, width, ready }];
+      } else {
+        lines = this._layoutLines(parts.map((p) => p.t).join(""), fontPx).map((t) => {
+          const segW = this.measure.measureText(t).width;
+          return { segs: [{ img: null, text: t, w: segW }], width: segW, ready: true };
+        });
+      }
+
+      const contentW = Math.max(1, ...lines.map((line) => line.width));
+      const w = Math.ceil(contentW) + pad * 2;
+      const h = lineH * lines.length + Math.ceil(ob);
       const dpr = this.cfg.dpr;
       const bmp = document.createElement("canvas");
       bmp.width = Math.max(1, Math.ceil(w * dpr));
@@ -685,20 +756,33 @@
       o.font = font;
       o.textBaseline = "middle";
       o.lineJoin = "round";
-      if (glow) { o.shadowColor = "rgba(255,255,255,.55)"; o.shadowBlur = 6; }
-      if (ow > 0) {
-        const stroke = withAlpha(outlineColor, oa);
-        o.lineWidth = ow;
-        o.strokeStyle = stroke;
-        if (ob > 0) { o.shadowColor = stroke; o.shadowBlur = ob; }
-        o.strokeText(text, pad, h / 2);
-        o.shadowBlur = 0;
+
+      for (let li = 0; li < lines.length; li++) {
+        const centerY = lineH * li + lineH / 2;
+        let x = pad;
+        for (const s of lines[li].segs) {
+          if (s.text != null) {
+            if (ow > 0) {
+              const stroke = withAlpha(outlineColor, oa);
+              o.lineWidth = ow;
+              o.strokeStyle = stroke;
+              if (ob > 0) { o.shadowColor = stroke; o.shadowBlur = ob; }
+              o.strokeText(s.text, x, centerY);
+              o.shadowBlur = 0;
+            }
+            if (glow) { o.shadowColor = "rgba(255,255,255,.55)"; o.shadowBlur = 6; } else o.shadowBlur = 0;
+            o.fillStyle = color;
+            o.fillText(s.text, x, centerY);
+          } else if (s.img) {
+            o.shadowBlur = 0;
+            o.drawImage(s.img, x, centerY - emojiSize / 2, emojiSize, emojiSize);
+          }
+          x += s.w;
+        }
       }
-      o.fillStyle = color;
-      o.fillText(text, pad, h / 2);
 
       const entry = { bmp, w, h };
-      this._cacheSet(key, entry);
+      if (lines.every((line) => line.ready)) this._cacheSet(key, entry);
       return entry;
     }
 

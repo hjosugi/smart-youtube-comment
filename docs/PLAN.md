@@ -128,7 +128,13 @@ Phase 2 — rendering expression:
   an ellipsis (pixel-measured, not char-counted).
 - Done: `layerCss` injects user CSS into the overlay layer (`<style>` with
   `textContent`, 4000-char cap).
-- Remaining: multi-line wrap, custom emoji images in the extension.
+- Done: `wrapText` wraps overflowing comments into up to 3 lines instead of
+  trimming them; `maxWidthPct` still applies.
+- Done: custom emoji images in the extension. `content.js` extracts text runs
+  and emoji `<img>` elements from the live-chat DOM, `sanitize.js` validates the
+  URLs (`sanitizeMessageParts`), and the renderer draws emoji parts like the
+  PWA does. `extension/emoji.js` loads the images.
+- Remaining: PiP.
 
 Phase 3 — interaction:
 

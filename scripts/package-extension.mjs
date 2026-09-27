@@ -31,6 +31,7 @@ const required = [
   "background.js",
   "sanitize.js",
   "scoring.js",
+  "emoji.js",
   "danmaku.js",
   "settings.js",
   "filter.js",

@@ -64,6 +64,7 @@
   "s_flowDirection": { "message": "流れる方向" },
   "s_density": { "message": "表示密度" },
   "s_maxWidthPct": { "message": "コメントの最大幅" },
+  "s_wrapText": { "message": "長いコメントを折り返す" },
   "s_layerCss": { "message": "レイヤ限定ユーザーCSS" },
   "s_pinComments": { "message": "右クリックでコメントをピン留め" },
   "s_translateTo": { "message": "コメントを翻訳（オンデバイス）" },

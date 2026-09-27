@@ -6,6 +6,7 @@
     MAX_TEXT_LENGTH,
     MAX_AUTHOR_LENGTH,
     sanitizeText,
+    sanitizeMessageParts,
     sanitizeRenderPayload
   } = globalThis.SYCSanitize;
 
@@ -426,7 +427,7 @@
     if (!isUserChatMessageNode(node)) return;
     if (processedChatNodes.has(node)) return;
 
-    const text = sanitizeText(extractMessageText(node), MAX_TEXT_LENGTH);
+    const text = sanitizeText(partsToText(extractMessageParts(node)) || extractMessageText(node), MAX_TEXT_LENGTH);
     if (!text) return;
     processedChatNodes.add(node);
 
@@ -449,10 +450,15 @@
     const renderPlan = buildRenderPlan(shownText, result);
     if (!renderPlan) return;
 
+    // Parts are dropped when filtering rewrote the text, so a censored message is
+    // not reassembled from its original emoji.
+    const parts = shownText === text ? sanitizeMessageParts(extractMessageParts(node)) : [];
+
     safeRuntimeSend({
       type: "smart-comment:chat-message",
       payload: {
         text: shownText,
+        parts,
         author,
         kind,
         authorType,
@@ -539,6 +545,45 @@
     return normalizeDisplayText(body ? extractDisplayText(body) : "");
   }
 
+  // Message as render parts: text runs and custom-emoji images. Images keep
+  // their `src`/`alt`; the sanitizer validates the URL before rendering.
+  function extractMessageParts(node) {
+    const root = node.querySelector("#message") || node.querySelector("#message-container, #content, #card");
+    if (!root) return [];
+    const parts = [];
+    const pushText = (text) => {
+      const clean = String(text || "").replace(/\s+/g, " ");
+      if (!clean.trim()) return;
+      const last = parts[parts.length - 1];
+      if (last && last.t != null) last.t += clean;
+      else parts.push({ t: clean });
+    };
+    const visit = (el) => {
+      if (!el) return;
+      if (el.nodeType === 3) {
+        pushText(el.textContent);
+        return;
+      }
+      if (el.nodeType !== 1) return;
+      const tag = String(el.localName || el.tagName || "").toLowerCase();
+      if (tag === "img") {
+        const src = el.getAttribute?.("src") || "";
+        const alt = el.getAttribute?.("alt") || el.getAttribute?.("aria-label") || "";
+        if (src) parts.push({ u: src, a: alt });
+        else pushText(alt);
+        return;
+      }
+      for (const child of el.childNodes || []) visit(child);
+    };
+    visit(root);
+    return parts;
+  }
+
+  function partsToText(parts) {
+    if (!Array.isArray(parts) || !parts.length) return "";
+    return parts.map((p) => (p.t != null ? p.t : p.a || "")).join("");
+  }
+
   function extractText(node, selector) {
     return normalizeDisplayText(node.querySelector(selector)?.textContent || "");
   }
@@ -570,6 +615,8 @@
   if (globalThis.__SYC_TEST__) {
     globalThis.__SYCContentTest = {
       extractMessageText,
+      extractMessageParts,
+      partsToText,
       extractAmount,
       extractPaidColor,
       extractAuthorChannelId,

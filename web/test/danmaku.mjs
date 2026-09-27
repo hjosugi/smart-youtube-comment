@@ -280,6 +280,37 @@ const assertPinAndHitTest = (label, Overlay) => {
   assert.equal(sprite.pinned, false, `${label}: a second toggle unpins`)
 }
 
+const assertWrapAndLineLayout = (label, Overlay) => {
+  const wrapped = new Overlay({ dpr: 1, dedup: false, maxWidthPct: 0.5, wrapText: true })
+  wrapped.w = 100 // max width 50px; the stub measures 10px per character
+  const lines = wrapped._layoutLines("abcdefghij", 24)
+  assert.equal(lines.length > 1, true, `${label}: wrapText wraps into multiple lines`)
+  assert.equal(
+    lines.every(line => line.length <= 5),
+    true,
+    `${label}: wrapped lines fit the configured width`,
+  )
+
+  const trimmed = new Overlay({ dpr: 1, dedup: false, maxWidthPct: 0.5, wrapText: false })
+  trimmed.w = 100
+  assert.equal(
+    trimmed._layoutLines("abcdefghij", 24).length,
+    1,
+    `${label}: without wrapText the text stays on one line`,
+  )
+
+  const raster = new Overlay({
+    dpr: 1,
+    dedup: false,
+    maxWidthPct: 0.5,
+    wrapText: true,
+    lineHeight: 20,
+  })
+  raster.w = 100
+  const bmp = raster._rasterize([{ t: "abcdefghij" }], "#fff", 20, false)
+  assert.equal(bmp.h > 20, true, `${label}: wrapped bitmaps are taller than a single line`)
+}
+
 const assertLruCache = (label, Overlay, rasterize) => {
   const overlay = new Overlay({ cacheMax: 2, dpr: 1, dedup: false })
 
@@ -664,6 +695,7 @@ assertDevicePixelSnapping("web", webOverlay)
 assertTypeGatingAndRoleScale("web", webOverlay)
 assertFlowDirectionAndDensity("web", webOverlay)
 assertPinAndHitTest("web", webOverlay)
+assertWrapAndLineLayout("web", webOverlay)
 assertLruCache("web", webOverlay, (overlay, text) =>
   overlay._rasterize([{ t: text }], "#fff", 24, false),
 )
@@ -693,11 +725,12 @@ assertDevicePixelSnapping("extension", extensionOverlay)
 assertTypeGatingAndRoleScale("extension", extensionOverlay)
 assertFlowDirectionAndDensity("extension", extensionOverlay)
 assertPinAndHitTest("extension", extensionOverlay)
+assertWrapAndLineLayout("extension", extensionOverlay)
 assertLruCache("extension", extensionOverlay, (overlay, text) =>
-  overlay._rasterize(text, "#fff", 24, false),
+  overlay._rasterize([{ t: text }], "#fff", 24, false),
 )
 assertRasterCacheInvalidation("extension", extensionOverlay, (overlay, text) =>
-  overlay._rasterize(text, "#fff", 24, false),
+  overlay._rasterize([{ t: text }], "#fff", 24, false),
 )
 assertResizeGating("extension", extensionOverlay)
 assertPriorityQueueAdmission("extension", extensionOverlay)
@@ -705,4 +738,4 @@ assertActiveCapEviction("extension", extensionOverlay)
 assertLaneSelectionAndClear("extension", extensionOverlay)
 assertPendingCompaction("extension", extensionOverlay)
 
-console.log("danmaku ok (178 assertions)")
+console.log("danmaku ok (186 assertions)")

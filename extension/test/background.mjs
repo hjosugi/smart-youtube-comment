@@ -79,6 +79,22 @@ assert.equal(payload.emphasis, 0)
 assert.equal("reasons" in payload, false)
 assert.equal("createdAt" in payload, false)
 assert.equal(helpers.sanitizeRenderPayload({ text: "   " }), null)
+assert.equal(JSON.stringify(payload.parts), JSON.stringify([]))
+assert.equal(
+  JSON.stringify(
+    helpers.sanitizeRenderPayload({
+      text: "hi",
+      parts: [
+        { t: "hi" },
+        { u: "https://yt3.ggpht.com/x=s24", a: ":e:" },
+        { u: "http://insecure.example/x", a: "bad" },
+        { u: "https://evil.example/x" },
+        { u: "javascript:alert(1)" },
+      ],
+    }).parts,
+  ),
+  JSON.stringify([{ t: "hi" }, { u: "https://yt3.ggpht.com/x=s24", a: ":e:" }, { t: "bad" }]),
+)
 assert.equal(typeof sandbox.listener, "function")
 assert.equal(typeof sandbox.commandListener, "function")
 
@@ -88,4 +104,4 @@ await sandbox.commandListener("toggle-overlay")
 await new Promise(done => setTimeout(done, 0))
 assert.equal(syncData.get("syc:settings").enabled, true)
 
-console.log("background ok (22 assertions)")
+console.log("background ok (24 assertions)")

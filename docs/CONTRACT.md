@@ -61,6 +61,14 @@ are HTTPS YouTube emoji assets from `yt3.ggpht.com` or subdomains of
 data. Unsafe image parts should fall back to their alt text when available or be
 ignored.
 
+Both surfaces now populate `parts`: the PWA from the relay payload, and the
+extension from the live-chat DOM (`extension/content.js` extracts text runs and
+custom-emoji `<img>` elements). The extension sanitizes parts in
+`extension/sanitize.js` (`sanitizeMessageParts`) before relaying them to the
+renderer. `text` remains the required, canonical display string and is what
+scoring and NG filtering see; a message that filtering rewrote is sent without
+parts so its original emoji cannot be reassembled.
+
 ## LiveChat Poll Envelope
 
 The `worker/` relay returns this envelope to the device on each poll. The device

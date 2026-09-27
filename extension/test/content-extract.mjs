@@ -56,8 +56,12 @@ const makeChatRenderer = ({
   amount = "",
   paidColor = "",
   channelId = "",
+  emoji = null,
 } = {}) => {
-  const message = element("span", {}, [text(textValue)])
+  const messageChildren = emoji
+    ? [text(textValue), element("img", { src: emoji.src, alt: emoji.alt })]
+    : [text(textValue)]
+  const message = element("span", {}, messageChildren)
   const authorNode = element("span", {}, [text(author)])
   const amountNode = element("span", {}, [text(amount)])
   const fallbackBadge = fallbackRole
@@ -117,6 +121,7 @@ const loadHelpers = () => {
     location: { pathname: "/watch" },
     sentMessages: [],
     window: {},
+    URL,
   }
   sandbox.globalThis = sandbox
   sandbox.window.top = {}
@@ -331,6 +336,28 @@ assert.equal(sandbox.sentMessages[4].payload.author, "Bob Name")
 assert.equal(sandbox.sentMessages[4].payload.kind, "text")
 
 {
+  helpers.resetProcessedNodes()
+  await helpers.processChatNode(
+    makeChatRenderer({
+      textValue: "hi ",
+      author: "Alice",
+      emoji: { src: "https://yt3.ggpht.com/emoji=s24", alt: ":emoji:" },
+    }),
+  )
+  const payload = sandbox.sentMessages.at(-1).payload
+  assert.equal(payload.text, "hi :emoji:")
+  assert.equal(payload.parts.length, 2)
+  assert.equal(payload.parts[1].u, "https://yt3.ggpht.com/emoji=s24")
+  assert.equal(payload.parts[1].a, ":emoji:")
+  assert.equal(
+    JSON.stringify(helpers.extractMessageParts(
+      makeChatRenderer({ textValue: "x", emoji: { src: "https://evil.example/e.png", alt: "bad" } }),
+    )),
+    JSON.stringify([{ t: "x" }, { u: "https://evil.example/e.png", a: "bad" }]),
+  )
+}
+
+{
   const startup = loadLiveChatStartup()
   assert.equal(startup.filterLoadStarted, true)
   assert.equal(startup.sandbox.sentMessages.length, 0)
@@ -343,4 +370,4 @@ assert.equal(sandbox.sentMessages[4].payload.kind, "text")
   assert.equal(startup.intervals[0].delay, 2500)
 }
 
-console.log("content-extract ok (41 assertions)")
+console.log("content-extract ok (45 assertions)")

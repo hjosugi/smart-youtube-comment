@@ -89,6 +89,7 @@ function checkManifest() {
       !sameArray(rendererScript.js, [
         "sanitize.js",
         "scoring.js",
+        "emoji.js",
         "danmaku.js",
         "settings.js",
         "translate.js",

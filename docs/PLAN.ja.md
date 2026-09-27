@@ -102,7 +102,9 @@ Phase 2 — 描画表現:
 - 完了: `flowDirection`（`rtl` / `ltr`）と `density`（`top` / `bottom` / `random`）をエンジンの生成・レーン処理に追加。
 - 完了: `maxWidthPct` でコメント幅を画面比で制限し、省略記号で切り詰め（文字数ではなくピクセル計測）。
 - 完了: `layerCss` でオーバーレイ層にユーザーCSSを注入（`<style>` の `textContent`、4000文字上限）。
-- 残り: 複数行の折り返し、拡張でのカスタム絵文字画像。
+- 完了: `wrapText` で最大幅を超えるコメントを最大3行に折り返し（切り詰めの代わり）。`maxWidthPct` も併用可。
+- 完了: 拡張のカスタム絵文字画像。`content.js` がライブチャットDOMからテキストと絵文字`<img>`を抽出し、`sanitize.js` がURLを検証（`sanitizeMessageParts`）、レンダラがPWAと同様に絵文字パーツを描画。`extension/emoji.js` が画像を読み込みます。
+- 残り: PiP。
 
 Phase 3 — インタラクション:
 
