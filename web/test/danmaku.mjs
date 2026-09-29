@@ -3,15 +3,23 @@ import { readFileSync } from "node:fs"
 import { runInNewContext } from "node:vm"
 
 const makeContext = () => ({
+  beginPath() {},
   clearRect() {},
+  clip() {},
   drawImage() {},
+  fill() {},
+  fillRect() {},
   fillText() {},
   measureText(text) {
     return { width: String(text).length * 10 }
   },
+  rect() {},
+  restore() {},
+  save() {},
   scale() {},
   setTransform() {},
   strokeText() {},
+  translate() {},
 })
 
 const makeCanvas = () => ({
@@ -71,7 +79,9 @@ const assertFrameDeltaPacing = (label, Overlay) => {
   overlay.running = true
   overlay.lastTs = 1000
   const sprite = {
-    bmp: makeCanvas(),
+    img: makeCanvas(),
+    sx: 0,
+    sy: 0,
     w: 20,
     h: 10,
     x: 500,
@@ -82,40 +92,221 @@ const assertFrameDeltaPacing = (label, Overlay) => {
   }
   overlay.active.push(sprite)
 
-  // A real main-thread hitch must be honoured in full, otherwise every stall
-  // silently slows comments down (accumulating slow-motion).
+  // A main-thread hitch is repaid over the next few frames instead of
+  // teleporting comments in one step: the first frame after the hitch advances
+  // by at most maxStepMs so the recovery reads as acceleration, not a jump.
   overlay._loop(1120)
-  assert.equal(
-    overlay.active[0].x,
-    380,
-    `${label}: moderate frame hitches should advance by the full delta`,
-  )
-  assert.equal(
-    overlay.active[0].ttlMs,
-    4880,
-    `${label}: lifetime should track the full frame delta`,
-  )
+  assert.equal(overlay.active[0].x, 450, `${label}: hitches advance by at most maxStepMs`)
+  assert.equal(overlay.active[0].ttlMs, 4950, `${label}: lifetime tracks the repaid delta`)
+
+  // Normal frames keep catching up until real-time motion is restored.
+  overlay._loop(1136)
+  overlay._loop(1152)
+  overlay._loop(1168)
+  overlay._loop(1184)
+  assert.equal(overlay.active[0].x, 316, `${label}: bounded catch-up restores real-time motion`)
+  assert.equal(overlay.active[0].ttlMs, 4816, `${label}: lifetime catches up to real time too`)
+  assert.equal(overlay.carryMs, 0, `${label}: catch-up debt is fully repaid`)
 
   // A hidden/frozen tab produces a huge gap: pause, do not teleport or expire.
-  overlay._loop(61_120)
+  overlay._loop(61_184)
   assert.equal(overlay.active.length, 1, `${label}: long gaps should not expire active comments`)
-  assert.equal(overlay.active[0].x, 380, `${label}: long gaps should not teleport active comments`)
-  assert.equal(overlay.active[0].ttlMs, 4880, `${label}: long gaps should not advance lifetime`)
+  assert.equal(overlay.active[0].x, 316, `${label}: long gaps should not teleport active comments`)
+  assert.equal(overlay.active[0].ttlMs, 4816, `${label}: long gaps should not advance lifetime`)
 }
 
-const assertDevicePixelSnapping = (label, Overlay) => {
+const assertRasterBudget = (label, Overlay) => {
+  const overlay = new Overlay({ dpr: 1, dedup: false, spawnPerFrame: 4, rasterBudgetMs: 1000 })
+  overlay.canvas = makeCanvas()
+  let rasterCalls = 0
+  const realRasterize = overlay._rasterize.bind(overlay)
+  overlay._rasterize = (...args) => {
+    rasterCalls++
+    return realRasterize(...args)
+  }
+
+  assert.equal(overlay.push(payload("pump a")), true, `${label}: push accepts a comment`)
+  assert.equal(overlay.push(payload("pump b")), true, `${label}: push accepts a second comment`)
+  // The caller's stack (the video/chat path) must not pay for text rasterization.
+  assert.equal(rasterCalls, 0, `${label}: push defers rasterization to the frame`)
+  assert.equal(
+    overlay.pending.length - overlay.pendingHead,
+    2,
+    `${label}: payloads wait in the pending queue`,
+  )
+  assert.equal(overlay._readyCount(), 0, `${label}: nothing is ready before a frame runs`)
+
+  // The frame loop rasterizes under budget and admits in the same tick.
+  overlay.ctx = makeContext()
+  overlay.running = true
+  overlay.lastTs = 1000
+  overlay._loop(1016)
+  assert.equal(rasterCalls, 2, `${label}: the frame rasterizes queued payloads`)
+  assert.equal(overlay.active.length, 2, `${label}: the frame admits rasterized sprites`)
+}
+
+const assertRasterBudgetBounds = (label, Overlay) => {
+  // A zero budget must still make progress one item per frame, never a burst.
+  const overlay = new Overlay({ dpr: 1, dedup: false, spawnPerFrame: 10, rasterBudgetMs: 0 })
+  overlay.canvas = makeCanvas()
+  let calls = 0
+  const real = overlay._rasterize.bind(overlay)
+  overlay._rasterize = (...args) => {
+    calls++
+    return real(...args)
+  }
+  for (let i = 0; i < 5; i++) overlay.push(payload("bound " + i))
+  overlay.ctx = makeContext()
+  overlay.running = true
+  overlay.lastTs = 1000
+  overlay._loop(1016)
+  assert.equal(calls, 1, `${label}: budget 0 rasterizes exactly one item per frame`)
+  assert.equal(overlay.active.length, 1, `${label}: only the budgeted item is admitted this frame`)
+  assert.equal(
+    overlay.pending.length - overlay.pendingHead,
+    4,
+    `${label}: the rest wait for later frames`,
+  )
+}
+
+const assertMembershipStaysFast = (label, Overlay) => {
+  const overlay = new Overlay({
+    dpr: 1,
+    dedup: false,
+    durationScale: 1,
+    lengthSpread: true,
+    spreadStrength: 1,
+    tierDurations: [6000, 7500, 10000],
+  })
+  overlay.canvas = makeCanvas()
+  const longText = "x".repeat(200)
+  const membership = overlay._prepare(payload(longText, { kind: "membership", tier: 2 }), 0)
+  const normal = overlay._prepare(payload(longText, { kind: "text", tier: 2 }), 0)
+  assert.equal(membership.dur, 6000, `${label}: membership uses the fast duration`)
+  assert.equal(normal.dur > 6000, true, `${label}: long normal text still spreads slower`)
+}
+
+// Regression guard for the periodic jolt: comments must share atlas pages that
+// are recycled once nothing on screen uses them, never one <canvas> each.
+const assertAtlasRecycling = (label, Overlay) => {
+  const overlay = new Overlay({ dpr: 1, dedup: false, maxActive: 5000, minActive: 5000 })
+  overlay.canvas = makeCanvas()
+  overlay.ctx = makeContext()
+  overlay.w = 640
+  overlay.h = 360
+  overlay.laneTop = 0
+  overlay.laneH = 24
+  overlay.laneCount = 10
+  overlay.lanes = new Array(10).fill(0)
+  overlay.dynamicCap = 5000
+  // ~92 chars measure ~920px wide: two slots per 2048px shelf and a handful
+  // of shelves per 256px page, so 40 sprites need several pages.
+  const text = i => "x".repeat(90) + i
+  const spawn = (from, to) => {
+    for (let i = from; i < to; i++) {
+      assert.equal(overlay._spawn(payload(text(i)), 0.5), true, `${label}: spawn ${i} accepted`)
+    }
+  }
+  const refs = () => overlay._pages.reduce((n, page) => n + page.sprites, 0)
+  // Same raster key as _prepare() builds for these payloads (emphasis 0 => 0.9x font).
+  const probe = t =>
+    overlay._rasterize([{ t }], "#ffffff", Math.round(overlay.cfg.fontPx * 0.9), false)
+
+  spawn(0, 40)
+  const filled = overlay._pages.length
+  assert.equal(filled >= 2 && filled <= 4, true, `${label}: 40 wide sprites span a few atlas pages`)
+  assert.equal(
+    overlay.active.every(a => a.img === a.page.canvas && a.sw > 0 && a.sh > 0),
+    true,
+    `${label}: sprites are drawn from a sub-rect of their atlas page`,
+  )
+  assert.equal(refs(), 40, `${label}: every on-screen sprite holds its page`)
+  const hit = probe(text(0))
+  assert.equal(hit.page, overlay._pages[0], `${label}: repeated text hits the cached slot`)
+  assert.equal(hit.gen, 1, `${label}: cached slot records its page generation`)
+
+  // While the pages are in use, more comments open a new page: nothing on
+  // screen may ever be overwritten.
+  spawn(40, 80)
+  const busy = overlay._pages.length
+  assert.equal(busy > filled, true, `${label}: busy pages are never recycled, new ones open`)
+  assert.equal(
+    overlay._pages.every(page => page.gen === 1),
+    true,
+    `${label}: no page was wiped`,
+  )
+
+  // Expire everything, then refill: the same pages are wiped and reused and the
+  // stale cache entry is rejected rather than pointing at recycled pixels.
+  for (const sprite of overlay.active) sprite.ttlMs = 0
+  overlay.running = true
+  overlay.lastTs = 1000
+  overlay._loop(1016)
+  assert.equal(overlay.active.length, 0, `${label}: sprites expired`)
+  assert.equal(refs(), 0, `${label}: expired sprites release their pages`)
+  spawn(100, 140)
+  assert.equal(overlay._pages.length, busy, `${label}: refilling recycles pages instead of growing`)
+  assert.equal(overlay._pages[0].gen, 2, `${label}: the oldest free page was wiped first`)
+  const again = probe(text(0))
+  assert.notEqual(again, hit, `${label}: a slot on a recycled page is not served from cache`)
+  assert.equal(again.gen, again.page.gen, `${label}: the fresh slot is current`)
+
+  // Oversized text cannot share a page and gets a private bitmap instead.
+  const big = probe("y".repeat(250))
+  assert.equal(big.page, null, `${label}: oversized text falls back to a standalone bitmap`)
+  assert.equal(
+    big.sx === 0 && big.sy === 0 && big.sw > 2048,
+    true,
+    `${label}: standalone bitmap geometry`,
+  )
+
+  overlay.clear()
+  assert.equal(refs(), 0, `${label}: clear() releases every page`)
+  overlay.detach()
+  assert.equal(overlay._pages.length, 0, `${label}: detach() drops the atlas`)
+}
+
+const assertIdleCanvasSkip = (label, Overlay) => {
+  let clears = 0
+  const overlay = new Overlay({ dpr: 1, dedup: false })
+  overlay.ctx = {
+    ...makeContext(),
+    clearRect() {
+      clears++
+    },
+  }
+  overlay.running = true
+  overlay.lastTs = 1000
+  overlay._dirty = false
+
+  // No sprites + a clean canvas: the loop must not clear or composite anything.
+  overlay._loop(1016)
+  assert.equal(clears, 0, `${label}: idle frames skip the canvas clear`)
+
+  // clear() (seek / navigation) marks the canvas dirty so the stale frame is
+  // wiped exactly once, then the loop idles again.
+  overlay.clear()
+  overlay._loop(1032)
+  assert.equal(clears, 1, `${label}: clear() forces one wipe`)
+  overlay._loop(1048)
+  assert.equal(clears, 1, `${label}: the wipe happens once, then idles again`)
+}
+
+const assertMotionSmoothness = (label, Overlay) => {
   const draws = []
   const overlay = new Overlay({ dpr: 1.5, dedup: false, opacity: 1 })
   overlay.ctx = {
     ...makeContext(),
-    drawImage(bmp, x, y, w, h) {
-      draws.push({ bmp, x, y, w, h })
+    drawImage(img, sx, sy, sw, sh, x, y, w, h) {
+      draws.push({ img, sx, sy, sw, sh, x, y, w, h })
     },
   }
   overlay.running = true
   overlay.lastTs = 1000
   overlay.active.push({
-    bmp: makeCanvas(),
+    img: makeCanvas(),
+    sx: 0,
+    sy: 0,
     w: 101,
     h: 27,
     x: 100.37,
@@ -128,12 +319,20 @@ const assertDevicePixelSnapping = (label, Overlay) => {
   overlay._loop(1016)
 
   assert.equal(draws.length, 1, `${label}: active sprite should be drawn once`)
-  const near = (a, b) => Math.abs(a - b) < 1e-9
+  const near = (a, b) => Math.abs(a - b) < 1e-6
+  // Horizontal position must stay exact (sub-pixel): snapping x to the device
+  // grid makes constant-velocity motion stair-step, which reads as judder.
+  assert.equal(
+    near(draws[0].x, 100.37 - 0.2 * 16),
+    true,
+    `${label}: draw x should keep its exact fractional position`,
+  )
   assert.equal(
     near(draws[0].x * 1.5, Math.round(draws[0].x * 1.5)),
-    true,
-    `${label}: draw x should land on the device pixel grid`,
+    false,
+    `${label}: draw x must not be quantised to the device pixel grid`,
   )
+  // Lane y never changes, so it stays snapped for crisp text edges.
   assert.equal(
     near(draws[0].y * 1.5, Math.round(draws[0].y * 1.5)),
     true,
@@ -248,7 +447,9 @@ const assertPinAndHitTest = (label, Overlay) => {
   overlay.running = true
   overlay.lastTs = 1000
   overlay.active.push({
-    bmp: makeCanvas(),
+    img: makeCanvas(),
+    sx: 0,
+    sy: 0,
     w: 100,
     h: 20,
     x: 50,
@@ -691,7 +892,12 @@ assertDedup("web", webOverlay)
 assertLongTaskObserverLifecycle("web", webOverlay, webObserverCounters)
 assertAdaptiveCap("web", webOverlay)
 assertFrameDeltaPacing("web", webOverlay)
-assertDevicePixelSnapping("web", webOverlay)
+assertRasterBudget("web", webOverlay)
+assertRasterBudgetBounds("web", webOverlay)
+assertMembershipStaysFast("web", webOverlay)
+assertAtlasRecycling("web", webOverlay)
+assertIdleCanvasSkip("web", webOverlay)
+assertMotionSmoothness("web", webOverlay)
 assertTypeGatingAndRoleScale("web", webOverlay)
 assertFlowDirectionAndDensity("web", webOverlay)
 assertPinAndHitTest("web", webOverlay)
@@ -721,7 +927,12 @@ assertDedup("extension", extensionOverlay)
 assertLongTaskObserverLifecycle("extension", extensionOverlay, extensionObserverCounters)
 assertAdaptiveCap("extension", extensionOverlay)
 assertFrameDeltaPacing("extension", extensionOverlay)
-assertDevicePixelSnapping("extension", extensionOverlay)
+assertRasterBudget("extension", extensionOverlay)
+assertRasterBudgetBounds("extension", extensionOverlay)
+assertMembershipStaysFast("extension", extensionOverlay)
+assertAtlasRecycling("extension", extensionOverlay)
+assertIdleCanvasSkip("extension", extensionOverlay)
+assertMotionSmoothness("extension", extensionOverlay)
 assertTypeGatingAndRoleScale("extension", extensionOverlay)
 assertFlowDirectionAndDensity("extension", extensionOverlay)
 assertPinAndHitTest("extension", extensionOverlay)
@@ -738,4 +949,4 @@ assertActiveCapEviction("extension", extensionOverlay)
 assertLaneSelectionAndClear("extension", extensionOverlay)
 assertPendingCompaction("extension", extensionOverlay)
 
-console.log("danmaku ok (186 assertions)")
+console.log("danmaku ok")

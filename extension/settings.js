@@ -19,7 +19,7 @@
     { key: "enabled",      group: "General",     label: "Overlay enabled",        type: "bool",                                   default: true },
     { key: "hideDefaultChat", group: "General",  label: "Hide YouTube chat while overlay is on", type: "bool",                     default: false },
     { key: "pauseWithVideo", group: "General",   label: "Pause comments with video", type: "bool",                                 default: true },
-    { key: "opacity",      group: "Display",     label: "Opacity",                type: "range", min: 20,  max: 100,  step: 5, unit: "%",  default: 100 },
+    { key: "opacity",      group: "Display",     label: "Opacity",                type: "range", min: 20,  max: 100,  step: 5, unit: "%",  default:  100 },
     { key: "fontPx",       group: "Display",     label: "Font size",              type: "range", min: 14,  max: 48,   step: 1, unit: "px", default: 24 },
     { key: "fontFamily",   group: "Display",     label: "Font family",            type: "select",  default: "",
       options: [
@@ -77,10 +77,10 @@
     { key: "scaleModerator", group: "Types",     label: "Moderator size",         type: "range", min: 50, max: 200, step: 5, unit: "%", default: 100 },
     { key: "scaleOwner",   group: "Types",       label: "Owner size",             type: "range", min: 50, max: 200, step: 5, unit: "%", default: 100 },
     { key: "scalePaid",    group: "Types",       label: "Super chat size",        type: "range", min: 50, max: 200, step: 5, unit: "%", default: 100 },
-    { key: "speedPct",     group: "Speed",       label: "Scroll speed",           type: "range", min: 50,  max: 200,  step: 10, unit: "%", default: 100 },
-    { key: "fastMs",       group: "Speed",       label: "Fast tier time",         type: "range", min: 2000, max: 12000, step: 250, unit: "ms", default: 6000 },
-    { key: "normalMs",     group: "Speed",       label: "Normal tier time",       type: "range", min: 3000, max: 16000, step: 250, unit: "ms", default: 7500 },
-    { key: "slowMs",       group: "Speed",       label: "Slow tier time",         type: "range", min: 4000, max: 20000, step: 250, unit: "ms", default: 10000 },
+    { key: "speedPct",     group: "Speed",       label: "Scroll speed",           type: "range", min: 50,  max: 200,  step: 10, unit: "%", default: 120 },
+    { key: "fastMs",       group: "Speed",       label: "Fast tier time",         type: "range", min: 2000, max: 12000, step: 250, unit: "ms", default: 3000 },
+    { key: "normalMs",     group: "Speed",       label: "Normal tier time",       type: "range", min: 3000, max: 16000, step: 250, unit: "ms", default: 4000 },
+    { key: "slowMs",       group: "Speed",       label: "Slow tier time",         type: "range", min: 4000, max: 20000, step: 250, unit: "ms", default: 5000 },
     { key: "maxActive",    group: "Performance", label: "Max comments on screen", type: "range", min: 100, max: 2000, step: 50,            default: 2000 },
     { key: "maxQueue",     group: "Performance", label: "Pending comment queue",  type: "range", min: 100, max: 5000, step: 100,           default: 2400 },
     { key: "spawnPerFrame", group: "Performance", label: "Comments prepared per frame", type: "range", min: 1, max: 24, step: 1,          default: 10 },
@@ -254,7 +254,7 @@
   }
 
   const SPEED_PRESETS = {
-    default:  { label: "Default",            speedPct: 100, fastMs: 6000, normalMs: 7500,  slowMs: 10000, spreadStrength: 35 },
+    default:  { label: "Default",            speedPct: 120, fastMs: 3000, normalMs: 4000,  slowMs: 5000, spreadStrength: 35 },
     niconico: { label: "Niconico (fast)",    speedPct: 120, fastMs: 3500, normalMs: 4000,  slowMs: 5000,  spreadStrength: 20 },
     relaxed:  { label: "Relaxed (readable)", speedPct: 80,  fastMs: 7000, normalMs: 9000,  slowMs: 12000, spreadStrength: 45 }
   };
