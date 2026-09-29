@@ -2,8 +2,9 @@
   "use strict";
 
   const S = globalThis.SYCSettings;
-  /** @type {HTMLInputElement} */
-  const enabled = /** @type {HTMLInputElement} */ (document.getElementById("enabled"));
+  const general = document.getElementById("general");
+  /** @type {Record<string, HTMLInputElement>} */
+  const toggles = {}; // General-group booleans (enabled, hideDefaultChat, ...) by key
   /** @type {HTMLInputElement} */
   const opacity = /** @type {HTMLInputElement} */ (document.getElementById("opacity"));
   const opacityValue = document.getElementById("opacity-value");
@@ -27,9 +28,29 @@
     statusTimer = setTimeout(() => { status.textContent = ""; }, 900);
   }
 
+  // The popup mirrors the options page's "General" group so the everyday
+  // switches (overlay on/off, hide YouTube chat, pause with video) are one
+  // click away; everything else lives behind the Settings button.
+  function buildGeneral() {
+    for (const spec of S.SCHEMA) {
+      if (spec.group !== "General" || spec.type !== "bool") continue;
+      const row = document.createElement("label");
+      row.className = "row switch";
+      const name = document.createElement("span");
+      name.textContent = t(`s_${spec.key}`, spec.label);
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.id = spec.key;
+      input.addEventListener("change", () => save({ ...settings, [spec.key]: input.checked }));
+      row.append(name, input);
+      general.appendChild(row);
+      toggles[spec.key] = input;
+    }
+  }
+
   function render(next) {
     settings = S.normalize(next);
-    enabled.checked = settings.enabled;
+    for (const key in toggles) toggles[key].checked = Boolean(settings[key]);
     opacity.value = settings.opacity;
     opacityValue.textContent = `${settings.opacity}%`;
   }
@@ -54,8 +75,8 @@
 
   async function init() {
     applyStaticI18n();
+    buildGeneral();
     render(await S.load());
-    enabled.addEventListener("change", () => save({ ...settings, enabled: enabled.checked }));
     opacity.addEventListener("input", () => scheduleSave({ ...settings, opacity: Number(opacity.value) }));
     opacity.addEventListener("change", () => save({ ...settings, opacity: Number(opacity.value) }));
     document.getElementById("options").addEventListener("click", () => chrome.runtime.openOptionsPage());

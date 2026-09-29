@@ -78,41 +78,68 @@ const assertFrameDeltaPacing = (label, Overlay) => {
   overlay.ctx = makeContext()
   overlay.running = true
   overlay.lastTs = 1000
+  overlay.frameEMA = 16
   const sprite = {
     img: makeCanvas(),
     sx: 0,
     sy: 0,
     w: 20,
     h: 10,
-    x: 500,
+    x: 10000, // far enough to stay on stage for the whole run
     y: 20,
     vx: 1,
-    ttlMs: 5000,
+    ttlMs: 50000,
     priority: 1,
   }
   overlay.active.push(sprite)
+  const near = (actual, expected, message) =>
+    assert.ok(Math.abs(actual - expected) < 1e-6, `${message} (got ${actual}, want ${expected})`)
 
-  // A main-thread hitch is repaid over the next few frames instead of
-  // teleporting comments in one step: the first frame after the hitch advances
-  // by at most maxStepMs so the recovery reads as acceleration, not a jump.
-  overlay._loop(1120)
-  assert.equal(overlay.active[0].x, 450, `${label}: hitches advance by at most maxStepMs`)
-  assert.equal(overlay.active[0].ttlMs, 4950, `${label}: lifetime tracks the repaid delta`)
+  // A regular frame advances by its interval.
+  overlay._loop(1016)
+  near(overlay.active[0].x, 9984, `${label}: a regular frame advances by the frame interval`)
 
-  // Normal frames keep catching up until real-time motion is restored.
-  overlay._loop(1136)
-  overlay._loop(1152)
-  overlay._loop(1168)
-  overlay._loop(1184)
-  assert.equal(overlay.active[0].x, 316, `${label}: bounded catch-up restores real-time motion`)
-  assert.equal(overlay.active[0].ttlMs, 4816, `${label}: lifetime catches up to real time too`)
-  assert.equal(overlay.carryMs, 0, `${label}: catch-up debt is fully repaid`)
+  // A missed vsync (33 ms rAF gap) was already shown as a repeated frame. The
+  // next frame must NOT jump two steps to catch up: that "hold, then double
+  // jump" is the visible judder. It advances by the smoothed interval instead.
+  overlay._loop(1049)
+  near(
+    overlay.active[0].x,
+    9966.3,
+    `${label}: a missed frame advances by the smoothed interval, not the raw gap`,
+  )
+  near(overlay.active[0].ttlMs, 49966.3, `${label}: lifetime tracks the smoothed delta`)
+
+  // A long main-thread hitch is not repaid either (samples are capped), so
+  // recovery is a normal step rather than a teleport.
+  overlay._loop(1249)
+  near(overlay.active[0].x, 9945.37, `${label}: a hitch does not teleport comments`)
+
+  // A sustained lower frame rate converges back to real-time speed.
+  let ts = 1249
+  for (let i = 0; i < 80; i++) overlay._loop((ts += 33))
+  const before = overlay.active[0].x
+  overlay._loop((ts += 33))
+  assert.ok(
+    Math.abs(before - overlay.active[0].x - 33) < 0.05,
+    `${label}: a steady 30 fps converges to real-time motion`,
+  )
+  const rested = overlay.active[0].x
+  const restedTtl = overlay.active[0].ttlMs
 
   // A hidden/frozen tab produces a huge gap: pause, do not teleport or expire.
-  overlay._loop(61_184)
+  overlay._loop(ts + 60_000)
   assert.equal(overlay.active.length, 1, `${label}: long gaps should not expire active comments`)
-  assert.equal(overlay.active[0].x, 316, `${label}: long gaps should not teleport active comments`)
-  assert.equal(overlay.active[0].ttlMs, 4816, `${label}: long gaps should not advance lifetime`)
+  assert.equal(
+    overlay.active[0].x,
+    rested,
+    `${label}: long gaps should not teleport active comments`,
+  )
+  assert.equal(
+    overlay.active[0].ttlMs,
+    restedTtl,
+    `${label}: long gaps should not advance lifetime`,
+  )
 }
 
 const assertRasterBudget = (label, Overlay) => {

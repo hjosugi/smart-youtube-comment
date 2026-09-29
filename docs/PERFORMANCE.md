@@ -97,6 +97,37 @@ memory reducer on a 3 MB heap), 4 single dropped frames in 12 s, frame-loop p99
 5 ms instead of 10 ms. `bench/jank-trace.mjs` is the regression probe; keep the
 major-GC count near zero.
 
+## Presentation-Side Misses (the residual judder on a real page)
+
+After the atlas fix the overlay was smooth in the sandbox but still stuttered
+on a real YouTube live page. Traced there with the unpacked extension
+(`bench/real-page-trace.mjs`, 12 s at 20 synthetic comments/s plus live chat,
+AMD Renoir iGPU, 60 Hz): the renderer main thread was idle during every missed
+frame (frame-loop p99 3 ms, no task over 21 ms, 0 major GCs) and the
+compositor received every BeginFrame, but frames were held at the
+swap/presentation stage (`Swap` 24–27 ms, submit-to-presentation 48 ms) and
+the scheduler then skipped BeginMainFrame. Canvas size did not matter
+(`renderScalePct` 50/75/100 alike), GPU busy stayed at 15–60 %, and a plain
+60 fps DOM animation over the video with the overlay *off* missed even more
+frames: the page's commit pipeline is back-pressured by presentation, not by
+our drawing.
+
+Two changes, measured on the same page (missed vsyncs per 12 s):
+
+| run                                     | X11 (XWayland) | native Wayland |
+| --------------------------------------- | -------------- | -------------- |
+| default canvas                          | 26, 38         | 10             |
+| `desynchronized: true` canvas           | 3, 4           | 4              |
+| overlay off, full-size DOM animation    | 60             | 7              |
+
+- The overlay canvas is created with `{ alpha: true, desynchronized: true }`:
+  it gets its own compositor surface instead of riding the page's commit.
+  Desktop Chrome keeps it double-buffered (single-buffered low-latency canvases
+  exist only on ChromeOS/Android), so there is no tearing. Chrome ≥ 140 runs
+  natively on Wayland in a Wayland session, which is the better-behaved column.
+- The few remaining misses no longer show as a jump because of the smoothed
+  frame interval (see below).
+
 ## Known Hot Spots
 
 - `Array.prototype.shift()` on hot queues can move array contents; prefer a head
@@ -113,12 +144,15 @@ major-GC count near zero.
 - Glow/shadow should degrade under load.
 - Lane assignment is currently cheap because lane count is small. If lane count
   grows substantially, use a priority queue over lane free times.
-- A main-thread hitch is repaid gradually (bounded catch-up) rather than in one
-  jump: `carryMs` accumulates the real gap and each frame advances by at most
-  `maxStepMs`, so recovery reads as acceleration instead of a visible jerk.
-  Time is conserved once the debt clears, so there is no accumulating
-  slow-motion. Gaps above `LONG_GAP_MS` are treated as a pause. Keep
-  `LONG_GAP_MS` well above a normal hitch (~500 ms) or the bug returns.
+- Motion uses a **smoothed frame interval** (`frameEMA`, α = 0.1), not the raw
+  rAF delta. A missed vsync has already been shown as a repeated frame;
+  advancing by the raw 33 ms afterwards lands every comment two steps ahead,
+  and that "hold, then double jump" is the judder people see. Smoothing turns
+  each miss into a plain hold; a sustained lower frame rate still converges to
+  real-time speed within ~20 frames, and danmaku is not clock-synced, so the
+  small drift is invisible. Gaps above `LONG_GAP_MS` are a pause (no teleport,
+  no expiry). Keep `LONG_GAP_MS` well above a normal hitch (~500 ms) or the
+  bug returns.
 - Idle frames (no sprites and a clean canvas) skip the full-canvas clear and
   composite entirely; `_dirty` is forced by `clear()`/`_resize()` so the stale
   frame is still wiped exactly once.
