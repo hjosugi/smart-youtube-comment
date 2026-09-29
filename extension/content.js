@@ -301,17 +301,32 @@
       clearTimeout(attachTimer);
       attachTimer = setTimeout(attach, 250);
     };
-    const pageObserver = new MutationObserver(scheduleAttach);
-    pageObserver.observe(document.documentElement, {
-      childList: true,
-      subtree: true
-    });
+    // A document-wide subtree observer is expensive on YouTube's watch page,
+    // which mutates constantly (player chrome, tooltips, chat). Watch only the
+    // watch-flexy shell and re-target it on SPA navigation. There is deliberately
+    // NO polling interval: a periodic attach() tick showed up as a ~2s jolt on
+    // the render thread, and the observer + navigation events already cover
+    // player/chat replacement.
+    let pageObserver = null;
+    let observedShell = null;
+    const observeShell = () => {
+      const shell = document.querySelector("ytd-watch-flexy") || document.body;
+      if (!shell || shell === observedShell) return;
+      pageObserver?.disconnect();
+      observedShell = shell;
+      pageObserver = new MutationObserver(scheduleAttach);
+      pageObserver.observe(shell, { childList: true, subtree: true });
+    };
 
+    observeShell();
     attach();
-    window.addEventListener("yt-navigate-finish", () => {
-      overlay.clear();
-      scheduleAttach();
-    });
+    for (const event of ["yt-navigate-finish", "yt-page-data-updated", "yt-player-updated"]) {
+      window.addEventListener(event, () => {
+        overlay.clear();
+        observeShell();
+        scheduleAttach();
+      });
+    }
 
     Settings?.onChange((next) => {
       applySettings(next);

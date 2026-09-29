@@ -56,7 +56,10 @@ The extension runs `extension/content.js` in every YouTube frame.
 4. `buildRenderPlan()` maps the result into fast / normal / slow display timing.
 5. A background service worker relays messages from chat frames to the top video
    frame.
-6. The top frame renders comments over the YouTube player.
+6. The top frame renders comments over the YouTube player with the in-page
+   `danmaku.js` canvas engine. Comments are packed into shared sprite-atlas
+   pages, so the steady state allocates nothing and there is no periodic GC
+   jolt (see `docs/PERFORMANCE.md`).
 
 The extension does not fetch remote code.
 

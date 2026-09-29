@@ -268,7 +268,8 @@ CF Worker が以下を中継する(クライアントには CORS 制約のため
   `SYCSettings.toEngineConfig(SYCSettings.DEFAULTS)` と一致するよう回帰テストで守る。
 - **性能 HUD**(`?perf=1`, `web/perf.ts`): fps / active / drop / frameP95 / longTasks を実機表示。
   OffscreenCanvas 等の重い最適化は**この実測で必要性を確認してから**入れる方針(「実測して
-  から」原則)。
+  から」原則)。周期的なガクつきの実測結果は「コメント1件=canvas1枚」による GC 嵐であり、
+  レンダラを増やすのではなくスプライトアトラスで解決した(`docs/PERFORMANCE.md`)。
 
 ---
 

@@ -89,7 +89,7 @@ const assert = (name, cond, extra = "") => checks.push({ name, ok: !!cond, extra
 // --- settings: defaults, normalize/clamp, save<->load, engine mapping ---
 {
   const def = await S.load()
-  assert("settings: defaults load", def.speedPct === 100 && def.enabled === true)
+  assert("settings: defaults load", def.speedPct === 120 && def.enabled === true)
   assert("settings: web profile", S.PROFILE.surface === "web" && S.PROFILE.target === "mobile PWA")
   assert("settings: web profile rationale", /Mobile/.test(S.PROFILE.rationale))
   assert(

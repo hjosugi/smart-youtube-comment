@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Danmaku engine live probe</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #0e1012; color: #e8edf2;
+    font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body { display: grid; grid-template-columns: 320px minmax(0, 1fr); height: 100%; }
+  #panel { padding: 14px; border-right: 1px solid #262b31; overflow: auto; }
+  #panel h1 { font-size: 15px; margin: 0 0 4px; }
+  #panel p { color: #9aa4af; margin: 0 0 12px; }
+  .row { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin: 8px 0; }
+  .row > span { color: #b9c2cc; }
+  input[type=range] { width: 130px; }
+  button { border: 1px solid #2c3238; background: #1b2026; color: #e8edf2; border-radius: 6px;
+    min-height: 32px; padding: 4px 12px; cursor: pointer; }
+  button:hover { background: #232a31; }
+  #hud { margin-top: 14px; border-top: 1px solid #262b31; padding-top: 10px;
+    font-variant-numeric: tabular-nums; }
+  #hud .line { display: flex; justify-content: space-between; }
+  #hud b { font-weight: 700; }
+  .good { color: #7CFC8C; } .warn { color: #ffd24a; } .bad { color: #ff5a5a; }
+  #stage { position: relative; background: #000; overflow: hidden; }
+  #stage canvas { position: absolute; inset: 0; }
+  .note { color: #9aa4af; margin-top: 12px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="panel">
+  <h1>Danmaku engine live probe</h1>
+  <p>Real <code>extension/danmaku.js</code>, not the bench clone.</p>
+
+  <div class="row"><span>Comments / second</span><input id="rate" type="range" min="30" max="400" step="10" value="200" /><b id="rateV">200</b></div>
+  <div class="row"><span>Inject main-thread jank<br />(60ms every 400ms)</span><input id="jank" type="checkbox" /></div>
+  <div class="row"><span>OLD: rasterize in frame</span><input id="old" type="checkbox" /></div>
+  <div class="row"><span>Running</span><input id="run" type="checkbox" checked /></div>
+
+  <button id="burst">Burst 300</button>
+
+  <div id="hud">
+    <div class="line"><span>fps</span><b id="fps">–</b></div>
+    <div class="line"><span>active / cap</span><b id="active">–</b></div>
+    <div class="line"><span>atlas pages</span><b id="pages">–</b></div>
+    <div class="line"><span>pending / ready</span><b id="queued">–</b></div>
+    <div class="line"><span>drawn / dropped</span><b id="drawn">–</b></div>
+    <div class="line"><span>long tasks</span><b id="long">–</b></div>
+    <div class="line"><span>frame-loop p50</span><b id="p50">–</b></div>
+    <div class="line"><span>frame-loop p95</span><b id="p95">–</b></div>
+    <div class="line"><span>frame-loop p99</span><b id="p99">–</b></div>
+    <div class="line"><span>frame-loop max</span><b id="max">–</b></div>
+    <div class="line"><span>raster IN frame</span><b id="rin">–</b></div>
+  </div>
+  <p class="note">Comments share GPU-backed atlas pages instead of one canvas each, so
+  steady state allocates nothing and there is no periodic GC jolt. Toggle "OLD:
+  rasterize in frame" to see unbudgeted rasterization: the frame-loop p99/max
+  spikes. For GC/frame-gap numbers run <code>node bench/jank-trace.mjs</code>.</p>
+</div>
+<div id="stage"></div>
+
+<script src="/extension/scoring.js"></script>
+<script src="/extension/danmaku.js"></script>
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const SAMPLE = [
+    "草", "w", "POG", "gg", "それな", "優勝", "100点", "かわいい", "letsgooo",
+    "nice play", "what song is this", "great stream today", "hello from germany",
+    "聞こえてますよ配信お疲れ様です",
+    "thanks for the explanation that really helped me understand it",
+    "the audio is delayed by about two seconds after the scene transition, please check the encoder"
+  ];
+
+  const overlay = new globalThis.SYCDanmaku.DanmakuOverlay();
+  overlay.attach($("stage"));
+
+  // --- frame-loop instrumentation + rasterization-in-frame detection ---------
+  let insideLoop = false;
+  let rasterInFrame = 0;
+  let loopDurations = [];
+  const realRasterize = overlay._rasterize.bind(overlay);
+  overlay._rasterize = (...args) => {
+    if (insideLoop) rasterInFrame++;
+    return realRasterize(...args);
+  };
+
+  overlay.stop();
+  const realLoop = overlay._loop;
+  overlay._loop = function (ts) {
+    insideLoop = true;
+    const t0 = performance.now();
+    realLoop.call(this, ts);
+    loopDurations.push(performance.now() - t0);
+    if (loopDurations.length > 600) loopDurations.shift();
+    insideLoop = false;
+  };
+  overlay.start();
+
+  // --- the "OLD" behavior: rasterize synchronously inside the frame --------
+  const protoDrain = Object.getPrototypeOf(overlay)._drainPending;
+  overlay._oldInFrame = function () {
+    let budget = this.cfg.spawnPerFrame;
+    while (budget-- > 0 && this.pendingHead < this.pending.length) {
+      const next = this.pending[this.pendingHead++];
+      const prep = this._prepare(next.payload, next.priority);
+      if (prep && this._admit(prep)) this.shown++;
+    }
+    this._compactPending();
+  };
+  const applyMode = () => {
+    overlay._drainPending = $("old").checked ? overlay._oldInFrame : protoDrain;
+    loopDurations = [];
+    rasterInFrame = 0;
+  };
+  $("old").addEventListener("change", applyMode);
+
+  // --- synthetic load -------------------------------------------------------
+  let n = 0;
+  let pump = 0;
+  let janker = 0;
+  const pushOne = () => {
+    const t = SAMPLE[n % SAMPLE.length] + " #" + n++;
+    overlay.push({
+      text: t, parts: [{ t }], tier: 1, durationMs: 7500,
+      score: 0.3, emphasis: 0.2, authorType: "normal", kind: "text"
+    });
+  };
+  const stopLoad = () => { clearInterval(pump); clearInterval(janker); pump = 0; janker = 0; };
+  const startLoad = () => {
+    stopLoad();
+    const rate = Number($("rate").value);
+    pump = setInterval(() => { for (let k = 0; k < Math.max(1, Math.round(rate / 30)); k++) pushOne(); }, 1000 / 30);
+    if ($("jank").checked) {
+      janker = setInterval(() => { const end = performance.now() + 60; while (performance.now() < end) {} }, 400);
+    }
+  };
+  $("rate").addEventListener("input", () => { $("rateV").textContent = $("rate").value; startLoad(); });
+  $("jank").addEventListener("change", startLoad);
+  $("run").addEventListener("change", () => {
+    if ($("run").checked) { overlay.start(); startLoad(); }
+    else { stopLoad(); overlay.stop(); }
+  });
+  $("burst").addEventListener("click", () => { for (let k = 0; k < 300; k++) pushOne(); });
+
+  startLoad();
+  if (!$("run").checked) overlay.stop();
+
+  // --- HUD ------------------------------------------------------------------
+  const pct = (p) => {
+    const sorted = [...loopDurations].sort((a, b) => a - b);
+    return sorted.length ? Math.round(sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))] * 10) / 10 : 0;
+  };
+  const paint = (el, value, bad) => { el.textContent = value; el.className = bad ? "bad" : "good"; };
+  setInterval(() => {
+    const s = overlay.stats();
+    paint($("fps"), s.fps, s.fps < 45);
+    paint($("active"), s.active + " / " + s.cap, false);
+    paint($("pages"), s.pages, false);
+    paint($("queued"), s.queued + " / " + s.ready, false);
+    paint($("drawn"), s.drawn + " / " + s.dropped, false);
+    paint($("long"), s.longTasks, s.longTasks > 0);
+    const p99 = pct(0.99), max = pct(1);
+    paint($("p50"), pct(0.5) + " ms", false);
+    paint($("p95"), pct(0.95) + " ms", pct(0.95) > 16.7);
+    paint($("p99"), p99 + " ms", p99 > 25);
+    paint($("max"), max + " ms", max > 50);
+    paint($("rin"), rasterInFrame, rasterInFrame > 0);
+  }, 500);
+})();
+</script>
+</body>
+</html>

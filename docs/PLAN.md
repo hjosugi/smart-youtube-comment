@@ -49,10 +49,13 @@ Status as of the current implementation:
 | --- | --- | --- |
 | Dev frame/long-task diagnostics | Done | `danmaku.js` exposes frame p50/p95/p99, FPS, active count, cache size, and long-task counters through `stats()`. |
 | Renderer queue/ring-buffer hotspots | Done | Pending comments use `pendingHead` compaction instead of `Array.shift()`, and spawn work is budgeted per frame. |
+| Off-frame rasterization | Done | `push()` enqueues; the frame loop rasterizes under `rasterBudgetMs` with no timers on the render thread (a 1s stats timer caused a ~1 Hz jolt). |
+| Bounded catch-up / idle skip | Done | Frame hitches are repaid via `carryMs`/`maxStepMs` instead of a single jump, and idle frames skip the full-canvas clear. |
 | Configurable maxActive with interactivity guard | Done | `maxActive`, `maxQueue`, and `spawnPerFrame` are settings-backed; spawn budget falls under high frame EMA. |
 | Chat observation after player replacement | Partial | Lifecycle and chat-client tests cover reconnection behavior, but real YouTube DOM replacement remains a manual smoke item. |
 | Official guide/warning filtering | Done | Extension extraction tests cover official-message filtering and sanitized render payloads. |
 | Real device tuning | Checklist ready | `docs/DEVICE_TUNING.md` defines iOS/Android smoke steps, HUD metrics, and tuning thresholds. |
+| Sprite atlas (periodic jolt fix) | Done | Comments are packed into shared GPU-backed atlas pages that are recycled by reference count; per-comment canvases caused a major-GC storm every 0.5–3 s. `bench/jank-trace.mjs` guards it. |
 | Heavy renderer optimizations | Gated | OffscreenCanvas/worker rasterization requires the `docs/DEVICE_TUNING.md` performance gate to fail on real devices first. |
 
 The next performance work should focus on the browser path:

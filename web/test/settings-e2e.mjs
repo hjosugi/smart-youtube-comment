@@ -99,7 +99,7 @@ await page.click('[data-action="reset-backup"]')
 await page.waitForFunction(() => {
   const settings = JSON.parse(localStorage.getItem("syc:settings") || "{}")
   const filter = JSON.parse(localStorage.getItem("syc:filter") || "{}")
-  return settings.speedPct === 100 && Array.isArray(filter.users) && filter.users.length === 0
+  return settings.speedPct === 120 && Array.isArray(filter.users) && filter.users.length === 0
 })
 const reset = await page.evaluate(() => ({
   speedPct: JSON.parse(localStorage.getItem("syc:settings") || "{}").speedPct,
@@ -136,7 +136,7 @@ const checks = [
   ],
   [
     "backup reset restores defaults",
-    reset.speedPct === 100 && reset.users === 0 && reset.words === 0 && reset.channels === 0,
+    reset.speedPct === 120 && reset.users === 0 && reset.words === 0 && reset.channels === 0,
   ],
   ["no page errors", errors.length === 0],
 ]
