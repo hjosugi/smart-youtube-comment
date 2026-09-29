@@ -7,7 +7,7 @@
 <style>
   :root { color-scheme: light dark; }
   body {
-    min-width: 240px;
+    min-width: 280px;
     margin: 0;
     padding: 12px;
     background: #17171d;
@@ -20,6 +20,9 @@
     justify-content: space-between;
     gap: 12px;
     padding: 8px 0;
+  }
+  .row.switch > span {
+    flex: 1;
   }
   .title {
     font-weight: 750;
@@ -61,10 +64,7 @@
 </head>
 <body>
   <div class="title" data-i18n="opt_title">Smart YouTube Comment Overlay</div>
-  <label class="row">
-    <span data-i18n="s_enabled">Overlay enabled</span>
-    <input id="enabled" type="checkbox" />
-  </label>
+  <div id="general"></div>
   <label class="row">
     <span data-i18n="s_opacity">Opacity</span>
     <input id="opacity" type="range" min="20" max="100" step="5" />

@@ -86,26 +86,21 @@
         opacity: 1;
       }
       .syc-danmaku-toggle-mark {
-        display: inline-grid;
-        place-items: center;
-        width: 24px;
-        height: 24px;
-        border: 2px solid currentColor;
-        border-radius: 999px;
-        font: 700 15px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
-        text-shadow: 0 1px 2px rgba(0,0,0,.8);
+        display: block;
+        width: 100%;
+        height: 100%;
       }
-      .syc-danmaku-toggle[aria-pressed="false"] .syc-danmaku-toggle-mark {
+      .syc-danmaku-toggle-mark svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+        filter: drop-shadow(0 1px 2px rgba(0,0,0,.6));
+      }
+      .syc-danmaku-toggle[aria-pressed="false"] .syc-danmaku-toggle-bubble {
         opacity: .55;
       }
-      .syc-danmaku-toggle[aria-pressed="false"]::after {
-        content: "";
-        position: absolute;
-        width: 28px;
-        height: 2px;
-        background: currentColor;
-        transform: rotate(-38deg);
-        box-shadow: 0 1px 2px rgba(0,0,0,.8);
+      .syc-danmaku-toggle[aria-pressed="true"] .syc-danmaku-toggle-slash {
+        display: none;
       }
       .syc-danmaku-toggle.syc-floating {
         position: absolute !important;
@@ -148,17 +143,28 @@
     el.textContent = text;
   }
 
+  // Player-control glyph: a speech bubble with two text lines punched out,
+  // drawn at the same scale as YouTube's own 36-unit control icons so it reads
+  // as "comments" next to them. Off state = dimmed bubble + a keylined slash.
   function makeBubbleIcon() {
     const ns = "http://www.w3.org/2000/svg";
-    const svg = document.createElementNS(ns, "svg");
-    svg.setAttribute("viewBox", "0 0 24 24");
-    svg.setAttribute("width", "14");
-    svg.setAttribute("height", "14");
-    svg.setAttribute("fill", "currentColor");
-    svg.setAttribute("aria-hidden", "true");
-    const path = document.createElementNS(ns, "path");
-    path.setAttribute("d", "M5 4h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H10l-4 3v-3H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z");
-    svg.appendChild(path);
+    const el = (tag, attrs) => {
+      const node = document.createElementNS(ns, tag);
+      for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+      return node;
+    };
+    const svg = el("svg", { viewBox: "0 0 36 36", "aria-hidden": "true" });
+    svg.appendChild(el("path", {
+      class: "syc-danmaku-toggle-bubble",
+      fill: "currentColor",
+      "fill-rule": "evenodd",
+      d: "M10 7.5h16a4 4 0 0 1 4 4v9a4 4 0 0 1-4 4H15.5L10 29.3v-4.8A4 4 0 0 1 6 20.5v-9a4 4 0 0 1 4-4Z" +
+         "M11.5 12.8v2.4h13v-2.4ZM11.5 17.6v2.4h8.5v-2.4Z"
+    }));
+    const slash = el("g", { class: "syc-danmaku-toggle-slash", fill: "none", "stroke-linecap": "round" });
+    slash.appendChild(el("path", { d: "M8 28 28 8", stroke: "rgba(0,0,0,.8)", "stroke-width": "6" }));
+    slash.appendChild(el("path", { d: "M8 28 28 8", stroke: "currentColor", "stroke-width": "2.6" }));
+    svg.appendChild(slash);
     return svg;
   }
 
