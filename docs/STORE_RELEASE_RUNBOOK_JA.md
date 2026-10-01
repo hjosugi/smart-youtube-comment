@@ -4,7 +4,7 @@
 # Chrome Web Store 公開手順書
 
 目的: 手作業で迷わない。上から順番にチェックして、通常リリースは
-`vX.Y.Z` タグを押すだけにする。
+バージョンを上げて `main` に入れるだけにする。
 
 ## 現状
 
@@ -414,18 +414,19 @@ npm run release:zip
 git status --short
 git add package.json package-lock.json web/package.json web/package-lock.json worker/package.json worker/package-lock.json extension/manifest.json
 git commit -m "Release ${VERSION}"
-git tag "v${VERSION}"
 git push origin HEAD
-git push origin "v${VERSION}"
 ```
+
+`main` に直接 push するか、このコミットを PR にしてマージする。タグは手で打たない。
 
 GitHub Actions の成功条件:
 
-- `Validate tag version` が成功
+- `Resolve release target` が `publish=true` を出す
 - `Build release zip` が成功
 - `Upload release artifacts` が成功
 - `Upload to Chrome Web Store` が成功
 - `Publish in Chrome Web Store` が成功
+- `github-release` ジョブが `vX.Y.Z` タグと GitHub Release を作る
 
 その後:
 
@@ -459,7 +460,9 @@ deploy_percentage: 空欄
 
 ## 失敗時
 
-### `Tag vX.Y.Z does not match`
+### `does not match`
+
+`package.json` と `extension/manifest.json`、または手で押したタグのバージョンがずれている。
 
 やること:
 
@@ -468,12 +471,14 @@ export VERSION="X.Y.Z"
 npm run version:set -- "$VERSION"
 git add package.json package-lock.json web/package.json web/package-lock.json worker/package.json worker/package-lock.json extension/manifest.json
 git commit -m "Release ${VERSION}"
-git tag -d "v${VERSION}" || true
-git tag "v${VERSION}"
 git push origin HEAD
-git push origin ":refs/tags/v${VERSION}" || true
-git push origin "v${VERSION}"
 ```
+
+手でずれたタグを押していたら消す: `git push origin ":refs/tags/<そのタグ>"`
+
+### Upload / Publish が一時的に失敗した
+
+タグは Publish 成功後にしか作られない。GitHub Actions で失敗したジョブを `Re-run` すれば同じバージョンでやり直せる。`github-release` だけ失敗したならそのジョブだけ `Re-run` する(ストアへの再提出は起きない)。
 
 ### `Missing required configuration`
 

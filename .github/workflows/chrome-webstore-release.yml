@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Optional version to set before packaging. Prefer committed vX.Y.Z tags for normal releases."
+        description: "Optional version to set before packaging. Prefer committed version bumps on main for normal releases."
         required: false
         type: string
       publish:
@@ -44,7 +44,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: chrome-webstore-release
@@ -53,6 +52,12 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      version: ${{ steps.target.outputs.version }}
+      publish: ${{ steps.target.outputs.publish }}
     env:
       CHROME_WEBSTORE_PUBLISHER_ID: ${{ secrets.CHROME_WEBSTORE_PUBLISHER_ID }}
       CHROME_WEBSTORE_EXTENSION_ID: ${{ secrets.CHROME_WEBSTORE_EXTENSION_ID }}
@@ -77,6 +82,32 @@ jobs:
           node-version: "22"
           cache: npm
 
+      # A push publishes when it is a vX.Y.Z tag, or a main push whose version has
+      # no tag yet; the github-release job then tags that commit.
+      - name: Resolve release target
+        id: target
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          manifest=$(node -p 'require("./extension/manifest.json").version')
+          if [ "$version" != "$manifest" ]; then
+            echo "::error::package.json $version does not match extension/manifest.json $manifest"
+            exit 1
+          fi
+          publish=false
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF_TYPE" = tag ]; then
+            if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+              echo "::error::Tag $GITHUB_REF_NAME does not match package.json and manifest $version"
+              exit 1
+            fi
+            publish=true
+          elif [ "$GITHUB_EVENT_NAME" = push ]; then
+            released=$(git ls-remote --tags origin "refs/tags/v$version")
+            if [ -z "$released" ]; then publish=true; fi
+          fi
+          echo "Release v$version: publish=$publish"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+
       - name: Install dependencies
         run: npm ci
 
@@ -88,7 +119,7 @@ jobs:
 
       - name: Authenticate to Google Cloud
         id: google-auth
-        if: ${{ (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.dry_run != true)) && env.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && env.GCP_SERVICE_ACCOUNT != '' }}
+        if: ${{ (steps.target.outputs.publish == 'true' || (github.event_name == 'workflow_dispatch' && inputs.dry_run != true)) && env.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && env.GCP_SERVICE_ACCOUNT != '' }}
         uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
@@ -97,7 +128,7 @@ jobs:
           access_token_scopes: https://www.googleapis.com/auth/chromewebstore
 
       - name: Use short-lived Chrome Web Store access token
-        if: ${{ (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.dry_run != true)) && env.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && env.GCP_SERVICE_ACCOUNT != '' }}
+        if: ${{ (steps.target.outputs.publish == 'true' || (github.event_name == 'workflow_dispatch' && inputs.dry_run != true)) && env.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && env.GCP_SERVICE_ACCOUNT != '' }}
         env:
           ACCESS_TOKEN: ${{ steps.google-auth.outputs.access_token }}
         run: echo "CHROME_WEBSTORE_ACCESS_TOKEN=${ACCESS_TOKEN}" >> "$GITHUB_ENV"
@@ -107,22 +138,6 @@ jobs:
         env:
           RELEASE_VERSION: ${{ inputs.version }}
         run: npm run version:set -- "$RELEASE_VERSION"
-
-      - name: Validate tag version
-        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
-        run: |
-          node --input-type=module <<'NODE'
-          import { readFileSync } from "node:fs"
-
-          const tag = process.env.GITHUB_REF_NAME.replace(/^v/, "")
-          const pkg = JSON.parse(readFileSync("package.json", "utf8"))
-          const manifest = JSON.parse(readFileSync("extension/manifest.json", "utf8"))
-          if (pkg.version !== tag || manifest.version !== tag) {
-            throw new Error(
-              `Tag v${tag} does not match package.json ${pkg.version} and manifest ${manifest.version}`,
-            )
-          }
-          NODE
 
       - name: Fetch Chrome Web Store status
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.status_only == true }}
@@ -148,9 +163,48 @@ jobs:
           if-no-files-found: error
 
       - name: Upload to Chrome Web Store
-        if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.status_only != true && inputs.publish_only != true) }}
+        if: ${{ steps.target.outputs.publish == 'true' || (github.event_name == 'workflow_dispatch' && inputs.status_only != true && inputs.publish_only != true) }}
         run: npm run release:store:upload
 
       - name: Publish in Chrome Web Store
-        if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.status_only != true && inputs.publish_only != true && inputs.publish == true) }}
+        if: ${{ steps.target.outputs.publish == 'true' || (github.event_name == 'workflow_dispatch' && inputs.status_only != true && inputs.publish_only != true && inputs.publish == true) }}
         run: npm run release:store:publish
+
+  # Runs only after the store accepted the submission, so a failed upload leaves
+  # no tag behind and re-running the failed job retries the same version.
+  github-release:
+    needs: release
+    if: ${{ needs.release.outputs.publish == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: v${{ needs.release.outputs.version }}
+
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: chrome-extension-release
+          path: .release
+
+      # Creating the tag through the release API with GITHUB_TOKEN does not
+      # trigger the tag-push run, so the store sees one submission per version.
+      - name: Create GitHub Release
+        run: |
+          base=".release/smart-youtube-comment-$TAG"
+          assets=("$base.zip" "$base.sha256" "$base-tester-install.md")
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${assets[@]}" --clobber
+            exit 0
+          fi
+          sha256=$(cut -d ' ' -f 1 "$base.sha256")
+          gh release create "$TAG" "${assets[@]}" \
+            --target "$GITHUB_SHA" \
+            --title "$TAG" \
+            --generate-notes \
+            --notes "Chrome Web Store の審査に提出済み / Submitted for Chrome Web Store review.
+
+          SHA-256 \`smart-youtube-comment-$TAG.zip\`: \`$sha256\`"

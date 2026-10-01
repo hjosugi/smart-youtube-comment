@@ -82,7 +82,7 @@ Chrome Web Store の更新公開は以下を通じて自動化されています
 - `npm run release:store`
 - `.github/workflows/chrome-webstore-release.yml`
 
-一度限りの Chrome Web Store デベロッパーダッシュボードのセットアップは完了済みです。アイテムは `nkphcfhnfjceplpgcjccnpfdkheafohp` として公開されており、対応する `vX.Y.Z` タグがチェックを実行し、zip をビルドし、アップロードし、レビュー/公開のために提出します。
+一度限りの Chrome Web Store デベロッパーダッシュボードのセットアップは完了済みです。アイテムは `nkphcfhnfjceplpgcjccnpfdkheafohp` として公開されており、`main` でバージョンを上げるとチェックを実行し、zip をビルドし、アップロードし、レビュー/公開のために提出した後、`vX.Y.Z` タグと GitHub Release を作成します。
 
 リリースごとに残る手動要素は Chrome Web Store の審査そのものなので、公開バージョンは `main` より古いことがあります。リリースワークフローが使うパブリッシャーの認証情報は有効なまま保ってください。`403` でアップロードが失敗する場合のチェックリストは `docs/RELEASE.ja.md` にあります。
 
