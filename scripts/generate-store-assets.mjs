@@ -170,7 +170,7 @@ function shell({ title, subtitle, body, size }) {
       <div class="comment c1">Great explanation!</div>
       <div class="comment c2">コメントが動画に流れる</div>
       <div class="comment c3">Nice timing ✨</div>
-      <div class="comment c4">Locally scored overlay</div>
+      <div class="comment c4">So smooth</div>
       <div class="player"><div class="play"></div><div class="bar"><span></span></div><span>LIVE</span></div>
     </div>
   </section>
@@ -258,7 +258,7 @@ function tile({ title, subtitle, size }) {
   <section class="video">
     <div class="comment c1">Great explanation!</div>
     <div class="comment c2">コメントが動画に流れる</div>
-    <div class="comment c3">Locally scored ✨</div>
+    <div class="comment c3">Nice timing ✨</div>
   </section>
 </body>
 </html>`
@@ -285,7 +285,7 @@ await screenshot(
   shell({
     size: { width: 1280, height: 800 },
     title: "Smart YouTube Comment Overlay",
-    subtitle: "Nico-style YouTube live chat overlay with local, on-device scoring.",
+    subtitle: "Nico-style YouTube live chat overlay.",
     body: "Tune display, speed, filtering, and performance without sending chat text to an external server.",
   }),
   "screenshot-overlay-1280x800.png",
@@ -323,7 +323,7 @@ await screenshot(
   tile({
     size: { width: 1400, height: 560 },
     title: "Smart YouTube Comment Overlay",
-    subtitle: "A local, tunable Nico-style overlay for YouTube live chat.",
+    subtitle: "A tunable Nico-style overlay for YouTube live chat.",
   }),
   "promo-marquee-1400x560.png",
   1400,

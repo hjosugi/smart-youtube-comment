@@ -130,7 +130,7 @@ Smart YouTube Comment Overlay
 Summary:
 
 ```text
-Nico-style YouTube live chat overlay with local, on-device comment scoring.
+Nico-style YouTube live chat overlay.
 ```
 
 Detailed description:
@@ -138,9 +138,9 @@ Detailed description:
 ```text
 Smart YouTube Comment Overlay displays YouTube live chat as a Nico-style overlay on top of the video.
 
-The extension scores comments locally in the browser and uses that score to adjust how quickly comments move across the screen. Short repeated reactions and emoji-heavy bursts move faster, while longer or more informative comments can remain visible longer.
+The extension scores each comment and uses that score to adjust how quickly comments move across the screen. Short repeated reactions and emoji-heavy bursts move faster, while longer or more informative comments can remain visible longer.
 
-All scoring and filtering runs on device. The extension does not download remote code, does not use WebAssembly, and does not send chat text to an external server.
+The extension does not download remote code, does not use WebAssembly, and does not send chat text to an external server.
 
 Permissions:
 - storage: saves overlay, display, and performance settings. Blocked users and

@@ -1,6 +1,6 @@
 {
   "ext_name": { "message": "Smart YouTube Comment Overlay" },
-  "ext_desc": { "message": "Nico-style YouTube live chat overlay with local, on-device comment scoring." },
+  "ext_desc": { "message": "Nico-style YouTube live chat overlay." },
   "action_title": { "message": "Smart YouTube Comment Overlay — Settings" },
 
   "opt_title": { "message": "Smart YouTube Comment Overlay" },
