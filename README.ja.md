@@ -181,7 +181,7 @@ bun run release:zip:bun
 
 アーティファクトは`.release/`に書き込まれ、Gitによって無視されます。詳細は[docs/RELEASE.ja.md](docs/RELEASE.ja.md)を参照してください。
 
-ストアへのリリースは`vX.Y.Z`タグから[`.github/workflows/chrome-webstore-release.yml`](.github/workflows/chrome-webstore-release.yml)経由で実行されます。ストアのリスティングとパブリッシャーの初回設定は完了済みです。ワークフローが必要とする認証情報については[docs/STORE_AUTOMATION.ja.md](docs/STORE_AUTOMATION.ja.md)を参照してください。
+ストアへのリリースは、バージョンを上げたコミットが`main`に入ると[`.github/workflows/chrome-webstore-release.yml`](.github/workflows/chrome-webstore-release.yml)経由で実行され、その後`vX.Y.Z`タグとGitHub Releaseが作成されます。ストアのリスティングとパブリッシャーの初回設定は完了済みです。ワークフローが必要とする認証情報については[docs/STORE_AUTOMATION.ja.md](docs/STORE_AUTOMATION.ja.md)を参照してください。
 
 パッケージとマニフェストのバージョンを一緒に設定します:
 

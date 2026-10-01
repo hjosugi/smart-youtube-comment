@@ -211,8 +211,9 @@ bun run release:zip:bun
 Artifacts are written to `.release/`, which is ignored by Git. See
 [docs/RELEASE.md](docs/RELEASE.md).
 
-Store releases go out from a `vX.Y.Z` tag through
-[`.github/workflows/chrome-webstore-release.yml`](.github/workflows/chrome-webstore-release.yml).
+Store releases go out when a version bump lands on `main`, through
+[`.github/workflows/chrome-webstore-release.yml`](.github/workflows/chrome-webstore-release.yml),
+which then tags `vX.Y.Z` and creates the GitHub Release.
 The store listing and publisher setup is already done; see
 [docs/STORE_AUTOMATION.md](docs/STORE_AUTOMATION.md) for the credentials the
 workflow needs.

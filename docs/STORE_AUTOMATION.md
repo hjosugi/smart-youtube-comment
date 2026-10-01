@@ -114,14 +114,22 @@ Normal path:
 ```sh
 npm run version:set -- 0.1.1
 git commit -am "Release 0.1.1"
-git tag v0.1.1
-git push origin main --tags
+git push origin main   # or merge a PR that carries the bump
 ```
 
-Pushing a `vX.Y.Z` tag runs checks, packages the extension, uploads release
-artifacts, uploads the zip to Chrome Web Store, and submits it for
-review/publishing. The workflow rejects a tag if it does not match the package
-roots updated by `npm run version:set` and `extension/manifest.json`.
+A push to `main` whose version has no `vX.Y.Z` tag yet is a release: the
+workflow runs checks, packages the extension, uploads release artifacts,
+uploads the zip to Chrome Web Store, and submits it for review/publishing. Only
+after the store accepts the submission does the `github-release` job tag the
+commit `vX.Y.Z` and create the GitHub Release with the zip, checksum, tester
+guide, and generated notes. Pushes whose version is already tagged only build
+the zip. The workflow fails when `package.json` and `extension/manifest.json`
+disagree.
+
+Pushing a `vX.Y.Z` tag by hand still releases that tag, and the workflow
+rejects one that does not match the package roots updated by
+`npm run version:set`. Do not push a tag for a version that `main` releases on
+its own; the auto-created tag does not trigger a second run.
 
 Manual emergency path:
 
@@ -157,7 +165,9 @@ do not bump the version to work around it. Full checklist in
 `docs/RELEASE.md`.
 
 A failed upload leaves the published listing untouched, so the previously
-approved version stays live and the same tag can be retried.
+approved version stays live. No tag exists yet at that point, so re-running the
+failed job retries the same version. If only `github-release` failed, re-run
+that job; the store submission is not repeated.
 
 ## Rollback
 

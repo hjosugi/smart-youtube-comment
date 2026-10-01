@@ -25,6 +25,12 @@ if (manifest.version !== pkg.version) {
   throw new Error(`version mismatch: manifest=${manifest.version}, package=${pkg.version}`)
 }
 
+// manifest.name is an i18n placeholder; the release docs show the default-locale name.
+const messages = JSON.parse(
+  readFileSync(resolve(extensionDir, "_locales", manifest.default_locale, "messages.json"), "utf8"),
+)
+const displayName = manifest.name.replace(/^__MSG_(\w+)__$/, (_, key) => messages[key].message)
+
 const required = [
   "manifest.json",
   "background.mjs",
@@ -115,7 +121,7 @@ writeFileSync(
 
 writeFileSync(
   notesPath,
-  `# ${manifest.name} v${manifest.version}
+  `# ${displayName} v${manifest.version}
 
 ## Artifact
 
@@ -156,7 +162,7 @@ writeFileSync(
 
 writeFileSync(
   testerGuidePath,
-  `# Tester Install: ${manifest.name} v${manifest.version}
+  `# Tester Install: ${displayName} v${manifest.version}
 
 ## Install
 

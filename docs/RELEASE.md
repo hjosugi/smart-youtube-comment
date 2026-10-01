@@ -20,7 +20,7 @@ https://chromewebstore.google.com/detail/nkphcfhnfjceplpgcjccnpfdkheafohp
 - support site: the GitHub issue tracker
 
 The one-time listing, category, privacy, and data-use setup is done. Repeat
-releases only need a version bump and a `vX.Y.Z` tag.
+releases only need a version bump on `main`; CI tags it `vX.Y.Z`.
 
 ## Release Strategy
 
@@ -143,9 +143,10 @@ release path.
 
 For the no-thinking manual checklist, use `docs/STORE_RELEASE_RUNBOOK_JA.md`.
 
-Once the GitHub repository secrets are configured, pushing a matching `vX.Y.Z`
-tag runs checks, packages the extension, uploads release artifacts, uploads the
-zip to Chrome Web Store, and submits it for review/publishing.
+Once the GitHub repository secrets are configured, pushing a version bump to
+`main` runs checks, packages the extension, uploads release artifacts, uploads
+the zip to Chrome Web Store, and submits it for review/publishing. After the
+submission succeeds, CI tags the commit `vX.Y.Z` and creates the GitHub Release.
 
 Preferred CI auth uses a service account plus GitHub OIDC:
 
@@ -240,7 +241,7 @@ Submit store releases only after these are done:
 - rollback plan for YouTube DOM breakage
 - publisher credentials still valid; confirm with
   `npm run release:store:status` or the `status_only` workflow dispatch
-- a tagged Git release matching the manifest version
+- the manifest version bumped above the latest `vX.Y.Z` tag
 
 ## Store Release Troubleshooting
 
@@ -275,10 +276,11 @@ values by hand. The publisher ID is a UUID, and GitHub secret scanning reports
 bare UUIDs as `OpenVSX Access Token`, which opens a secret-scanning alert on a
 public repository.
 
-The tag run is safe to retry after fixing credentials: re-push the tag, or use
-`workflow_dispatch` on `.github/workflows/chrome-webstore-release.yml`. A tag
-whose upload failed leaves the store listing untouched, so the previously
-approved version stays live.
+The release run is safe to retry after fixing credentials: re-run the failed
+job, or use `workflow_dispatch` on `.github/workflows/chrome-webstore-release.yml`.
+CI tags the version only after the store accepts it, so a failed upload leaves
+no tag behind and the store listing untouched; the previously approved version
+stays live.
 
 ## Rollback
 

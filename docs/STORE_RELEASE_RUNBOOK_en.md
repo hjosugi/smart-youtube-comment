@@ -3,7 +3,7 @@
 
 # Chrome Web Store Publication Guide
 
-Purpose: Avoid manual errors. Follow the steps from top to bottom, and for a normal release, simply push the `vX.Y.Z` tag.
+Purpose: Avoid manual errors. Follow the steps from top to bottom, and for a normal release, simply land a version bump on `main`.
 
 ## Current State
 
@@ -410,18 +410,19 @@ npm run release:zip
 git status --short
 git add package.json package-lock.json web/package.json web/package-lock.json worker/package.json worker/package-lock.json extension/manifest.json
 git commit -m "Release ${VERSION}"
-git tag "v${VERSION}"
 git push origin HEAD
-git push origin "v${VERSION}"
 ```
+
+Push to `main` directly, or open a PR with this commit and merge it. Do not push a tag by hand.
 
 GitHub Actions success criteria:
 
-- `Validate tag version` succeeds
+- `Resolve release target` reports `publish=true`
 - `Build release zip` succeeds
 - `Upload release artifacts` succeeds
 - `Upload to Chrome Web Store` succeeds
 - `Publish in Chrome Web Store` succeeds
+- the `github-release` job creates the `vX.Y.Z` tag and the GitHub Release
 
 Afterward:
 
@@ -455,7 +456,9 @@ deploy_percentage: Leave blank
 
 ## In Case of Failure
 
-### `Tag vX.Y.Z does not match`
+### `does not match`
+
+`package.json` and `extension/manifest.json`, or a hand-pushed tag, disagree on the version.
 
 Steps to resolve:
 
@@ -464,12 +467,14 @@ export VERSION="X.Y.Z"
 npm run version:set -- "$VERSION"
 git add package.json package-lock.json web/package.json web/package-lock.json worker/package.json worker/package-lock.json extension/manifest.json
 git commit -m "Release ${VERSION}"
-git tag -d "v${VERSION}" || true
-git tag "v${VERSION}"
 git push origin HEAD
-git push origin ":refs/tags/v${VERSION}" || true
-git push origin "v${VERSION}"
 ```
+
+If you pushed a mismatched tag by hand, delete it: `git push origin ":refs/tags/<that tag>"`
+
+### Upload or Publish fails transiently
+
+The tag is created only after Publish succeeds. Re-run the failed job in GitHub Actions to retry the same version. If only `github-release` failed, re-run just that job; the store submission is not repeated.
 
 ### `Missing required configuration`
 
