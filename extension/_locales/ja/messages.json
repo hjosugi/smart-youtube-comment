@@ -1,6 +1,6 @@
 {
   "ext_name": { "message": "スマート YouTube コメントオーバーレイ" },
-  "ext_desc": { "message": "YouTube ライブチャットをニコニコ風に重ねて表示（コメント採点はすべて端末内で処理）。" },
+  "ext_desc": { "message": "YouTube ライブチャットをニコニコ風に重ねて表示。" },
   "action_title": { "message": "コメントオーバーレイ — 設定" },
 
   "opt_title": { "message": "スマート YouTube コメントオーバーレイ" },
