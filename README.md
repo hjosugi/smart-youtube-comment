@@ -286,3 +286,9 @@ More notes are in [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
 ## License
 
 0BSD. You can use, copy, modify, and distribute this project for almost any purpose.
+
+## Disclaimer
+
+This project is not developed or distributed as a business, and does not infringe the patent rights of DWANGO Co., Ltd. in Japan.
+
+The developer accepts no liability for any damage arising from this extension.
