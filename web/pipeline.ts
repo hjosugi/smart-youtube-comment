@@ -7,7 +7,12 @@
 // the wiring is.)
 
 export const makeRenderer = (scorer, buildRenderPlan) => msg => {
-  const result = scorer.score({ text: msg.text, authorType: msg.authorType, kind: msg.kind })
+  const result = scorer.score({
+    text: msg.text,
+    parts: msg.parts,
+    authorType: msg.authorType,
+    kind: msg.kind,
+  })
   const plan = buildRenderPlan(msg.text, result)
   if (!plan) return null
   return {

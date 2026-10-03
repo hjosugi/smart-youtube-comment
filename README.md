@@ -52,7 +52,10 @@ The extension runs `extension/content.js` in every YouTube frame.
 
 1. Chat frames watch YouTube live-chat renderer nodes.
 2. Each new chat message is normalized into a `ScoreInput`.
-3. `extension/scoring.js` returns a local `ScoreResult`.
+3. `extension/scoring.js` scores it locally: emoji and short reactions flow
+   fast, long text flows slow, and a quality score decides which comments win
+   when the screen is full. Nothing is hidden by the score. The rules, with
+   examples, are in [docs/SCORING.md](docs/SCORING.md).
 4. `buildRenderPlan()` maps the result into fast / normal / slow display timing.
 5. A background service worker relays messages from chat frames to the top video
    frame.

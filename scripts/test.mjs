@@ -42,6 +42,7 @@ const SUITES = [
   ["unit", "worker/test/index.mjs"],
   ["unit", "extension/test/background.mjs"],
   ["unit", "extension/test/content-extract.mjs"],
+  ["unit", "extension/test/scoring.mjs"],
   ["unit", "extension/test/i18n.mjs"],
   ["unit", "extension/test/options.mjs"],
   ["unit", "extension/test/settings-filter.mjs"],

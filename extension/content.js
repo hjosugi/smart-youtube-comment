@@ -567,7 +567,8 @@
     if (!isUserChatMessageNode(node)) return;
     if (processedChatNodes.has(node)) return;
 
-    const text = sanitizeText(partsToText(extractMessageParts(node)) || extractMessageText(node), MAX_TEXT_LENGTH);
+    const rawParts = extractMessageParts(node);
+    const text = sanitizeText(partsToText(rawParts) || extractMessageText(node), MAX_TEXT_LENGTH);
     if (!text) return;
     processedChatNodes.add(node);
 
@@ -585,14 +586,15 @@
     const shownText = filtered?.text ?? text;
     if (!shownText.trim()) return;
 
-    const scorer = getScorer();
-    const result = scorer.score({ text: shownText, authorType, kind });
-    const renderPlan = buildRenderPlan(shownText, result);
-    if (!renderPlan) return;
-
     // Parts are dropped when filtering rewrote the text, so a censored message is
     // not reassembled from its original emoji.
-    const parts = shownText === text ? sanitizeMessageParts(extractMessageParts(node)) : [];
+    const parts = shownText === text ? sanitizeMessageParts(rawParts) : [];
+
+    // The scorer counts each emoji image once (not by its alt-text name).
+    const scorer = getScorer();
+    const result = scorer.score({ text: shownText, parts, authorType, kind });
+    const renderPlan = buildRenderPlan(shownText, result);
+    if (!renderPlan) return;
 
     safeRuntimeSend({
       type: "smart-comment:chat-message",

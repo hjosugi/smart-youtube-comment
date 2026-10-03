@@ -76,11 +76,12 @@ ChatMessage -> SYCScoring.createFallbackScorer().score(ScoreInput) -> ScoreResul
 
 ## ScoreInput
 
-JSスコアラーへの入力。
+JSスコアラーへの入力。スコアラーがこれをどう使うかは[SCORING.ja.md](SCORING.ja.md)で説明しています。
 
 ```jsonc
 {
   "text": "string",
+  "parts": [],             // 省略可。ChatMessageのparts。画像パーツは1つで絵文字1個と数えます
   "authorType": "normal",  // "normal" | "member" | "moderator" | "owner"
   "kind": "text"           // "text" | "paid" | "membership"
 }
@@ -92,6 +93,7 @@ JSスコアラーへの入力。
 
 ```jsonc
 {
+  "tier": 1,           // 省略可。0=速い、1=普通、2=遅い（JSスコアラーは常に設定します）
   "quality": 0.5,
   "spam": 0.0,
   "toxicity": 0.0,
@@ -100,6 +102,8 @@ JSスコアラーへの入力。
   "reasons": []
 }
 ```
+
+JSスコアラーはコメントを非表示にしません。`show`が`false`になるのは表示するものが何もないときだけです。価値の低いコメントは`quality`が低くなり、画面が混んだときの受け入れ判定で後回しになります。以下の判定は他のスコアラー向けです。
 
 デフォルトの助言判決：
 
@@ -121,7 +125,7 @@ quality >= minQuality && spam <= maxSpam && toxicity <= maxToxicity
 
 ## レンダープラン
 
-`SYCScoring.buildRenderPlan(text, result)`は、`ScoreResult`をレンダラーのスピードペイロードにマッピングします：
+`SYCScoring.buildRenderPlan(text, result)`は、`ScoreResult`をレンダラーのスピードペイロードにマッピングします。`result.tier`があればそれを使い、なければ`quality`・`spam`・`emphasis`と文字数から段を決めます：
 
 ```jsonc
 {
@@ -141,4 +145,9 @@ quality >= minQuality && spam <= maxSpam && toxicity <= maxToxicity
 
 現在のタグ：
 
-- `fallback-fast`
+- `fallback-fast`: 速い段のコメント
+- `emoji`: ほぼ絵文字だけ
+- `short`: 数文字だけ
+- `repeat`: 1文字や短いパターンの繰り返し
+- `copy`: 直前に投稿されたコメントとほぼ同じ
+- `long`: 遅い段に入る長さ
