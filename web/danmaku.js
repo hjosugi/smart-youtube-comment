@@ -26,6 +26,7 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
   const SYCScoring = globalThis.SYCScoring ?? {};
   const signatureDistance = SYCScoring.signatureDistance;
   const textSignature = SYCScoring.textSignature;
+  const visibleLength = SYCScoring.visibleLength;
 
   const DEFAULTS = {
     maxActive: 250,       // hard ceiling on concurrent sprites
@@ -155,7 +156,8 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
       this.pendingHead = 0;     // ring head index — avoids O(n) Array.shift()
       this.ready = [];          // rasterized sprites waiting to be admitted
       this.readyHead = 0;       // ring head index for `ready`
-      this.lanes = [];          // per-lane "free at" timestamps
+      this.lanes = [];          // per-lane time the last tail clears the entry edge
+      this.laneExit = [];       // per-lane time the last tail leaves the far edge
       this.cache = new Map();   // raster key -> atlas slot (validated by page generation)
       this._pages = [];         // sprite-atlas pages, recycled in ring order
       this._pageCursor = 0;     // index of the page currently being filled
@@ -330,6 +332,7 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
       this.laneCount = Math.max(3, Math.floor(usable / this.laneH));
       this.laneTop = this.h * this.cfg.topPct;
       this.lanes = new Array(this.laneCount).fill(0);
+      this.laneExit = new Array(this.laneCount).fill(0);
       this._dirty = true;
     }
 
@@ -525,7 +528,8 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
       const baseMs = (td && td[tier] != null) ? td[tier] : (payload.durationMs || 8000);
       let dur = baseMs * (this.cfg.durationScale || 1);
       if (this.cfg.lengthSpread && !isStamp) {
-        const len = [...payload.text].length;
+        // On-screen length: an emoji counts once, not by its alt-text name.
+        const len = visibleLength ? visibleLength(payload.text, payload.parts) : [...payload.text].length;
         const raw = clamp(0.8, 1.45, 0.82 + len / 110);
         dur *= 1 + (raw - 1) * (this.cfg.spreadStrength ?? 0.5); // scale length->speed coupling
       }
@@ -544,19 +548,23 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
       }
 
       const now = performance.now();
-      const lane = this._pickLane(now);
+      // A tier's time is how long a comment's head takes to cross the stage,
+      // so the tiers differ in speed whatever the comment's width: a wide
+      // comment stays on screen longer instead of moving faster.
+      const vx = (this.w + this.cfg.gapPx) / prep.dur; // px per ms
+      const lane = this._pickLane(now, vx);
       const dir = this.cfg.flowDirection === "ltr" ? 1 : -1;
       const startX = dir < 0 ? this.w : -prep.w;
       const dist = this.w + prep.w + this.cfg.gapPx;
-      const vx = dist / prep.dur; // px per ms (long text => larger dist => already slower via dur)
-      this.lanes[lane] = now + (prep.w + this.cfg.gapPx) / vx; // lane reusable after tail clears entry
+      this.lanes[lane] = now + (prep.w + this.cfg.gapPx) / vx;
+      this.laneExit[lane] = now + (this.w + prep.w) / vx;
 
       const slot = prep.slot;
       const entry = {
         img: slot.img, sx: slot.sx, sy: slot.sy, sw: slot.sw, sh: slot.sh, page: slot.page,
         w: prep.w, h: prep.h,
         x: startX, y: this.laneTop + lane * this.laneH + this.laneH / 2,
-        vx, ttlMs: prep.dur + 600, priority: prep.priority,
+        vx, ttlMs: dist / vx + 600, priority: prep.priority,
         id: this.nextSpriteId++,
         index: this.active.length,
         active: true
@@ -744,14 +752,25 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
       }
     }
 
-    _pickLane(now) {
+    // When lane i can take a comment moving at vx: the last comment's tail
+    // has cleared the entry edge, and it leaves the far edge before the new
+    // comment's head can get there, so a faster comment never runs into a
+    // slower one. Both paths are straight lines, so checking the two ends is
+    // enough.
+    _laneReadyAt(i, vx) {
+      const entry = this.lanes[i];
+      if (!(vx > 0)) return entry;
+      return Math.max(entry, (this.laneExit[i] || 0) - (this.w - this.cfg.gapPx) / vx);
+    }
+
+    _pickLane(now, vx = 0) {
       const n = this.laneCount;
       const mode = this.cfg.density || "top";
       // Prefer a lane that is already clear; otherwise the one that frees soonest.
       const free = mode === "random" ? [] : null;
       for (let k = 0; k < n; k++) {
         const i = mode === "bottom" ? n - 1 - k : k;
-        if (this.lanes[i] <= now) {
+        if (this._laneReadyAt(i, vx) <= now) {
           if (free) free.push(i);
           else return i;
         }
@@ -759,7 +778,7 @@ import { AUTHOR_ROLE_COLORS } from "./theme.js";
       if (free && free.length) return free[Math.floor(Math.random() * free.length)];
       let best = 0, bestFree = Infinity;
       for (let i = 0; i < n; i++) {
-        const f = this.lanes[i];
+        const f = this._laneReadyAt(i, vx);
         if (f < bestFree) { bestFree = f; best = i; }
       }
       return best;
