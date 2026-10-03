@@ -10,9 +10,9 @@ things:
 - **which comments win when the screen is full** (priority).
 
 Scoring runs locally in `extension/scoring.js` (`web/scoring.js` is the same
-file). It never hides a comment. Hiding is done only by NG words, the
-per-type toggles, and, when the screen is full, by the priority rule in
-section 3.
+file). It never hides a comment. Hiding is done only by NG words and users
+(including "hide this user" in a comment's right-click menu), the per-type
+toggles, and, when the screen is full, by the priority rule in section 3.
 
 ## 1. What is measured
 

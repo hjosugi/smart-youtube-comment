@@ -533,7 +533,8 @@ const assertStagePointerApi = (label, Overlay) => {
   assert.equal(overlay.hitState(60, 100), 1, `${label}: hitState reports a comment`)
   assert.equal(overlay.hitState(500, 400), 0, `${label}: hitState reports empty space`)
   assert.equal(overlay.dragStart(60, 100), false, `${label}: an unpinned comment cannot be dragged`)
-  assert.equal(overlay.pinAt(60, 100), true, `${label}: pinAt pins the comment under the point`)
+  assert.equal(overlay.pick(60, 100), sprite, `${label}: pick finds the comment under the point`)
+  overlay.setPinned(sprite, true)
   assert.equal(overlay.hitState(60, 100), 2, `${label}: hitState reports a pinned comment`)
 
   assert.equal(overlay.dragStart(60, 100), true, `${label}: a pinned comment can be dragged`)
@@ -545,7 +546,56 @@ const assertStagePointerApi = (label, Overlay) => {
 
   overlay.setConfig({ pinComments: false })
   assert.equal(overlay.hitState(160, 150), 0, `${label}: pinning off reports nothing`)
-  assert.equal(overlay.pinAt(160, 150), false, `${label}: pinning off ignores pinAt`)
+  assert.equal(overlay.pick(160, 150), null, `${label}: pinning off picks nothing`)
+}
+
+// Extension engine: hiding a user removes their comments everywhere in the pipeline.
+const assertHideAuthor = (label, Overlay) => {
+  const overlay = new Overlay({ dpr: 1, dedup: false, maxActive: 50, minActive: 50 })
+  overlay.canvas = makeCanvas()
+  overlay.ctx = makeContext()
+  overlay.w = 640
+  overlay.h = 360
+  overlay.laneTop = 0
+  overlay.laneH = 24
+  overlay.laneCount = 10
+  overlay.lanes = new Array(10).fill(0)
+  overlay.dynamicCap = 50
+  const by = (text, authorChannelId, author = "someone") =>
+    payload(text, { author, authorChannelId })
+  overlay._spawn(by("troll 1", "UCtroll"), 0.5)
+  overlay._spawn(by("hello", "UCfriend"), 0.5)
+  overlay._spawn(by("troll 2", "UCtroll"), 0.5)
+  overlay.ready.push(overlay._prepare(by("troll 3", "UCtroll"), 0.5))
+  overlay.push(by("troll 4", "UCtroll"))
+  overlay.push(by("friend 2", "UCfriend"))
+  const pagesHeld = () => overlay._pages.reduce((n, page) => n + page.sprites, 0)
+
+  const hidden = overlay.hideAuthor(overlay.active[0])
+  assert.equal(hidden.channel, "UCtroll", `${label}: hideAuthor reports the channel`)
+  assert.equal(
+    JSON.stringify(overlay.active.map(a => a.channel)),
+    JSON.stringify(["UCfriend"]),
+    `${label}: on-screen comments by the author are gone`,
+  )
+  assert.equal(overlay._readyCount(), 0, `${label}: rasterized comments by the author are gone`)
+  assert.equal(
+    JSON.stringify(overlay.pending.slice(overlay.pendingHead).map(item => item.payload.text)),
+    JSON.stringify(["friend 2"]),
+    `${label}: queued comments by the author are gone`,
+  )
+  assert.equal(pagesHeld(), 1, `${label}: removed comments release their atlas slots`)
+  assert.equal(overlay._dirty, true, `${label}: the canvas is redrawn even if nothing remains`)
+
+  const nameOnly = new Overlay({ dpr: 1, dedup: false })
+  nameOnly.active.push({ author: "Bob", channel: "", index: 0, active: true, page: null })
+  nameOnly.active.push({ author: "Ann", channel: "", index: 1, active: true, page: null })
+  nameOnly.hideAuthor(nameOnly.active[0])
+  assert.equal(
+    JSON.stringify(nameOnly.active.map(a => a.author)),
+    JSON.stringify(["Ann"]),
+    `${label}: without a channel ID the name is matched`,
+  )
 }
 
 // Tiers must look different: a tier sets the speed, whatever the comment's
@@ -624,6 +674,38 @@ const assertTierSpeedAndLaneCatchUp = (label, Overlay) => {
     0,
     `${label}: after that, the lane is free again`,
   )
+}
+
+// Fullscreen: text, lanes and gaps grow with players taller than the
+// reference height; normal and theater players keep the configured size.
+const assertScaleWithPlayer = (label, Overlay) => {
+  const overlay = new Overlay({
+    dpr: 1,
+    dedup: false,
+    scaleWithPlayer: true,
+    fontPx: 24,
+    lineHeight: 30,
+    gapPx: 28,
+  })
+  overlay.canvas = makeCanvas()
+  overlay._setSize(1280, 720)
+  assert.equal(overlay.scale, 1, `${label}: a 720px player keeps the configured size`)
+  overlay._setSize(800, 450)
+  assert.equal(overlay.scale, 1, `${label}: smaller players never shrink the text`)
+  overlay._setSize(1920, 1080)
+  assert.equal(overlay.scale, 1.5, `${label}: a 1080px player scales by 1.5`)
+  assert.equal(overlay.laneH, 45, `${label}: lanes grow with the text`)
+  assert.equal(overlay.gap, 42, `${label}: gaps grow with the text`)
+  const prep = overlay._prepare(payload("hello", { emphasis: 0.4 }), 0.5)
+  assert.equal(prep.h >= 45, true, `${label}: sprites are rasterized at the larger size`)
+  overlay._setSize(3840, 4000)
+  assert.equal(overlay.scale, 3, `${label}: the scale is capped`)
+
+  const fixed = new Overlay({ dpr: 1, dedup: false, scaleWithPlayer: false, lineHeight: 30 })
+  fixed.canvas = makeCanvas()
+  fixed._setSize(1920, 1080)
+  assert.equal(fixed.scale, 1, `${label}: with the setting off the size is fixed`)
+  assert.equal(fixed.laneH, 30, `${label}: with the setting off lanes are fixed`)
 }
 
 const assertWrapAndLineLayout = (label, Overlay) => {
@@ -1047,6 +1129,7 @@ assertTypeGatingAndRoleScale("web", webOverlay)
 assertFlowDirectionAndDensity("web", webOverlay)
 assertPinAndHitTest("web", webOverlay)
 assertTierSpeedAndLaneCatchUp("web", webOverlay)
+assertScaleWithPlayer("web", webOverlay)
 assertWrapAndLineLayout("web", webOverlay)
 assertLruCache("web", webOverlay, (overlay, text) =>
   overlay._rasterize([{ t: text }], "#fff", 24, false),
@@ -1083,7 +1166,9 @@ assertTypeGatingAndRoleScale("extension", extensionOverlay)
 assertFlowDirectionAndDensity("extension", extensionOverlay)
 assertPinAndHitTest("extension", extensionOverlay)
 assertStagePointerApi("extension", extensionOverlay)
+assertHideAuthor("extension", extensionOverlay)
 assertTierSpeedAndLaneCatchUp("extension", extensionOverlay)
+assertScaleWithPlayer("extension", extensionOverlay)
 assertWrapAndLineLayout("extension", extensionOverlay)
 assertLruCache("extension", extensionOverlay, (overlay, text) =>
   overlay._rasterize([{ t: text }], "#fff", 24, false),

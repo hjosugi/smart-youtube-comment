@@ -68,9 +68,9 @@
     );
   }
 
-  function ensureRuntimeStyles() {
-    if (document.getElementById("syc-runtime-styles")) return;
-    const style = document.createElement("style");
+  function ensureRuntimeStyles(doc = document) {
+    if (doc.getElementById("syc-runtime-styles")) return;
+    const style = doc.createElement("style");
     style.id = "syc-runtime-styles";
     style.textContent = `
       .syc-danmaku-toggle {
@@ -107,6 +107,37 @@
       .syc-danmaku-toggle[aria-pressed="true"] .syc-danmaku-toggle-slash {
         display: none;
       }
+      .syc-danmaku-menu {
+        position: absolute;
+        z-index: 2147483647;
+        min-width: 180px;
+        max-width: 320px;
+        padding: 6px 0;
+        border-radius: 8px;
+        background: rgba(28,28,28,.95);
+        box-shadow: 0 4px 16px rgba(0,0,0,.5);
+        font: 500 13px/1.4 "YouTube Sans", Roboto, Arial, sans-serif;
+        color: #fff;
+      }
+      .syc-danmaku-menu button {
+        display: block;
+        width: 100%;
+        padding: 8px 16px;
+        border: 0;
+        background: none;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        cursor: pointer;
+      }
+      .syc-danmaku-menu button:hover,
+      .syc-danmaku-menu button:focus-visible {
+        background: rgba(255,255,255,.14);
+        outline: none;
+      }
       .syc-danmaku-toggle.syc-floating {
         position: absolute !important;
         right: 78px;
@@ -133,7 +164,7 @@
         clip-path: inset(50%) !important;
       }
     `;
-    (document.head || document.documentElement).appendChild(style);
+    (doc.head || doc.documentElement).appendChild(style);
   }
 
   function applyLayerCss(css) {
@@ -220,6 +251,44 @@
     return { attach, update, remove: () => button.remove() };
   }
 
+  // Player-control glyph for picture-in-picture: a small window in a frame.
+  function makePipIcon() {
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", "0 0 36 36");
+    svg.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS(ns, "path");
+    path.setAttribute("fill", "currentColor");
+    path.setAttribute("d", "M25 17h-8v6h8zm4 8V11a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2zm-2 0H9V11h18z");
+    svg.appendChild(path);
+    return svg;
+  }
+
+  function createPipButton(open) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "ytp-button syc-pip-button";
+    const label = t("pip_open", "Picture-in-picture with comments (beta)");
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    const mark = document.createElement("span");
+    mark.className = "syc-danmaku-toggle-mark";
+    mark.setAttribute("aria-hidden", "true");
+    mark.appendChild(makePipIcon());
+    button.appendChild(mark);
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      open();
+    });
+    return {
+      attach(after) {
+        if (after?.parentElement && button.previousElementSibling !== after) after.after(button);
+      },
+      remove: () => button.remove()
+    };
+  }
+
   function applyDefaultChatSuppression(settings) {
     document.documentElement.classList.toggle(
       "syc-hide-default-chat",
@@ -237,11 +306,14 @@
   function createStage() {
     let frame = null;
     let player = null;
+    let win = null; // the player's window: the page, or a Picture-in-Picture window
     let origin = "";
     let ready = false;
     let queue = [];
     let hit = 0; // what the stage reports under the pointer: 0 none, 1 comment, 2 pinned
     let dragging = false;
+    let menu = null;
+    let menuAt = null;
 
     const send = (message) => {
       if (!frame) return;
@@ -252,59 +324,126 @@
       const r = frame.getBoundingClientRect();
       return { x: event.clientX - r.left, y: event.clientY - r.top };
     };
+    const inMenu = (event) => Boolean(menu && menu.contains(event.target));
+    const stop = (event) => event.stopPropagation();
+
+    // Right-click menu, drawn in the page (the stage takes no pointer events).
+    // Built with DOM APIs and textContent only: the author name is untrusted.
+    const closeMenu = (chosen) => {
+      if (!menu) return;
+      const doc = menu.ownerDocument;
+      menu.remove();
+      menu = null;
+      doc.removeEventListener("pointerdown", onOutside, true);
+      doc.removeEventListener("keydown", onMenuKey, true);
+      if (!chosen) send({ type: "menu", action: "close" });
+    };
+    const onOutside = (event) => {
+      if (!inMenu(event)) closeMenu(false);
+    };
+    const onMenuKey = (event) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      closeMenu(false);
+    };
+    const showMenu = (at, pinned, author) => {
+      closeMenu(false);
+      const doc = player.ownerDocument;
+      menu = doc.createElement("div");
+      menu.className = "syc-danmaku-menu";
+      menu.setAttribute("role", "menu");
+      const item = (label, action) => {
+        const button = doc.createElement("button");
+        button.type = "button";
+        button.setAttribute("role", "menuitem");
+        button.textContent = label;
+        button.addEventListener("click", (event) => {
+          event.preventDefault();
+          send({ type: "menu", action });
+          closeMenu(true);
+        });
+        menu.appendChild(button);
+      };
+      item(pinned ? t("menu_unpin", "Unpin") : t("menu_pin", "Pin this comment"), pinned ? "unpin" : "pin");
+      if (author) {
+        item(chrome.i18n?.getMessage("menu_hide_user", [author]) || `Hide comments from ${author}`, "hide");
+      }
+      // Keep YouTube's player from treating clicks on the menu as play/pause.
+      for (const type of ["pointerdown", "mousedown", "mouseup", "click", "dblclick", "contextmenu"]) {
+        menu.addEventListener(type, stop);
+      }
+      player.appendChild(menu);
+      const x = Math.min(at.x, player.clientWidth - menu.offsetWidth - 4);
+      const y = Math.min(at.y, player.clientHeight - menu.offsetHeight - 4);
+      menu.style.left = `${Math.max(4, x)}px`;
+      menu.style.top = `${Math.max(4, y)}px`;
+      doc.addEventListener("pointerdown", onOutside, true);
+      doc.addEventListener("keydown", onMenuKey, true);
+      menu.querySelector("button")?.focus();
+    };
 
     const onMessage = (event) => {
       if (!frame || event.source !== frame.contentWindow || event.origin !== origin) return;
-      if (event.data?.type === "ready") {
+      const data = event.data;
+      if (data?.type === "ready") {
         ready = true;
         for (const message of queue) frame.contentWindow.postMessage(message, origin);
         queue = [];
-      } else if (event.data?.type === "hit") {
-        hit = event.data.state | 0;
+      } else if (data?.type === "hit") {
+        hit = data.state | 0;
+      } else if (data?.type === "selected" && data.ok && menuAt) {
+        showMenu(menuAt, Boolean(data.pinned), typeof data.author === "string" ? data.author.slice(0, 80) : "");
       }
     };
     const onHover = (event) => {
-      if (!dragging) send({ type: "hover", ...local(event) });
+      if (!dragging && !inMenu(event)) send({ type: "hover", ...local(event) });
     };
     const onLeave = () => {
       hit = 0;
       send({ type: "hover" });
     };
     // Capture phase so we run before YouTube's own player handlers, and swallow
-    // the event only when the stage reported a comment under the pointer.
+    // the event only when the stage reported a comment under the pointer. The
+    // stage holds that comment still until the menu closes.
     const onContextMenu = (event) => {
-      if (!hit) return;
+      if (!hit || inMenu(event)) return;
       event.preventDefault();
       event.stopPropagation();
-      send({ type: "pin", ...local(event) });
+      menuAt = local(event);
+      send({ type: "select", ...menuAt });
     };
     const onDragMove = (event) => send({ type: "dragTo", ...local(event) });
     const onDragEnd = () => {
       dragging = false;
-      window.removeEventListener("pointermove", onDragMove);
-      window.removeEventListener("pointerup", onDragEnd);
+      win?.removeEventListener("pointermove", onDragMove);
+      win?.removeEventListener("pointerup", onDragEnd);
       send({ type: "dragEnd" });
     };
     const onPointerDown = (event) => {
-      if (event.button !== 0 || hit !== 2) return;
+      if (event.button !== 0 || hit !== 2 || inMenu(event)) return;
       event.preventDefault();
       event.stopPropagation();
       dragging = true;
       send({ type: "dragStart", ...local(event) });
-      window.addEventListener("pointermove", onDragMove);
-      window.addEventListener("pointerup", onDragEnd);
+      win.addEventListener("pointermove", onDragMove);
+      win.addEventListener("pointerup", onDragEnd);
     };
 
     return {
       get attached() {
         return Boolean(frame?.isConnected);
       },
+      get player() {
+        return player;
+      },
       attach(nextPlayer) {
         if (player === nextPlayer && frame?.isConnected) return;
         this.detach();
         player = nextPlayer;
-        if (getComputedStyle(player).position === "static") player.style.position = "relative";
-        frame = document.createElement("iframe");
+        const doc = player.ownerDocument;
+        win = doc.defaultView;
+        if (win.getComputedStyle(player).position === "static") player.style.position = "relative";
+        frame = doc.createElement("iframe");
         // Keeps the canvas's old class so user layer CSS still targets the layer.
         frame.className = "syc-danmaku-canvas";
         frame.tabIndex = -1;
@@ -319,7 +458,7 @@
           colorScheme: "normal", background: "transparent",
           pointerEvents: "none", zIndex: "2147483646"
         });
-        window.addEventListener("message", onMessage);
+        win.addEventListener("message", onMessage);
         player.addEventListener("pointermove", onHover, { passive: true });
         player.addEventListener("pointerleave", onLeave);
         player.addEventListener("contextmenu", onContextMenu, true);
@@ -328,7 +467,8 @@
       },
       detach() {
         if (dragging) onDragEnd();
-        window.removeEventListener("message", onMessage);
+        closeMenu(true);
+        win?.removeEventListener("message", onMessage);
         player?.removeEventListener("pointermove", onHover, { passive: true });
         player?.removeEventListener("pointerleave", onLeave);
         player?.removeEventListener("contextmenu", onContextMenu, true);
@@ -336,9 +476,11 @@
         frame?.remove();
         frame = null;
         player = null;
+        win = null;
         ready = false;
         queue = [];
         hit = 0;
+        menuAt = null;
       },
       push: (payload) => send({ type: "push", payload }),
       clear: () => send({ type: "clear" }),
@@ -347,14 +489,134 @@
     };
   }
 
+  // Comments keep flowing while YouTube's chat is closed. Closing it unloads
+  // the chat frame, so a hidden chat frame of our own stands in until the chat
+  // is opened again. Its URL is the one YouTube's frame last showed (a replay
+  // needs its continuation token), or, for a live stream opened with the chat
+  // already closed, the live chat of this video. A replay frame follows the
+  // player through the same "yt-player-video-progress" messages YouTube's page
+  // sends its own chat frame.
+  function createChatSource() {
+    let frame = null;
+    let video = null;
+    let known = { id: "", url: "" };
+    const watched = new WeakSet();
+
+    const videoId = () =>
+      new URL(location.href).searchParams.get("v") ||
+      location.pathname.match(/^\/live\/([\w-]{11})/)?.[1] ||
+      "";
+    const chatShell = () => document.querySelector("ytd-live-chat-frame");
+    const remember = (iframe) => {
+      try {
+        const href = iframe.contentWindow?.location.href || "";
+        const url = new URL(href);
+        if (url.origin === location.origin && /^\/live_chat(_replay)?$/.test(url.pathname)) {
+          known = { id: videoId(), url: url.href };
+        }
+      } catch {
+        // Not loaded yet, or not a chat page.
+      }
+    };
+    const progress = () => {
+      if (frame && video) frame.contentWindow?.postMessage({ "yt-player-video-progress": video.currentTime }, location.origin);
+    };
+    const remove = () => {
+      video?.removeEventListener("timeupdate", progress);
+      video = null;
+      frame?.remove();
+      frame = null;
+    };
+
+    return {
+      update(enabled) {
+        const shell = chatShell();
+        const ytFrame = shell?.querySelector("iframe");
+        if (ytFrame && !watched.has(ytFrame)) {
+          watched.add(ytFrame);
+          ytFrame.addEventListener("load", () => remember(ytFrame));
+        }
+        if (ytFrame) remember(ytFrame);
+        const id = videoId();
+        if (!enabled || !shell || !shell.hasAttribute("collapsed") || !id) {
+          remove();
+          return;
+        }
+        const url = known.id === id ? known.url : `${location.origin}/live_chat?is_popout=1&v=${encodeURIComponent(id)}`;
+        if (frame?.isConnected && frame.dataset.src === url) return;
+        remove();
+        frame = document.createElement("iframe");
+        frame.className = "syc-chat-source";
+        frame.tabIndex = -1;
+        frame.setAttribute("aria-hidden", "true");
+        frame.dataset.src = url;
+        frame.src = url;
+        Object.assign(frame.style, {
+          position: "fixed", left: "0", bottom: "0", width: "1px", height: "1px",
+          border: "0", opacity: "0", pointerEvents: "none", zIndex: "-1"
+        });
+        if (/\/live_chat_replay\?/.test(url)) {
+          video = document.querySelector("video");
+          video?.addEventListener("timeupdate", progress);
+          frame.addEventListener("load", progress);
+        }
+        document.body.appendChild(frame);
+      },
+      remove
+    };
+  }
+
   async function initRenderer() {
     const overlay = createStage();
+    const chatSource = createChatSource();
+    let pip = null; // { win, stage, video, parent, next } while picture-in-picture is open
 
     const Settings = globalThis.SYCSettings;
     let settings = Settings ? await Settings.load() : { enabled: true, hideDefaultChat: false };
     ensureRuntimeStyles();
     applyLayerCss(settings.layerCss);
     let trackedVideo = null;
+
+    // Picture-in-picture with comments (beta). Document Picture-in-Picture moves
+    // the video element itself into an always-on-top window, with a stage
+    // frame over it; closing the window puts the video back where it was.
+    const closePip = () => {
+      if (!pip) return;
+      const { video, parent, next } = pip;
+      pip = null;
+      if (parent?.isConnected) parent.insertBefore(video, next?.parentNode === parent ? next : null);
+      overlay.detach();
+      attach();
+    };
+    const openPip = async () => {
+      /** @type {HTMLVideoElement | null} */
+      const video = document.querySelector("#movie_player video") || document.querySelector("video");
+      if (pip || !video || !globalThis.documentPictureInPicture) return;
+      const ratio = video.videoWidth && video.videoHeight ? video.videoHeight / video.videoWidth : 9 / 16;
+      const win = await globalThis.documentPictureInPicture.requestWindow({ width: 640, height: Math.round(640 * ratio) });
+      const doc = win.document;
+      const style = doc.createElement("style");
+      // !important beats the inline sizes YouTube keeps writing onto the video.
+      style.textContent = `
+        html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
+        #syc-pip { position: relative; width: 100%; height: 100%; }
+        #syc-pip video {
+          position: absolute !important; inset: 0 !important; left: 0 !important; top: 0 !important;
+          width: 100% !important; height: 100% !important; object-fit: contain !important;
+        }`;
+      doc.head.appendChild(style);
+      ensureRuntimeStyles(doc);
+      const stage = doc.createElement("div");
+      stage.id = "syc-pip";
+      doc.body.appendChild(stage);
+      pip = { win, stage, video, parent: video.parentNode, next: video.nextSibling };
+      stage.appendChild(video);
+      // The window has none of YouTube's controls: a click plays or pauses.
+      stage.addEventListener("click", () => (video.paused ? video.play().catch(() => {}) : video.pause()));
+      win.addEventListener("pagehide", closePip, { once: true });
+      if (settings.enabled) overlay.attach(stage);
+    };
+    let pipButton = null;
 
     const applyVideoPauseState = () => {
       if (!settings.enabled || !settings.pauseWithVideo || !overlay.attached) return;
@@ -363,7 +625,8 @@
     };
 
     const bindVideoPause = () => {
-      const nextVideo = document.querySelector("video");
+      // In picture-in-picture the tracked video lives in the other window.
+      const nextVideo = pip ? pip.video : document.querySelector("video");
       if (nextVideo === trackedVideo) {
         applyVideoPauseState();
         return;
@@ -379,7 +642,10 @@
     const attach = () => {
       if (!hasLiveChatShell()) {
         toggle?.remove();
+        pipButton?.remove();
+        pip?.win.close();
         overlay.detach();
+        chatSource.remove();
         applyDefaultChatSuppression({ ...settings, enabled: false });
         return;
       }
@@ -390,11 +656,30 @@
         );
       }
       toggle.attach();
+      if (globalThis.documentPictureInPicture) {
+        pipButton ??= createPipButton(() => openPip().catch(() => {}));
+        pipButton.attach(document.querySelector(".syc-danmaku-toggle"));
+      }
       applyDefaultChatSuppression(settings);
+      observeChatShell();
+      chatSource.update(settings.enabled);
       if (!settings.enabled) return;
-      const player = findPlayer();
+      const player = pip ? pip.stage : findPlayer();
       if (player && player !== document.body) overlay.attach(player);
       bindVideoPause();
+    };
+
+    // Opening and closing the chat only flips an attribute on its shell.
+    let chatShellObserver = null;
+    let observedChatShell = null;
+    const observeChatShell = () => {
+      const shell = document.querySelector("ytd-live-chat-frame");
+      if (shell === observedChatShell) return;
+      chatShellObserver?.disconnect();
+      observedChatShell = shell;
+      if (!shell) return;
+      chatShellObserver = new MutationObserver(() => chatSource.update(settings.enabled));
+      chatShellObserver.observe(shell, { attributes: true, attributeFilter: ["collapsed"] });
     };
 
     const applySettings = (next) => {
@@ -404,7 +689,10 @@
       toggle?.update();
       applyDefaultChatSuppression(next);
       if (next.enabled && !wasEnabled) attach();
-      else if (!next.enabled && wasEnabled) overlay.detach();
+      else if (!next.enabled && wasEnabled) {
+        overlay.detach();
+        chatSource.remove();
+      }
       else if (next.enabled && next.pauseWithVideo) bindVideoPause();
       else if (next.enabled && !next.pauseWithVideo && overlay.attached) overlay.start();
     };
@@ -447,6 +735,7 @@
     attach();
     for (const event of ["yt-navigate-finish", "yt-page-data-updated", "yt-player-updated"]) {
       window.addEventListener(event, () => {
+        if (event === "yt-navigate-finish") pip?.win.close();
         overlay.clear();
         observeShell();
         scheduleAttach();
@@ -602,6 +891,7 @@
         text: shownText,
         parts,
         author,
+        authorChannelId,
         kind,
         authorType,
         amount: amount || null,

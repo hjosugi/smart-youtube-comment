@@ -49,7 +49,8 @@
         { value: "always", label: "Always" }
       ] },
     { key: "sizeByScore",  group: "Display",     label: "Vary size by score",     type: "bool",                                   default: true },
-    { key: "pinComments",  group: "Behavior",    label: "Right-click to pin a comment", type: "bool",                             default: true },
+    { key: "scaleWithPlayer", group: "Display",  label: "Enlarge text in big players (fullscreen)", type: "bool",                  default: true },
+    { key: "pinComments",  group: "Behavior",    label: "Right-click menu on comments (pin, hide user)", type: "bool",                             default: true },
     { key: "translateTo",  group: "Behavior",    label: "Translate comments (on-device)", type: "select", default: "",
       options: [
         { value: "", label: "Off" },
@@ -218,6 +219,7 @@
       outlineBlur: safe.outlineBlur,
       authorName: safe.authorName,
       sizeByScore: safe.sizeByScore,
+      scaleWithPlayer: safe.scaleWithPlayer,
       pinComments: safe.pinComments,
       showNormal: safe.showNormal,
       showMember: safe.showMember,

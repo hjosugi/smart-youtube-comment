@@ -32,6 +32,11 @@
     return `#${parts.map((part) => part.toString(16).padStart(2, "0")).join("")}`;
   }
 
+  // A YouTube channel ID ("UC" + 22 URL-safe characters). Anything else is dropped.
+  function sanitizeChannelId(value) {
+    return typeof value === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(value) ? value : "";
+  }
+
   function sanitizeRenderPayload(payload) {
     if (!payload || typeof payload !== "object") return null;
     const text = sanitizeText(payload.text, MAX_TEXT_LENGTH);
@@ -44,6 +49,7 @@
       text,
       parts: sanitizeMessageParts(payload.parts),
       author: sanitizeText(payload.author, MAX_AUTHOR_LENGTH),
+      authorChannelId: sanitizeChannelId(payload.authorChannelId),
       kind,
       authorType,
       amount: sanitizeText(payload.amount, MAX_AMOUNT_LENGTH) || null,

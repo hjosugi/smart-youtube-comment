@@ -37,6 +37,12 @@ Published on the Chrome Web Store. Implemented:
 - Cloudflare Worker live-chat relay under `worker/`
 - YouTube live-chat extraction from all frames
 - canvas danmaku renderer in an extension stage frame over the player
+- right-click menu on a comment: pin and drag it, or hide everything from its
+  author (saved to the NG list)
+- text that grows with the player in fullscreen
+- comments keep flowing when YouTube's chat is closed (a hidden chat frame
+  stands in, replays included)
+- picture-in-picture with comments (beta, Document Picture-in-Picture)
 - JavaScript-only local scorer in `extension/scoring.js`
 - settings and filter UI
 - local sandbox and renderer performance probes

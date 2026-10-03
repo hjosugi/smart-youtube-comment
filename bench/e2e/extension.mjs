@@ -5,8 +5,11 @@
 //   4. a fake YouTube watch page gets the overlay stage frame
 //   5. a fake live-chat iframe is extracted and rendered into nonblank pixels
 //      on the stage's canvas, and the stage frame stays transparent
-//   6. right-click pins a comment and dragging moves it (input forwarded from
-//      the player to the stage, which itself takes no pointer events)
+//   6. the right-click menu pins a comment, dragging moves it, and "hide user"
+//      removes the author's comments and saves them to the NG list (input is
+//      forwarded from the player to the stage, which takes no pointer events)
+//   7. picture-in-picture moves the video and a stage into the PiP window,
+//      and closing it puts both back
 //
 // MV3 extensions need a HEADED browser (or --headless=new) + the full Chromium
 // build — they do NOT load in the headless-shell. So run this on your desktop:
@@ -210,6 +213,8 @@ async function main() {
   let transparent = false
   let pinned = false
   let dragged = false
+  let hidden = false
+  let pip = false
   if (painted && playerBox) {
     // The fake player is black; an opaque stage backdrop would show as white.
     const shot = await watch.screenshot({ clip: { x: playerBox.x + 2, y: playerBox.y + playerBox.height - 4, width: 1, height: 1 } })
@@ -229,11 +234,16 @@ async function main() {
     const at = s => [playerBox.x + s.x + 120, playerBox.y + s.y]
     await waitUntil(async () => (await sprite())?.x < playerBox.width / 2, 8000).catch(() => {})
     let target = await sprite()
+    const menuItem = async index => {
+      await watch.waitForSelector(".syc-danmaku-menu button", { timeout: 3000 })
+      await watch.locator(".syc-danmaku-menu button").nth(index).click()
+      await sleep(150)
+    }
     if (target) {
       await watch.mouse.move(...at(target))
       await sleep(250) // the stage reports what is under the cursor
       await watch.mouse.click(...at(await sprite()), { button: "right" })
-      await sleep(150)
+      await menuItem(0) // "Pin this comment"
       pinned = (await sprite())?.pinned === true
     }
     if (pinned) {
@@ -246,7 +256,43 @@ async function main() {
       await sleep(150)
       dragged = Math.abs((await sprite()).y - target.y - 40) < 2
     }
-    console.log(`stage transparent=${transparent} pinned=${pinned} dragged=${dragged}`)
+    if (dragged) {
+      target = await sprite()
+      await watch.mouse.move(...at(target))
+      await sleep(250)
+      await watch.mouse.click(...at(target), { button: "right" })
+      await menuItem(1) // "Hide comments from Alice"
+      const saved = await stageFrame.evaluate(async () => (await chrome.storage.local.get("syc:filter"))["syc:filter"])
+      hidden = (await sprite()) === null && saved?.users?.includes("alice")
+    }
+    console.log(`stage transparent=${transparent} pinned=${pinned} dragged=${dragged} hidden=${hidden}`)
+
+    // 7. Picture-in-picture (only where the browser has Document PiP).
+    const hasPip = await watch.evaluate(() => "documentPictureInPicture" in window)
+    if (!hasPip) {
+      pip = true
+      console.log("picture-in-picture: not available here, skipped")
+    } else {
+      // A video for the window to take (added late: a paused video would pause the comments).
+      await watch.evaluate(() => {
+        const video = document.createElement("video")
+        video.muted = true
+        document.querySelector(".html5-video-player").prepend(video)
+      })
+      await watch.locator(".syc-pip-button").click({ force: true })
+      await waitUntil(() => watch.evaluate(() => Boolean(documentPictureInPicture.window)), 5000).catch(() => {})
+      const inside = await watch.evaluate(() => {
+        const w = documentPictureInPicture.window
+        return Boolean(w?.document.querySelector("#syc-pip video") && w.document.querySelector("#syc-pip .syc-danmaku-canvas"))
+      })
+      await watch.evaluate(() => documentPictureInPicture.window?.close())
+      await waitUntil(() => watch.evaluate(() => !documentPictureInPicture.window), 5000).catch(() => {})
+      const back = await watch.evaluate(
+        () => Boolean(document.querySelector(".html5-video-player > video") && document.querySelector(".html5-video-player > .syc-danmaku-canvas")),
+      )
+      pip = inside && back
+      console.log(`picture-in-picture opened=${inside} restored=${back}`)
+    }
   }
 
   let realPainted = !requireRealYoutube
@@ -273,11 +319,19 @@ async function main() {
   await context.close()
 
   const ok =
-    stored?.opacity === 40 && shown === "40" && painted && transparent && pinned && dragged && realPainted
+    stored?.opacity === 40 &&
+    shown === "40" &&
+    painted &&
+    transparent &&
+    pinned &&
+    dragged &&
+    hidden &&
+    pip &&
+    realPainted
   console.log(
     ok
       ? `PASS ✅  extension loads + settings persist + overlay/chat render (opacity=${shown})`
-      : `FAIL ❌  expected opacity 40, painted transparent overlay, pin and drag; stored=${stored?.opacity}, shown=${shown}, painted=${painted}, transparent=${transparent}, pinned=${pinned}, dragged=${dragged}, debug=${JSON.stringify(renderDebug)}`,
+      : `FAIL ❌  expected opacity 40, painted transparent overlay, pin, drag and hide; stored=${stored?.opacity}, shown=${shown}, painted=${painted}, transparent=${transparent}, pinned=${pinned}, dragged=${dragged}, hidden=${hidden}, pip=${pip}, debug=${JSON.stringify(renderDebug)}`,
   )
   process.exit(ok ? 0 : 1)
 }
