@@ -33,7 +33,7 @@ bun run security:bun
 - 権限が`storage`を超えて拡大する。
 - `host_permissions`が追加される; コンテンツスクリプトの`matches`がYouTubeインジェクションのスコープを持ち、拡張機能全体のホストアクセスを許可しない。
 - 拡張機能のCSPがインライン/eval/リモート/blob/dataスクリプトソースを許可する。
-- ウェブアクセス可能リソースが公開される。
+- `stage.html`（弾幕ステージのフレーム。`https://www.youtube.com/*` から動的URL経由でのみ埋め込み可能）以外のウェブアクセス可能リソースが公開される。
 - 拡張機能のソースが`innerHTML`、`insertAdjacentHTML`、`document.write`、`eval`、または`new Function`のような危険なインジェクションシンクを使用する。
 - 拡張機能のソースがネットワークフェッチやリモートスクリプト/スタイルのURLを追加する。
 - npmパッケージの仕様が正確に固定されていない。

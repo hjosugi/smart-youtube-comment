@@ -128,6 +128,46 @@ Two changes, measured on the same page (missed vsyncs per 12 s):
 - The few remaining misses no longer show as a jump because of the smoothed
   frame interval (see below).
 
+## Stage Frame (YouTube's main thread was the bottleneck)
+
+With the engine in the content script, the danmaku loop shared YouTube's main
+thread. Traced on a real live page (Brave 154, native Wayland, Renoir iGPU,
+hololive stream, 15 s): with the extension **off**, YouTube itself ran 655 ms
+and 526 ms main-thread tasks, and the in-page overlay froze for each of them.
+Its rAF also made the page run its full lifecycle (style, IntersectionObserver
+computation, layerize, paint) every vsync instead of when YouTube needed it.
+
+A worker would avoid that, but YouTube's CSP blocks `blob:` workers and
+workers cannot load extension-origin scripts. So the engine now runs in
+`stage.html`, an extension-origin iframe laid over the player: it gets the
+extension's own renderer process and frame clock. `content.js` keeps settings
+for the page side, translation and the toggle, forwards comments with
+`postMessage`, and forwards the player's pointer input (the stage is
+`pointer-events: none`; it reports what is under the cursor so a right-click
+can be swallowed synchronously). The stage reads its settings from storage.
+
+Final build, headless Brave with hardware GL (`SYC_HEADLESS=1`), 15 s at 20
+comments/s plus live chat, three rounds each:
+
+| run                 | YouTube main thread | BeginMainFrame on YouTube |
+| ------------------- | ------------------- | ------------------------- |
+| extension off       | 27–30 ms/s          | 2–3/s                     |
+| engine in the page  | 168–171 ms/s        | 30–31/s                   |
+| stage frame         | 37–77 ms/s          | 2/s                       |
+
+The total is not smaller: the drawing work moves to the stage process (45–70
+ms/s on a real display). What changes is that YouTube's page stays as light as
+without the extension and the danmaku keeps moving through YouTube's long
+tasks. Headless canvases are software-rastered, so stage-side numbers and
+frame pacing from headless runs are not representative; judge those headed.
+
+Gotchas:
+
+- The stage is loaded through its per-session dynamic URL, but its document
+  origin is still `chrome-extension://<extension id>`; match and target that.
+- An iframe whose `color-scheme` differs from its document paints an opaque
+  backdrop; both sides use `normal`.
+
 ## Known Hot Spots
 
 - `Array.prototype.shift()` on hot queues can move array contents; prefer a head

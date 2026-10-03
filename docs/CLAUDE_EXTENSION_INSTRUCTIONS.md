@@ -78,7 +78,7 @@ extension では以下を禁止してください。
 - remote script / remote stylesheet
 - 不要な remote fetch
 - `data:` / `blob:` / remote origin を CSP に足すこと
-- `web_accessible_resources` を空でなくすること
+- `web_accessible_resources` に弾幕ステージ（`stage.html`）以外を足すこと
 
 DOM へ出す文字列は原則 `textContent` を使ってください。YouTube のコメント本文、
 作者名、動画 metadata、ページ上の文言はすべて untrusted input と扱います。
@@ -87,7 +87,7 @@ Chrome extension の permissions は最小化してください。
 
 - permission は基本 `storage`
 - host permission は `https://www.youtube.com/*`
-- `web_accessible_resources` は空のまま
+- `web_accessible_resources` は `stage.html` のみ（`https://www.youtube.com/*` 限定、`use_dynamic_url`）
 
 ## Supply-chain 対策
 
@@ -152,7 +152,7 @@ docs/CLAUDE_EXTENSION_INSTRUCTIONS.md を読んでください。
 セキュリティ:
 - innerHTML/outerHTML/insertAdjacentHTML/eval/new Function/remote script/remote style を使わない。
 - YouTube のコメント本文・作者名・metadata はすべて untrusted input。DOM 出力は textContent/setAttribute/DOM API を使う。
-- web_accessible_resources は空のままにする。
+- web_accessible_resources は `stage.html`（YouTube 限定、動的 URL）だけにする。
 - permissions は最小のまま。`permissions` は `storage` のみ、YouTube への
   注入範囲は `content_scripts.matches` で管理し、`host_permissions` は足さない。
 - package 依存を増やす場合は exact pin、lockfile integrity、install script なしを守る。

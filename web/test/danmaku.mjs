@@ -508,6 +508,46 @@ const assertPinAndHitTest = (label, Overlay) => {
   assert.equal(sprite.pinned, false, `${label}: a second toggle unpins`)
 }
 
+// Extension engine: the stage frame gets no pointer events, so content.js
+// drives pinning and dragging through the point-based API.
+const assertStagePointerApi = (label, Overlay) => {
+  const overlay = new Overlay({ dpr: 1, dedup: false })
+  overlay.ctx = makeContext()
+  overlay.active.push({
+    img: makeCanvas(),
+    sx: 0,
+    sy: 0,
+    w: 100,
+    h: 20,
+    x: 50,
+    y: 100,
+    vx: 1,
+    ttlMs: 5000,
+    priority: 1,
+    id: 1,
+    index: 0,
+    active: true,
+  })
+  const sprite = overlay.active[0]
+
+  assert.equal(overlay.hitState(60, 100), 1, `${label}: hitState reports a comment`)
+  assert.equal(overlay.hitState(500, 400), 0, `${label}: hitState reports empty space`)
+  assert.equal(overlay.dragStart(60, 100), false, `${label}: an unpinned comment cannot be dragged`)
+  assert.equal(overlay.pinAt(60, 100), true, `${label}: pinAt pins the comment under the point`)
+  assert.equal(overlay.hitState(60, 100), 2, `${label}: hitState reports a pinned comment`)
+
+  assert.equal(overlay.dragStart(60, 100), true, `${label}: a pinned comment can be dragged`)
+  overlay.dragTo(160, 150)
+  assert.deepEqual([sprite.x, sprite.y], [150, 150], `${label}: drag keeps the grab offset`)
+  overlay.dragEnd()
+  overlay.dragTo(0, 0)
+  assert.deepEqual([sprite.x, sprite.y], [150, 150], `${label}: moves after dragEnd are ignored`)
+
+  overlay.setConfig({ pinComments: false })
+  assert.equal(overlay.hitState(160, 150), 0, `${label}: pinning off reports nothing`)
+  assert.equal(overlay.pinAt(160, 150), false, `${label}: pinning off ignores pinAt`)
+}
+
 const assertWrapAndLineLayout = (label, Overlay) => {
   const wrapped = new Overlay({ dpr: 1, dedup: false, maxWidthPct: 0.5, wrapText: true })
   wrapped.w = 100 // max width 50px; the stub measures 10px per character
@@ -963,6 +1003,7 @@ assertMotionSmoothness("extension", extensionOverlay)
 assertTypeGatingAndRoleScale("extension", extensionOverlay)
 assertFlowDirectionAndDensity("extension", extensionOverlay)
 assertPinAndHitTest("extension", extensionOverlay)
+assertStagePointerApi("extension", extensionOverlay)
 assertWrapAndLineLayout("extension", extensionOverlay)
 assertLruCache("extension", extensionOverlay, (overlay, text) =>
   overlay._rasterize([{ t: text }], "#fff", 24, false),
