@@ -41,6 +41,7 @@ Produced by the live-chat reader and consumed by the overlay renderer.
   "ts": 0,
   "kind": "text",          // "text" | "paid" | "membership"
   "author": "string",
+  "authorChannelId": "",   // optional; the extension's "hide this user" matches on it
   "authorType": "normal",  // "normal" | "member" | "moderator" | "owner"
   "authorColor": null,
   "text": "string",

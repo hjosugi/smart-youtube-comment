@@ -35,6 +35,7 @@ ChatMessage -> SYCScoring.createFallbackScorer().score(ScoreInput) -> ScoreResul
   "ts": 0,
   "kind": "text",          // "text" | "paid" | "membership"
   "author": "string",
+  "authorChannelId": "",   // 省略可。拡張の「このユーザーを非表示」がこれで照合します
   "authorType": "normal",  // "normal" | "member" | "moderator" | "owner"
   "authorColor": null,
   "text": "string",

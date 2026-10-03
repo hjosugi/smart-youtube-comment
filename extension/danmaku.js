@@ -33,6 +33,7 @@
     topPct: 0.08,         // keep top 8% clear
     bottomPct: 0.14,      // keep bottom 14% clear (controls)
     gapPx: 28,            // min horizontal gap between same-lane comments
+    scaleWithPlayer: true, // enlarge text in players taller than SCALE_REF_HEIGHT (fullscreen)
     dedup: false,         // drop near-duplicates of recently shown comments
     simThreshold: 3,      // Hamming distance <= this => near-duplicate
     recentMax: 400,
@@ -87,13 +88,17 @@
     "textColor",
     "roleColors"
   ];
-  const GEOMETRY_CONFIG_KEYS = ["dpr", "lineHeight", "topPct", "bottomPct"];
+  const GEOMETRY_CONFIG_KEYS = ["dpr", "lineHeight", "topPct", "bottomPct", "scaleWithPlayer"];
 
   const COLORS = { owner: "#ffca28", moderator: "#5e9bff", member: "#7CFC8C", normal: "#ffffff" };
   const AUTHOR_BOOST = { owner: 0.40, moderator: 0.25, member: 0.10, normal: 0 };
   const TARGET_FRAME_MS = 1000 / 60;
   const MIN_CAP_FRAME_MS = 50;
   const LONG_GAP_MS = 500; // frame gap above this is a pause, not a hitch
+  // With scaleWithPlayer, sizes are as set up to this player height and grow
+  // with it beyond (fullscreen); normal and theater players look unchanged.
+  const SCALE_REF_HEIGHT = 720;
+  const SCALE_MAX = 3;
   const MAX_WRAP_LINES = 3; // hard cap on wrapped lines per comment
   // Sprite-atlas geometry (device px). A page is 2 MB RGBA; pages are opened
   // lazily and recycled in ring order, so a light stream touches only a couple.
@@ -192,6 +197,8 @@
       this.drag = null;         // active pin-drag state
       this._loop = this._loop.bind(this);
       this.w = 1; this.h = 1; this.laneCount = 1; this.laneTop = 0; this.laneH = this.cfg.lineHeight;
+      this.scale = 1;           // text scale for the player size (scaleWithPlayer)
+      this.gap = this.cfg.gapPx;
     }
 
     attach(player) {
@@ -324,7 +331,12 @@
       this.canvas.width = Math.round(this.w * dpr);
       this.canvas.height = Math.round(this.h * dpr);
       const usable = this.h * (1 - this.cfg.topPct - this.cfg.bottomPct);
-      this.laneH = this.cfg.lineHeight;
+      // Steps of 5% so a window being dragged does not re-rasterize every pixel.
+      this.scale = this.cfg.scaleWithPlayer
+        ? Math.round(clamp(1, SCALE_MAX, this.h / SCALE_REF_HEIGHT) * 20) / 20
+        : 1;
+      this.laneH = Math.round(this.cfg.lineHeight * this.scale);
+      this.gap = Math.round(this.cfg.gapPx * this.scale);
       this.laneCount = Math.max(3, Math.floor(usable / this.laneH));
       this.laneTop = this.h * this.cfg.topPct;
       this.lanes = new Array(this.laneCount).fill(0);
@@ -491,7 +503,7 @@
       const scoreScale = this.cfg.sizeByScore
         ? (emphasis >= 0.62 ? 1.12 : emphasis <= 0.18 ? 0.9 : 1.0)
         : 1.0;
-      const fontPx = Math.round(this.cfg.fontPx * scoreScale * this._roleScale(payload));
+      const fontPx = Math.round(this.cfg.fontPx * scoreScale * this._roleScale(payload) * this.scale);
       const color = (this.cfg.roleColors && payload.authorType && payload.authorType !== "normal")
         ? (COLORS[payload.authorType] ?? this.cfg.textColor)
         : this.cfg.textColor;
@@ -537,12 +549,12 @@
       // A tier's time is how long a comment's head takes to cross the stage,
       // so the tiers differ in speed whatever the comment's width: a wide
       // comment stays on screen longer instead of moving faster.
-      const vx = (this.w + this.cfg.gapPx) / prep.dur; // px per ms
+      const vx = (this.w + this.gap) / prep.dur; // px per ms
       const lane = this._pickLane(now, vx);
       const dir = this.cfg.flowDirection === "ltr" ? 1 : -1;
       const startX = dir < 0 ? this.w : -prep.w;
-      const dist = this.w + prep.w + this.cfg.gapPx;
-      this.lanes[lane] = now + (prep.w + this.cfg.gapPx) / vx;
+      const dist = this.w + prep.w + this.gap;
+      this.lanes[lane] = now + (prep.w + this.gap) / vx;
       this.laneExit[lane] = now + (this.w + prep.w) / vx;
 
       const slot = prep.slot;
@@ -550,6 +562,7 @@
         img: slot.img, sx: slot.sx, sy: slot.sy, sw: slot.sw, sh: slot.sh, page: slot.page,
         w: prep.w, h: prep.h,
         x: startX, y: this.laneTop + lane * this.laneH + this.laneH / 2,
+        author: prep.payload.author || "", channel: prep.payload.authorChannelId || "",
         vx, ttlMs: dist / vx + 600, priority: prep.priority,
         id: this.nextSpriteId++,
         index: this.active.length,
@@ -670,7 +683,7 @@
       arr.pop();
     }
 
-    // --- right-click pin & drag (opt-in via cfg.pinComments) ------------------
+    // --- right-click menu: pin, drag, hide a user (opt-in via cfg.pinComments) --
     // Point-based, in stage CSS px. The stage frame is pointer-events: none so
     // the player stays clickable; content.js forwards the player's right-clicks
     // and drags here, and asks hitState() whether a comment is under the cursor.
@@ -698,10 +711,40 @@
       if (!sprite.pinned) sprite.ttlMs = Math.max(sprite.ttlMs, 3000);
     }
 
-    pinAt(x, y) {
-      const sprite = this.cfg.pinComments && this._hitTest(x, y);
-      if (sprite) this._togglePin(sprite);
-      return Boolean(sprite);
+    // The comment under a point, if right-click actions are enabled.
+    pick(x, y) {
+      return (this.cfg.pinComments && this._hitTest(x, y)) || null;
+    }
+
+    setPinned(sprite, pinned) {
+      if (sprite.pinned !== pinned) this._togglePin(sprite);
+    }
+
+    // Remove every comment by this comment's author: on screen, rasterized and
+    // still queued. Matches the channel ID when there is one, else the name.
+    // Returns who was hidden.
+    hideAuthor(sprite) {
+      const channel = sprite.channel || "";
+      const author = sprite.author || "";
+      if (!channel && !author) return null;
+      const byAuthor = (p) => (channel ? p.authorChannelId === channel : p.author === author);
+      for (let i = this.active.length - 1; i >= 0; i--) {
+        const a = this.active[i];
+        if (channel ? a.channel === channel : a.author === author) this._swapRemoveActive(i);
+      }
+      if (this.drag && !this.drag.sprite.active) this.drag = null;
+      const ready = [];
+      for (let i = this.readyHead; i < this.ready.length; i++) {
+        const prep = this.ready[i];
+        if (byAuthor(prep.payload)) this._releaseSlot(prep.slot); // its atlas slot is free again
+        else ready.push(prep);
+      }
+      this.ready = ready;
+      this.readyHead = 0;
+      this.pending = this.pending.slice(this.pendingHead).filter((item) => !byAuthor(item.payload));
+      this.pendingHead = 0;
+      this._dirty = true; // the removed sprites must be cleared even if none remain
+      return { channel, author };
     }
 
     dragStart(x, y) {
@@ -730,7 +773,7 @@
     _laneReadyAt(i, vx) {
       const entry = this.lanes[i];
       if (!(vx > 0)) return entry;
-      return Math.max(entry, (this.laneExit[i] || 0) - (this.w - this.cfg.gapPx) / vx);
+      return Math.max(entry, (this.laneExit[i] || 0) - (this.w - this.gap) / vx);
     }
 
     _pickLane(now, vx = 0) {
@@ -815,10 +858,10 @@
     _rasterize(parts, color, fontPx, glow, bg = "") {
       const family = this.cfg.fontFamily || 'system-ui, -apple-system, "Segoe UI", sans-serif';
       const weight = this.cfg.fontWeight || 700;
-      const ow = this.cfg.outlineWidth ?? 3;
+      const ow = (this.cfg.outlineWidth ?? 3) * this.scale;
       const oa = this.cfg.outlineAlpha ?? 0.85;
       const outlineColor = this.cfg.outlineColor || "#000000";
-      const ob = this.cfg.outlineBlur ?? 0;
+      const ob = (this.cfg.outlineBlur ?? 0) * this.scale;
       const sig = parts.map((p) => (p.u ? "\u0001" + p.u : p.t)).join("");
       const key = `${fontPx}|${weight}|${ow}|${oa}|${outlineColor}|${ob}|${glow ? 1 : 0}|${color}|${family}|${bg}|${sig}`;
       const hit = this._cacheGet(key);
@@ -828,7 +871,7 @@
       if (!this.measure) this.measure = createCanvas(1, 1).getContext("2d");
       this.measure.font = font;
       const pad = (glow ? 10 : 6) + Math.ceil(ow / 2) + Math.ceil(ob);
-      const lineH = Math.max(this.cfg.lineHeight, fontPx + 8);
+      const lineH = Math.max(Math.round(this.cfg.lineHeight * this.scale), fontPx + 8);
       const emojiSize = Math.round(fontPx * 1.15);
 
       let lines;

@@ -56,6 +56,7 @@ assert.equal(helpers.isAllowedSender({ tab: { id: 1 }, url: "not a url" }), fals
 const payload = helpers.sanitizeRenderPayload({
   text: `  ${"x".repeat(620)}  `,
   author: "  Alice\nModerator  ",
+  authorChannelId: "UC<script>",
   kind: "bad-kind",
   authorType: "bad-role",
   amount: ` ${"9".repeat(80)} `,
@@ -68,6 +69,11 @@ const payload = helpers.sanitizeRenderPayload({
 
 assert.equal(payload.text.length, 500)
 assert.equal(payload.author, "Alice Moderator")
+assert.equal(payload.authorChannelId, "")
+assert.equal(
+  helpers.sanitizeRenderPayload({ text: "hi", authorChannelId: "UCabcdefghijklmnopqrstuv" }).authorChannelId,
+  "UCabcdefghijklmnopqrstuv",
+)
 assert.equal(payload.kind, "text")
 assert.equal(payload.authorType, "normal")
 assert.equal(payload.amount.length, 40)
@@ -104,4 +110,4 @@ await sandbox.commandListener("toggle-overlay")
 await new Promise(done => setTimeout(done, 0))
 assert.equal(syncData.get("syc:settings").enabled, true)
 
-console.log("background ok (24 assertions)")
+console.log("background ok (26 assertions)")
