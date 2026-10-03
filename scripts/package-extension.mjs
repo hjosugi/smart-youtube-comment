@@ -43,6 +43,8 @@ const required = [
   "filter.js",
   "translate.js",
   "content.js",
+  "stage.html",
+  "stage.js",
   "options.html",
   "options.js",
   "popup.html",

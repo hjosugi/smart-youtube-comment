@@ -72,7 +72,7 @@ Please prohibit the following in the extension:
 - Remote script / remote stylesheet
 - Unnecessary remote fetch
 - Adding `data:` / `blob:` / remote origin to CSP
-- Making `web_accessible_resources` non-empty
+- Adding anything but the danmaku stage (`stage.html`) to `web_accessible_resources`
 
 For strings output to the DOM, please use `textContent` as a principle. Treat YouTube comment text, author names, video metadata, and text on the page as untrusted input.
 
@@ -80,7 +80,7 @@ Minimize Chrome extension permissions.
 
 - Permissions should primarily be `storage`
 - Host permission should be `https://www.youtube.com/*`
-- Keep `web_accessible_resources` empty
+- `web_accessible_resources` holds only `stage.html` (`https://www.youtube.com/*`, `use_dynamic_url`)
 
 ## Supply-chain Measures
 
@@ -144,7 +144,7 @@ The objectives this time are:
 Security:
 - Do not use innerHTML/outerHTML/insertAdjacentHTML/eval/new Function/remote script/remote style.
 - Treat YouTube comment text, author names, and metadata as untrusted input. Use textContent/setAttribute/DOM API for DOM output.
-- Keep web_accessible_resources empty.
+- web_accessible_resources holds only `stage.html` (YouTube only, dynamic URL).
 - Keep permissions to a minimum. `permissions` should only be `storage`, manage the injection range to YouTube through `content_scripts.matches`, and do not add `host_permissions`.
 - If increasing package dependencies, adhere to exact pins, lockfile integrity, and no install scripts.
 

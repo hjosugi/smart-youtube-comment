@@ -31,7 +31,7 @@ Chrome ウェブストアで公開済みです。実装済み:
 - `web/`内のモバイルPWA
 - `worker/`内のCloudflare Workerライブチャットリレー
 - すべてのフレームからのYouTubeライブチャット抽出
-- トップフレームキャンバスの弾幕レンダラー
+- プレーヤー上の拡張ステージフレームで動くキャンバス弾幕レンダラー
 - `extension/scoring.js`内のJavaScriptのみのローカルスコアラー
 - 設定およびフィルターUI
 - ローカルサンドボックスおよびレンダラーのパフォーマンスプローブ
@@ -49,7 +49,7 @@ Chrome ウェブストアで公開済みです。実装済み:
 3. `extension/scoring.js`はローカル`ScoreResult`を返します。
 4. `buildRenderPlan()`は結果を速い/通常/遅い表示タイミングにマッピングします。
 5. バックグラウンドサービスワーカーがチャットフレームからトップビデオフレームにメッセージを中継します。
-6. トップフレームがページ内の`danmaku.js` canvasエンジンでYouTubeプレーヤー上にコメントをレンダリングします。コメントは共有のスプライトアトラスページに詰め込まれるため、定常状態では何も割り当てず、周期的なGCのガクつきは発生しません（`docs/PERFORMANCE.md`参照）。
+6. トップフレームはコメントを`stage.html`（プレーヤー上に重ねた拡張のフレーム）へ渡し、`danmaku.js` canvasエンジンが拡張自身のプロセス、つまりYouTubeのメインスレッドの外でレンダリングします。コメントは共有のスプライトアトラスページに詰め込まれるため、定常状態では何も割り当てず、周期的なGCのガクつきは発生しません（`docs/PERFORMANCE.md`参照）。
 
 拡張機能はリモートコードを取得しません。
 
@@ -203,6 +203,7 @@ npm run version:set -- 0.1.1
 │   ├── settings.js
 │   ├── filter.js
 │   ├── content.js
+│   ├── stage.html / stage.js
 │   ├── options.html
 │   ├── options.js
 │   └── icons/

@@ -36,7 +36,7 @@ Published on the Chrome Web Store. Implemented:
 - mobile PWA under `web/`
 - Cloudflare Worker live-chat relay under `worker/`
 - YouTube live-chat extraction from all frames
-- top-frame canvas danmaku renderer
+- canvas danmaku renderer in an extension stage frame over the player
 - JavaScript-only local scorer in `extension/scoring.js`
 - settings and filter UI
 - local sandbox and renderer performance probes
@@ -56,10 +56,11 @@ The extension runs `extension/content.js` in every YouTube frame.
 4. `buildRenderPlan()` maps the result into fast / normal / slow display timing.
 5. A background service worker relays messages from chat frames to the top video
    frame.
-6. The top frame renders comments over the YouTube player with the in-page
-   `danmaku.js` canvas engine. Comments are packed into shared sprite-atlas
-   pages, so the steady state allocates nothing and there is no periodic GC
-   jolt (see `docs/PERFORMANCE.md`).
+6. The top frame forwards them to `stage.html`, an extension frame laid over
+   the YouTube player, where the `danmaku.js` canvas engine renders them in the
+   extension's own process, off YouTube's main thread. Comments are packed into
+   shared sprite-atlas pages, so the steady state allocates nothing and there is
+   no periodic GC jolt (see `docs/PERFORMANCE.md`).
 
 The extension does not fetch remote code.
 
@@ -239,6 +240,7 @@ This updates the root, `web/`, `worker/`, their lockfile root metadata, and
 │   ├── settings.js
 │   ├── filter.js
 │   ├── content.js
+│   ├── stage.html / stage.js
 │   ├── options.html
 │   ├── options.js
 │   └── icons/

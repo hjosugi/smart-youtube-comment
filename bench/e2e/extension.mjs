@@ -2,8 +2,11 @@
 //   1. the extension loads (service worker registers)
 //   2. the options page renders the settings form
 //   3. changing a setting persists to chrome.storage and survives a reload
-//   4. a fake YouTube watch page gets an overlay canvas
+//   4. a fake YouTube watch page gets the overlay stage frame
 //   5. a fake live-chat iframe is extracted and rendered into nonblank pixels
+//      on the stage's canvas, and the stage frame stays transparent
+//   6. right-click pins a comment and dragging moves it (input forwarded from
+//      the player to the stage, which itself takes no pointer events)
 //
 // MV3 extensions need a HEADED browser (or --headless=new) + the full Chromium
 // build — they do NOT load in the headless-shell. So run this on your desktop:
@@ -31,6 +34,30 @@ const requireRealYoutube = process.env.SYC_REAL_YOUTUBE_REQUIRED === "1"
 const realYoutubeTimeoutMs = Number(process.env.SYC_REAL_YOUTUBE_TIMEOUT_MS || 45000)
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+
+// The danmaku canvas lives in the extension's stage frame laid over the player.
+const stagePainted = async (page, timeout) => {
+  await waitUntil(async () => page.frames().some(frame => frame.url().includes("/stage.html")), timeout)
+  const stage = page.frames().find(frame => frame.url().includes("/stage.html"))
+  return stage
+    .waitForFunction(
+      () => {
+        const canvas = document.querySelector(".syc-danmaku-canvas")
+        if (!canvas || canvas.width <= 1 || canvas.height <= 1) return false
+        const data = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data
+        for (let i = 3; i < data.length; i += 4) {
+          if (data[i] > 0) return true
+        }
+        return false
+      },
+      null,
+      { timeout },
+    )
+    .then(
+      () => true,
+      () => false,
+    )
+}
 
 const waitUntil = async (fn, timeoutMs = 5000) => {
   const start = Date.now()
@@ -136,44 +163,25 @@ async function main() {
   await page.waitForSelector("#settings .row")
   const shown = await page.locator('.row[data-key="opacity"] input[type=range]').inputValue()
 
-  // 4/5. Fake YouTube page: content scripts should attach the canvas in the top
-  // frame, extract chat from the iframe, route through the background worker, and
-  // paint at least one danmaku sprite.
+  // 4/5. Fake YouTube page: content scripts should lay the stage frame over the
+  // player, extract chat from the iframe, route through the background worker and
+  // the stage, and paint at least one danmaku sprite.
   const watch = await context.newPage()
   await watch.goto(FAKE_WATCH_URL, { waitUntil: "load" })
   await watch.waitForSelector(".syc-danmaku-canvas", { timeout: 10000 })
-  const painted = await watch.waitForFunction(
-    () => {
-      const canvas = document.querySelector(".syc-danmaku-canvas")
-      if (!canvas || canvas.width <= 1 || canvas.height <= 1) return false
-      const ctx = canvas.getContext("2d")
-      const { width, height } = canvas
-      const data = ctx.getImageData(0, 0, width, height).data
-      for (let i = 3; i < data.length; i += 4) {
-        if (data[i] > 0) return true
-      }
-      return false
-    },
-    null,
-    { timeout: 10000 },
-  ).then(() => true, () => false)
+  const painted = await stagePainted(watch, 10000).catch(() => false)
   const renderDebug = painted
     ? null
     : {
         top: await watch.evaluate(() => {
-          const canvas = document.querySelector(".syc-danmaku-canvas")
+          const layer = document.querySelector(".syc-danmaku-canvas")
           return {
             iframes: [...document.querySelectorAll("iframe")].map(frame => frame.src),
+            layer: layer?.tagName,
             hasChatShell: Boolean(
               document.querySelector("ytd-live-chat-frame, #chat iframe[src*='live_chat'], ytd-watch-flexy #chat"),
             ),
-            canvas: canvas
-              ? {
-                  width: canvas.width,
-                  height: canvas.height,
-                  connected: canvas.isConnected,
-                }
-              : null,
+            connected: layer?.isConnected ?? false,
           }
         }),
         frames: await Promise.all(
@@ -191,6 +199,56 @@ async function main() {
         ),
       }
 
+  // 5b/6. The stage must not cover the video, and the forwarded pin/drag must work.
+  const stageFrame = watch.frames().find(frame => frame.url().includes("/stage.html"))
+  const playerBox = await watch.locator(".html5-video-player").boundingBox()
+  const sprite = () =>
+    stageFrame.evaluate(() => {
+      const a = globalThis.__sycOverlay.active[0]
+      return a ? { x: a.x, y: a.y, w: a.w, pinned: Boolean(a.pinned) } : null
+    })
+  let transparent = false
+  let pinned = false
+  let dragged = false
+  if (painted && playerBox) {
+    // The fake player is black; an opaque stage backdrop would show as white.
+    const shot = await watch.screenshot({ clip: { x: playerBox.x + 2, y: playerBox.y + playerBox.height - 4, width: 1, height: 1 } })
+    transparent = shot.length > 0 && (await watch.evaluate(async b64 => {
+      const img = new Image()
+      img.src = `data:image/png;base64,${b64}`
+      await img.decode()
+      const c = document.createElement("canvas")
+      c.width = c.height = 1
+      const g = c.getContext("2d")
+      g.drawImage(img, 0, 0)
+      const [r, gr, b] = g.getImageData(0, 0, 1, 1).data
+      return r + gr + b < 30
+    }, shot.toString("base64")))
+
+    // Aim inside both the player and the comment (it moves right to left).
+    const at = s => [playerBox.x + s.x + 120, playerBox.y + s.y]
+    await waitUntil(async () => (await sprite())?.x < playerBox.width / 2, 8000).catch(() => {})
+    let target = await sprite()
+    if (target) {
+      await watch.mouse.move(...at(target))
+      await sleep(250) // the stage reports what is under the cursor
+      await watch.mouse.click(...at(await sprite()), { button: "right" })
+      await sleep(150)
+      pinned = (await sprite())?.pinned === true
+    }
+    if (pinned) {
+      target = await sprite()
+      await watch.mouse.move(...at(target))
+      await sleep(250)
+      await watch.mouse.down()
+      await watch.mouse.move(at(target)[0], at(target)[1] + 40, { steps: 4 })
+      await watch.mouse.up()
+      await sleep(150)
+      dragged = Math.abs((await sprite()).y - target.y - 40) < 2
+    }
+    console.log(`stage transparent=${transparent} pinned=${pinned} dragged=${dragged}`)
+  }
+
   let realPainted = !requireRealYoutube
   if (realYoutubeUrl) {
     const real = await context.newPage()
@@ -198,23 +256,7 @@ async function main() {
       try {
         await real.goto(realYoutubeUrl, { waitUntil: "domcontentloaded", timeout: 60000 })
         await real.waitForSelector(".syc-danmaku-canvas", { timeout: 30000 })
-        return await real
-          .waitForFunction(
-            () => {
-              const canvas = document.querySelector(".syc-danmaku-canvas")
-              if (!canvas || canvas.width <= 1 || canvas.height <= 1) return false
-              const ctx = canvas.getContext("2d")
-              const { width, height } = canvas
-              const data = ctx.getImageData(0, 0, width, height).data
-              for (let i = 3; i < data.length; i += 4) {
-                if (data[i] > 0) return true
-              }
-              return false
-            },
-            null,
-            { timeout: Math.max(1000, realYoutubeTimeoutMs) },
-          )
-          .then(() => true, () => false)
+        return await stagePainted(real, Math.max(1000, realYoutubeTimeoutMs))
       } catch {
         return false
       }
@@ -230,11 +272,12 @@ async function main() {
 
   await context.close()
 
-  const ok = stored?.opacity === 40 && shown === "40" && painted && realPainted
+  const ok =
+    stored?.opacity === 40 && shown === "40" && painted && transparent && pinned && dragged && realPainted
   console.log(
     ok
       ? `PASS ✅  extension loads + settings persist + overlay/chat render (opacity=${shown})`
-      : `FAIL ❌  expected opacity 40 and painted overlay, stored=${stored?.opacity}, shown=${shown}, painted=${painted}, debug=${JSON.stringify(renderDebug)}`,
+      : `FAIL ❌  expected opacity 40, painted transparent overlay, pin and drag; stored=${stored?.opacity}, shown=${shown}, painted=${painted}, transparent=${transparent}, pinned=${pinned}, dragged=${dragged}, debug=${JSON.stringify(renderDebug)}`,
   )
   process.exit(ok ? 0 : 1)
 }

@@ -188,10 +188,6 @@
       this.frameSamplePos = 0;
       this._lto = null;
       this.drag = null;         // active pin-drag state
-      this._onContextMenu = null;
-      this._onPointerDown = null;
-      this._onPointerMove = null;
-      this._onPointerUp = null;
       this._loop = this._loop.bind(this);
       this.w = 1; this.h = 1; this.laneCount = 1; this.laneTop = 0; this.laneH = this.cfg.lineHeight;
     }
@@ -219,14 +215,13 @@
       this._resize();
       this._ro = new ResizeObserver(() => this._resize());
       this._ro.observe(player);
-      this._bindPointer(player);
       this._startLongTaskObserver();
       this.start();
     }
 
     detach() {
       this.stop();
-      this._unbindPointer();
+      this.drag = null;
       this._stopLongTaskObserver();
       this._ro?.disconnect();
       this._ro = null;
@@ -668,35 +663,11 @@
     }
 
     // --- right-click pin & drag (opt-in via cfg.pinComments) ------------------
-    // Capture phase so we run before YouTube's own player handlers and can
-    // preventDefault only when a comment was actually hit.
-    _bindPointer(player) {
-      this._onContextMenu = (e) => this._handleContextMenu(e);
-      this._onPointerDown = (e) => this._handlePointerDown(e);
-      this._onPointerMove = (e) => this._handlePointerMove(e);
-      this._onPointerUp = () => this._endDrag();
-      player.addEventListener("contextmenu", this._onContextMenu, true);
-      player.addEventListener("pointerdown", this._onPointerDown, true);
-    }
+    // Point-based, in stage CSS px. The stage frame is pointer-events: none so
+    // the player stays clickable; content.js forwards the player's right-clicks
+    // and drags here, and asks hitState() whether a comment is under the cursor.
 
-    _unbindPointer() {
-      const player = this.player;
-      this._endDrag();
-      if (player) {
-        if (this._onContextMenu) player.removeEventListener("contextmenu", this._onContextMenu, true);
-        if (this._onPointerDown) player.removeEventListener("pointerdown", this._onPointerDown, true);
-      }
-      this._onContextMenu = null;
-      this._onPointerDown = null;
-    }
-
-    _localPoint(event) {
-      const rect = this.canvas?.getBoundingClientRect?.();
-      if (!rect) return null;
-      return { x: event.clientX - rect.left, y: event.clientY - rect.top };
-    }
-
-    // Topmost comment under a canvas-local point, or null.
+    // Topmost comment under a stage-local point, or null.
     _hitTest(x, y) {
       const arr = this.active;
       for (let i = arr.length - 1; i >= 0; i--) {
@@ -706,54 +677,41 @@
       return null;
     }
 
+    // 0 = nothing pinnable under the point, 1 = a comment, 2 = a pinned comment.
+    hitState(x, y) {
+      if (!this.cfg.pinComments) return 0;
+      const sprite = this._hitTest(x, y);
+      return sprite ? (sprite.pinned ? 2 : 1) : 0;
+    }
+
     _togglePin(sprite) {
       sprite.pinned = !sprite.pinned;
       // A released comment needs enough lifetime to leave the stage again.
       if (!sprite.pinned) sprite.ttlMs = Math.max(sprite.ttlMs, 3000);
     }
 
-    _handleContextMenu(event) {
-      if (!this.cfg.pinComments) return;
-      const point = this._localPoint(event);
-      const sprite = point && this._hitTest(point.x, point.y);
-      if (!sprite) return;
-      event.preventDefault();
-      event.stopPropagation();
-      this._togglePin(sprite);
+    pinAt(x, y) {
+      const sprite = this.cfg.pinComments && this._hitTest(x, y);
+      if (sprite) this._togglePin(sprite);
+      return Boolean(sprite);
     }
 
-    _handlePointerDown(event) {
-      if (!this.cfg.pinComments || event.button !== 0) return;
-      const point = this._localPoint(event);
-      const sprite = point && this._hitTest(point.x, point.y);
-      if (!sprite || !sprite.pinned) return;
-      event.preventDefault();
-      event.stopPropagation();
-      this.drag = {
-        sprite,
-        offsetX: point.x - sprite.x,
-        offsetY: point.y - (sprite.y - sprite.h / 2)
-      };
-      window.addEventListener("pointermove", this._onPointerMove);
-      window.addEventListener("pointerup", this._onPointerUp);
+    dragStart(x, y) {
+      const sprite = this.cfg.pinComments && this._hitTest(x, y);
+      if (!sprite || !sprite.pinned) return false;
+      this.drag = { sprite, offsetX: x - sprite.x, offsetY: y - (sprite.y - sprite.h / 2) };
+      return true;
     }
 
-    _handlePointerMove(event) {
+    dragTo(x, y) {
       const drag = this.drag;
       if (!drag) return;
-      const point = this._localPoint(event);
-      if (!point) return;
-      drag.sprite.x = point.x - drag.offsetX;
-      drag.sprite.y = point.y - drag.offsetY + drag.sprite.h / 2;
+      drag.sprite.x = x - drag.offsetX;
+      drag.sprite.y = y - drag.offsetY + drag.sprite.h / 2;
     }
 
-    _endDrag() {
-      if (!this.drag) return;
+    dragEnd() {
       this.drag = null;
-      if (typeof window !== "undefined") {
-        window.removeEventListener("pointermove", this._onPointerMove);
-        window.removeEventListener("pointerup", this._onPointerUp);
-      }
     }
 
     _pickLane(now) {

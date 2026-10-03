@@ -39,7 +39,8 @@ The gate fails if:
 - `host_permissions` is added; content-script `matches` scopes YouTube injection
   without granting extension-wide host access.
 - extension CSP allows inline/eval/remote/blob/data script sources.
-- web-accessible resources are exposed.
+- any web-accessible resource other than `stage.html` (the danmaku stage frame,
+  embeddable on `https://www.youtube.com/*` only, through its dynamic URL) is exposed.
 - extension source uses dangerous injection sinks such as `innerHTML`,
   `insertAdjacentHTML`, `document.write`, `eval`, or `new Function`.
 - extension source adds network fetches or remote script/style URLs.

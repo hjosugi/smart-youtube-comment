@@ -227,19 +227,137 @@
     );
   }
 
+  // The danmaku engine runs in stage.html, an extension-origin frame laid over
+  // the player. Run from this content script, its rAF loop made YouTube's page
+  // lifecycle (style, IntersectionObservers, paint) run every vsync and froze
+  // whenever YouTube's own main thread did — 0.5 s chat/player tasks are
+  // routine. The stage has its own process and frame clock. This side only
+  // forwards comments and the player's pointer input; the stage reads settings
+  // from storage itself. See docs/PERFORMANCE.md "Stage Frame".
+  function createStage() {
+    let frame = null;
+    let player = null;
+    let origin = "";
+    let ready = false;
+    let queue = [];
+    let hit = 0; // what the stage reports under the pointer: 0 none, 1 comment, 2 pinned
+    let dragging = false;
+
+    const send = (message) => {
+      if (!frame) return;
+      if (ready) frame.contentWindow?.postMessage(message, origin);
+      else if (queue.length < 200) queue.push(message);
+    };
+    const local = (event) => {
+      const r = frame.getBoundingClientRect();
+      return { x: event.clientX - r.left, y: event.clientY - r.top };
+    };
+
+    const onMessage = (event) => {
+      if (!frame || event.source !== frame.contentWindow || event.origin !== origin) return;
+      if (event.data?.type === "ready") {
+        ready = true;
+        for (const message of queue) frame.contentWindow.postMessage(message, origin);
+        queue = [];
+      } else if (event.data?.type === "hit") {
+        hit = event.data.state | 0;
+      }
+    };
+    const onHover = (event) => {
+      if (!dragging) send({ type: "hover", ...local(event) });
+    };
+    const onLeave = () => {
+      hit = 0;
+      send({ type: "hover" });
+    };
+    // Capture phase so we run before YouTube's own player handlers, and swallow
+    // the event only when the stage reported a comment under the pointer.
+    const onContextMenu = (event) => {
+      if (!hit) return;
+      event.preventDefault();
+      event.stopPropagation();
+      send({ type: "pin", ...local(event) });
+    };
+    const onDragMove = (event) => send({ type: "dragTo", ...local(event) });
+    const onDragEnd = () => {
+      dragging = false;
+      window.removeEventListener("pointermove", onDragMove);
+      window.removeEventListener("pointerup", onDragEnd);
+      send({ type: "dragEnd" });
+    };
+    const onPointerDown = (event) => {
+      if (event.button !== 0 || hit !== 2) return;
+      event.preventDefault();
+      event.stopPropagation();
+      dragging = true;
+      send({ type: "dragStart", ...local(event) });
+      window.addEventListener("pointermove", onDragMove);
+      window.addEventListener("pointerup", onDragEnd);
+    };
+
+    return {
+      get attached() {
+        return Boolean(frame?.isConnected);
+      },
+      attach(nextPlayer) {
+        if (player === nextPlayer && frame?.isConnected) return;
+        this.detach();
+        player = nextPlayer;
+        if (getComputedStyle(player).position === "static") player.style.position = "relative";
+        frame = document.createElement("iframe");
+        // Keeps the canvas's old class so user layer CSS still targets the layer.
+        frame.className = "syc-danmaku-canvas";
+        frame.tabIndex = -1;
+        frame.setAttribute("aria-hidden", "true");
+        frame.src = chrome.runtime.getURL("stage.html");
+        // The src carries the per-session dynamic id; the loaded document's
+        // origin is still the extension's own id.
+        origin = `chrome-extension://${chrome.runtime.id}`;
+        Object.assign(frame.style, {
+          position: "absolute", inset: "0", width: "100%", height: "100%", border: "0",
+          // A color-scheme differing from the stage document's would paint an opaque backdrop.
+          colorScheme: "normal", background: "transparent",
+          pointerEvents: "none", zIndex: "2147483646"
+        });
+        window.addEventListener("message", onMessage);
+        player.addEventListener("pointermove", onHover, { passive: true });
+        player.addEventListener("pointerleave", onLeave);
+        player.addEventListener("contextmenu", onContextMenu, true);
+        player.addEventListener("pointerdown", onPointerDown, true);
+        player.appendChild(frame);
+      },
+      detach() {
+        if (dragging) onDragEnd();
+        window.removeEventListener("message", onMessage);
+        player?.removeEventListener("pointermove", onHover, { passive: true });
+        player?.removeEventListener("pointerleave", onLeave);
+        player?.removeEventListener("contextmenu", onContextMenu, true);
+        player?.removeEventListener("pointerdown", onPointerDown, true);
+        frame?.remove();
+        frame = null;
+        player = null;
+        ready = false;
+        queue = [];
+        hit = 0;
+      },
+      push: (payload) => send({ type: "push", payload }),
+      clear: () => send({ type: "clear" }),
+      start: () => send({ type: "start" }),
+      stop: () => send({ type: "stop" })
+    };
+  }
+
   async function initRenderer() {
-    const overlay = new globalThis.SYCDanmaku.DanmakuOverlay();
-    globalThis.__sycOverlay = overlay; // exposed for debugging / e2e perf checks
+    const overlay = createStage();
 
     const Settings = globalThis.SYCSettings;
     let settings = Settings ? await Settings.load() : { enabled: true, hideDefaultChat: false };
-    if (Settings) overlay.setConfig(Settings.toEngineConfig(settings));
     ensureRuntimeStyles();
     applyLayerCss(settings.layerCss);
     let trackedVideo = null;
 
     const applyVideoPauseState = () => {
-      if (!settings.enabled || !settings.pauseWithVideo || !overlay.canvas) return;
+      if (!settings.enabled || !settings.pauseWithVideo || !overlay.attached) return;
       if (trackedVideo?.paused) overlay.stop();
       else overlay.start();
     };
@@ -275,24 +393,20 @@
       applyDefaultChatSuppression(settings);
       if (!settings.enabled) return;
       const player = findPlayer();
-      if (player && player !== document.body &&
-          (player !== overlay.player || !overlay.canvas || !overlay.canvas.isConnected)) {
-        overlay.attach(player);
-      }
+      if (player && player !== document.body) overlay.attach(player);
       bindVideoPause();
     };
 
     const applySettings = (next) => {
       const wasEnabled = settings.enabled;
       settings = next;
-      overlay.setConfig(Settings ? Settings.toEngineConfig(next) : {});
       applyLayerCss(next.layerCss);
       toggle?.update();
       applyDefaultChatSuppression(next);
       if (next.enabled && !wasEnabled) attach();
       else if (!next.enabled && wasEnabled) overlay.detach();
       else if (next.enabled && next.pauseWithVideo) bindVideoPause();
-      else if (next.enabled && !next.pauseWithVideo && overlay.canvas) overlay.start();
+      else if (next.enabled && !next.pauseWithVideo && overlay.attached) overlay.start();
     };
 
     const saveSettings = async (next) => {
@@ -350,7 +464,7 @@
       return false;
     });
 
-    // On-device translation happens here (top frame), where settings live. The
+    // On-device translation happens here (top frame), before the stage. The
     // engine keeps its raster cache keyed on text, so repeated messages reuse
     // bitmaps. translate() never throws and returns the source when unavailable.
     const pushPayload = (payload) => {
@@ -361,7 +475,7 @@
         return;
       }
       T.translate(payload.text, target).then((text) => {
-        if (!settings.enabled || !overlay.canvas || settings.translateTo !== target) return;
+        if (!settings.enabled || !overlay.attached || settings.translateTo !== target) return;
         overlay.push(text && text !== payload.text ? { ...payload, text } : payload);
       });
     };

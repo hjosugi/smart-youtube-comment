@@ -50,6 +50,17 @@
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
   },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "stage.html"
+      ],
+      "matches": [
+        "https://www.youtube.com/*"
+      ],
+      "use_dynamic_url": true
+    }
+  ],
   "content_scripts": [
     {
       "matches": [
@@ -59,8 +70,6 @@
       "js": [
         "sanitize.js",
         "scoring.js",
-        "emoji.js",
-        "danmaku.js",
         "settings.js",
         "translate.js",
         "content.js"

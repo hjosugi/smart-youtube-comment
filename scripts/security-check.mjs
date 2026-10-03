@@ -89,8 +89,6 @@ function checkManifest() {
       !sameArray(rendererScript.js, [
         "sanitize.js",
         "scoring.js",
-        "emoji.js",
-        "danmaku.js",
         "settings.js",
         "translate.js",
         "content.js",
@@ -109,10 +107,20 @@ function checkManifest() {
     }
   }
 
-  // The extension must not expose any web-accessible resources.
+  // The only web-accessible resource is the danmaku stage frame, embeddable on
+  // YouTube alone and only through the per-session dynamic URL.
   const webResources = manifest.web_accessible_resources ?? []
-  if (webResources.length !== 0) {
-    fail("web_accessible_resources must be empty (nothing is exposed to pages).")
+  const stage = webResources[0]
+  if (
+    webResources.length !== 1 ||
+    !sameArray(stage.resources, ["stage.html"]) ||
+    !sameArray(stage.matches, ["https://www.youtube.com/*"]) ||
+    stage.use_dynamic_url !== true ||
+    "extension_ids" in stage
+  ) {
+    fail(
+      'web_accessible_resources must be exactly ["stage.html"] for https://www.youtube.com/* with use_dynamic_url.',
+    )
   }
 }
 
@@ -143,9 +151,10 @@ function checkExtensionSource() {
       }
     }
 
-    // Allow the SVG XML namespace constant (used by createElementNS, never fetched).
+    // Allow the SVG XML namespace constant (used by createElementNS, never fetched)
+    // and the bare YouTube origin (the stage frame's postMessage target).
     const remoteUrl =
-      /https?:\/\/(?!(?:www\.youtube\.com\/(?:watch\*|live\/\*|live_chat\*)|www\.w3\.org\/2000\/svg))/g
+      /https?:\/\/(?!(?:www\.youtube\.com(?:\/(?:watch\*|live\/\*|live_chat\*|\*)|")|www\.w3\.org\/2000\/svg))/g
     for (const match of text.matchAll(remoteUrl)) {
       fail(`${rel(file)}:${lineNumber(text, match.index ?? 0)} contains a remote URL.`)
     }
