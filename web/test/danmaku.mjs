@@ -548,6 +548,84 @@ const assertStagePointerApi = (label, Overlay) => {
   assert.equal(overlay.pinAt(160, 150), false, `${label}: pinning off ignores pinAt`)
 }
 
+// Tiers must look different: a tier sets the speed, whatever the comment's
+// width, and a faster comment never runs into a slower one in its lane.
+const assertTierSpeedAndLaneCatchUp = (label, Overlay) => {
+  const overlay = new Overlay({
+    dpr: 1,
+    dedup: false,
+    lengthSpread: false,
+    durationScale: 1,
+    tierDurations: [2000, 4000, 6000],
+    gapPx: 20,
+  })
+  overlay.canvas = makeCanvas()
+  overlay.ctx = makeContext()
+  overlay.w = 1000
+  overlay.h = 180
+  overlay.laneTop = 0
+  overlay.laneH = 24
+  overlay.laneCount = 2
+  overlay.lanes = [0, 0]
+  overlay.laneExit = [0, 0]
+  overlay.dynamicCap = 10
+
+  overlay._spawn(payload("short", { tier: 2 }), 0.5)
+  overlay._spawn(payload("x".repeat(60), { tier: 2 }), 0.5)
+  const [narrow, wide] = overlay.active
+  assert.equal(narrow.vx, wide.vx, `${label}: width does not change a tier's speed`)
+  assert.equal(wide.ttlMs > narrow.ttlMs, true, `${label}: a wider comment stays longer`)
+
+  const fast = new Overlay({
+    dpr: 1,
+    dedup: false,
+    lengthSpread: false,
+    durationScale: 1,
+    tierDurations: [2000, 4000, 6000],
+  })
+  fast.canvas = makeCanvas()
+  fast.ctx = makeContext()
+  fast.w = 1000
+  fast.laneTop = 0
+  fast.laneH = 24
+  fast.laneCount = 2
+  fast.lanes = [0, 0]
+  fast.laneExit = [0, 0]
+  fast.dynamicCap = 10
+  fast._spawn(payload("slow one", { tier: 2 }), 0.5)
+  fast._spawn(payload("fast", { tier: 0 }), 0.5)
+  assert.equal(
+    fast.active[1].vx > fast.active[0].vx * 2.5,
+    true,
+    `${label}: the fast tier is clearly faster`,
+  )
+  assert.equal(
+    fast.active[0].y !== fast.active[1].y,
+    true,
+    `${label}: a fast comment does not follow a slow one into its lane`,
+  )
+
+  // The slow comment's lane opens to fast comments only once it is far enough
+  // ahead, later than its entry edge alone would allow.
+  const vxFast = fast.active[1].vx
+  const readyAt = fast._laneReadyAt(0, vxFast)
+  assert.equal(
+    readyAt > fast.lanes[0],
+    true,
+    `${label}: catching up delays the lane past its entry time`,
+  )
+  assert.equal(
+    fast._pickLane(readyAt - 1, vxFast),
+    1,
+    `${label}: before that, the other lane is used`,
+  )
+  assert.equal(
+    fast._pickLane(readyAt + 1, vxFast),
+    0,
+    `${label}: after that, the lane is free again`,
+  )
+}
+
 const assertWrapAndLineLayout = (label, Overlay) => {
   const wrapped = new Overlay({ dpr: 1, dedup: false, maxWidthPct: 0.5, wrapText: true })
   wrapped.w = 100 // max width 50px; the stub measures 10px per character
@@ -968,6 +1046,7 @@ assertMotionSmoothness("web", webOverlay)
 assertTypeGatingAndRoleScale("web", webOverlay)
 assertFlowDirectionAndDensity("web", webOverlay)
 assertPinAndHitTest("web", webOverlay)
+assertTierSpeedAndLaneCatchUp("web", webOverlay)
 assertWrapAndLineLayout("web", webOverlay)
 assertLruCache("web", webOverlay, (overlay, text) =>
   overlay._rasterize([{ t: text }], "#fff", 24, false),
@@ -1004,6 +1083,7 @@ assertTypeGatingAndRoleScale("extension", extensionOverlay)
 assertFlowDirectionAndDensity("extension", extensionOverlay)
 assertPinAndHitTest("extension", extensionOverlay)
 assertStagePointerApi("extension", extensionOverlay)
+assertTierSpeedAndLaneCatchUp("extension", extensionOverlay)
 assertWrapAndLineLayout("extension", extensionOverlay)
 assertLruCache("extension", extensionOverlay, (overlay, text) =>
   overlay._rasterize([{ t: text }], "#fff", 24, false),

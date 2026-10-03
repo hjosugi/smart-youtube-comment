@@ -37,11 +37,13 @@ export interface PollEnvelope {
 
 export interface ScoreInput {
   text: string
+  parts?: Part[] // what is on screen: each image part counts as one emoji
   authorType: AuthorType
   kind: Kind
 }
 
 export interface ScoreResult {
+  tier?: number // 0=fast, 1=normal, 2=slow; buildRenderPlan derives one when absent
   quality: number
   spam: number
   toxicity: number

@@ -115,11 +115,13 @@ own additional floor.
 
 ## ScoreInput
 
-Input to the JS scorer.
+Input to the JS scorer. How the scorer uses it is explained in
+[SCORING.md](SCORING.md).
 
 ```jsonc
 {
   "text": "string",
+  "parts": [],             // optional; ChatMessage parts. Each image part counts as one emoji
   "authorType": "normal",  // "normal" | "member" | "moderator" | "owner"
   "kind": "text"           // "text" | "paid" | "membership"
 }
@@ -131,6 +133,7 @@ Output from the scorer. Numeric values are in `[0.0, 1.0]`.
 
 ```jsonc
 {
+  "tier": 1,           // optional; 0=fast, 1=normal, 2=slow (the JS scorer always sets it)
   "quality": 0.5,
   "spam": 0.0,
   "toxicity": 0.0,
@@ -139,6 +142,10 @@ Output from the scorer. Numeric values are in `[0.0, 1.0]`.
   "reasons": []
 }
 ```
+
+The JS scorer never hides a comment: `show` is `false` only when there is
+nothing to display. Low-value comments get a low `quality` instead and lose out
+in admission when the screen is full. The verdict below is for other scorers.
 
 Default advisory verdict:
 
@@ -161,7 +168,8 @@ The extension may re-check this against live user settings.
 ## Render Plan
 
 `SYCScoring.buildRenderPlan(text, result)` maps `ScoreResult` to the renderer's
-speed payload:
+speed payload. It keeps `result.tier` when present and derives a tier from
+`quality` / `spam` / `emphasis` and the text length otherwise:
 
 ```jsonc
 {
@@ -184,4 +192,9 @@ Reason tags are stable, kebab-case strings. Existing tags should not be renamed.
 
 Current tags:
 
-- `fallback-fast`
+- `fallback-fast`: the comment is in the fast tier
+- `emoji`: mostly emoji
+- `short`: a few characters
+- `repeat`: one character or a short pattern repeated
+- `copy`: nearly the same as a comment posted moments ago
+- `long`: long enough for the slow tier

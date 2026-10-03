@@ -12,6 +12,7 @@ declare global {
     signatureDistance(a: number, b: number): number
     textSignature(text: string): number
     tokenSignature(values: Iterable<string>): number
+    visibleLength(text: string, parts?: Part[] | null): number
     clamp01(v: number): number
     TIER: Record<string, number>
   }
