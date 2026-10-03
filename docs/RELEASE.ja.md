@@ -223,6 +223,7 @@ Zipを共有する前に：
 - YouTubeのDOM破損に対するロールバックプラン
 - パブリッシャーの認証情報が有効であること：`npm run release:store:status`または`status_only`のworkflow dispatchで確認します
 - マニフェストのバージョンが最新の`vX.Y.Z`タグより上がっていること
+- 前のバージョンが審査待ちのまま残っていないこと：審査待ちがあるとストアはアップロードを拒否します。新しいバージョンで置き換えるときは、workflow dispatchを`cancel_submission: true`で実行し（または`npm run release:store:cancel`）、その後いつも通りバージョンを上げてマージします
 
 ## ストアリリースのトラブルシューティング
 

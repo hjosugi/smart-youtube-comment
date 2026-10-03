@@ -29,6 +29,7 @@ Commands:
   upload    Upload the packaged zip for the current manifest version.
   publish   Submit the already uploaded package for review/publishing.
   submit    Upload, wait for upload processing, then publish.
+  cancel    Cancel the submission waiting for review, so a newer version can be uploaded.
 
 Options:
   --zip <path>                 Zip artifact to upload. Defaults to .release/${pkg.name}-v${manifest.version}.zip
@@ -303,6 +304,15 @@ async function waitForUpload(token, ids, initialPayload) {
   throw new Error(`Timed out waiting for Chrome Web Store upload processing to finish.`)
 }
 
+async function cancelSubmission(token, ids) {
+  return await requestJson(endpoint(ids, "cancelSubmission"), {
+    method: "POST",
+    token,
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  })
+}
+
 async function publishItem(token, ids) {
   return await requestJson(endpoint(ids, "publish"), {
     method: "POST",
@@ -332,7 +342,7 @@ async function main() {
     throw new Error(`version mismatch: manifest=${manifest.version}, package=${pkg.version}`)
   }
 
-  if (!["help", "status", "upload", "publish", "submit"].includes(command)) {
+  if (!["help", "status", "upload", "publish", "submit", "cancel"].includes(command)) {
     usage()
     throw new Error(`Unknown command: ${command}`)
   }
@@ -353,6 +363,12 @@ async function main() {
 
   const token = await getAccessToken()
   if (command === "status") {
+    printJson("Chrome Web Store status", await fetchStatus(token, ids))
+    return
+  }
+
+  if (command === "cancel") {
+    printJson("Chrome Web Store cancel submission", await cancelSubmission(token, ids))
     printJson("Chrome Web Store status", await fetchStatus(token, ids))
     return
   }

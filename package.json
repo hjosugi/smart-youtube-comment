@@ -36,6 +36,7 @@
     "release:store:upload": "node scripts/chrome-webstore.mjs upload",
     "release:store:publish": "node scripts/chrome-webstore.mjs publish",
     "release:store:submit": "node scripts/chrome-webstore.mjs submit",
+    "release:store:cancel": "node scripts/chrome-webstore.mjs cancel",
     "release:store": "npm run release:zip && npm run release:store:submit",
     "sandbox": "node scripts/serve-sandbox.mjs",
     "sandbox:bun": "bun scripts/serve-sandbox.mjs",

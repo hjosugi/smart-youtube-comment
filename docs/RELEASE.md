@@ -242,6 +242,10 @@ Submit store releases only after these are done:
 - publisher credentials still valid; confirm with
   `npm run release:store:status` or the `status_only` workflow dispatch
 - the manifest version bumped above the latest `vX.Y.Z` tag
+- no earlier version still waiting for review: the store rejects an upload
+  while one is pending. To replace it with a newer version, run the workflow
+  dispatch with `cancel_submission: true` (or `npm run release:store:cancel`),
+  then bump and merge as usual
 
 ## Store Release Troubleshooting
 

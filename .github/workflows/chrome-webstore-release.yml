@@ -27,6 +27,11 @@ on:
         required: true
         default: false
         type: boolean
+      cancel_submission:
+        description: "Cancel the submission waiting for review, so a newer version can be uploaded. Does not package, upload, or publish."
+        required: false
+        default: false
+        type: boolean
       skip_review:
         description: "Ask Chrome Web Store to skip review when the item is eligible."
         required: true
@@ -134,7 +139,7 @@ jobs:
         run: echo "CHROME_WEBSTORE_ACCESS_TOKEN=${ACCESS_TOKEN}" >> "$GITHUB_ENV"
 
       - name: Set manual version
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.status_only != true && inputs.publish_only != true && inputs.version != '' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.status_only != true && inputs.publish_only != true && inputs.cancel_submission != true && inputs.version != '' }}
         env:
           RELEASE_VERSION: ${{ inputs.version }}
         run: npm run version:set -- "$RELEASE_VERSION"
@@ -147,14 +152,18 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_only == true }}
         run: npm run release:store:publish
 
+      - name: Cancel pending Chrome Web Store submission
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.cancel_submission == true }}
+        run: npm run release:store:cancel
+
       - name: Build release zip
-        if: ${{ github.event_name != 'workflow_dispatch' || (inputs.status_only != true && inputs.publish_only != true) }}
+        if: ${{ github.event_name != 'workflow_dispatch' || (inputs.status_only != true && inputs.publish_only != true && inputs.cancel_submission != true) }}
         env:
           SYC_REQUIRE_E2E: "1"
         run: npm run release:zip
 
       - name: Upload release artifacts
-        if: ${{ github.event_name != 'workflow_dispatch' || (inputs.status_only != true && inputs.publish_only != true) }}
+        if: ${{ github.event_name != 'workflow_dispatch' || (inputs.status_only != true && inputs.publish_only != true && inputs.cancel_submission != true) }}
         uses: actions/upload-artifact@v7
         with:
           name: chrome-extension-release
@@ -163,11 +172,11 @@ jobs:
           if-no-files-found: error
 
       - name: Upload to Chrome Web Store
-        if: ${{ steps.target.outputs.publish == 'true' || (github.event_name == 'workflow_dispatch' && inputs.status_only != true && inputs.publish_only != true) }}
+        if: ${{ steps.target.outputs.publish == 'true' || (github.event_name == 'workflow_dispatch' && inputs.status_only != true && inputs.publish_only != true && inputs.cancel_submission != true) }}
         run: npm run release:store:upload
 
       - name: Publish in Chrome Web Store
-        if: ${{ steps.target.outputs.publish == 'true' || (github.event_name == 'workflow_dispatch' && inputs.status_only != true && inputs.publish_only != true && inputs.publish == true) }}
+        if: ${{ steps.target.outputs.publish == 'true' || (github.event_name == 'workflow_dispatch' && inputs.status_only != true && inputs.publish_only != true && inputs.cancel_submission != true && inputs.publish == true) }}
         run: npm run release:store:publish
 
   # Runs only after the store accepted the submission, so a failed upload leaves
