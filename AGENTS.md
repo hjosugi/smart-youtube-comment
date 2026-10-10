@@ -12,12 +12,14 @@ This repo is shared by the human operator, Claude, and Codex.
 
 ## Current Architecture
 
-The extension is JavaScript-only. The mobile PWA in `web/` is TypeScript plus
-classic browser scripts, and the Cloudflare live-chat relay in `worker/` is
+See `ARCHITECTURE.md`. The extension is JavaScript-only and reads the chat
+YouTube renders in its live-chat frame. The mobile PWA in `web/` is TypeScript
+plus classic browser scripts, and the Cloudflare live-chat relay in `worker/` is
 TypeScript. Browser rendering/extraction is the practical bottleneck, not
 scoring.
 
-Scoring lives in `extension/scoring.js` and runs locally in the content script.
+Scoring lives in `extension/scoring.js` (copied byte-for-byte to `web/`) and
+runs locally in the chat frame's content script.
 Do not add a new scorer transport unless a batched or stateful scorer first
 proves a clear Chrome/V8 performance win in benchmarks and the migration is
 documented in `docs/CONTRACT.md` and `docs/PLAN.md`.

@@ -54,10 +54,13 @@ kept small and local.
 
 ## How It Works
 
-The extension runs `extension/content.js` in every YouTube frame.
+The extension never calls a YouTube API. It reads the chat that YouTube already
+renders: `extension/content.js` runs in the watch page and in YouTube's
+live-chat frame.
 
-1. Chat frames watch YouTube live-chat renderer nodes.
-2. Each new chat message is normalized into a `ScoreInput`.
+1. The chat frame watches YouTube's live-chat renderer nodes.
+2. Each new message is read from the DOM, checked against the NG lists, and
+   normalized into a `ScoreInput`.
 3. `extension/scoring.js` scores it locally: emoji and short reactions flow
    fast, long text flows slow, and a quality score decides which comments win
    when the screen is full. Nothing is hidden by the score. The rules, with
@@ -71,7 +74,10 @@ The extension runs `extension/content.js` in every YouTube frame.
    shared sprite-atlas pages, so the steady state allocates nothing and there is
    no periodic GC jolt (see `docs/PERFORMANCE.md`).
 
-The extension does not fetch remote code.
+The extension does not fetch remote code. The mobile PWA under `web/` gets the
+same chat by polling YouTube's InnerTube API through the Worker relay under
+`worker/`. Both paths, with the files and functions involved, are described in
+[ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Privacy And Storage
 
@@ -224,9 +230,8 @@ Artifacts are written to `.release/`, which is ignored by Git. See
 Store releases go out when a version bump lands on `main`, through
 [`.github/workflows/chrome-webstore-release.yml`](.github/workflows/chrome-webstore-release.yml),
 which then tags `vX.Y.Z` and creates the GitHub Release.
-The store listing and publisher setup is already done; see
-[docs/STORE_AUTOMATION.md](docs/STORE_AUTOMATION.md) for the credentials the
-workflow needs.
+The store listing and publisher setup is already done; the credentials the
+workflow needs are in [docs/RELEASE.md](docs/RELEASE.md).
 
 Set package and manifest versions together:
 
@@ -237,60 +242,19 @@ npm run version:set -- 0.1.1
 This updates the root, `web/`, `worker/`, their lockfile root metadata, and
 `extension/manifest.json`.
 
-## Project Layout
+## Documentation
 
-```text
-.
-├── extension/
-│   ├── manifest.json
-│   ├── background.js
-│   ├── scoring.js
-│   ├── danmaku.js
-│   ├── settings.js
-│   ├── filter.js
-│   ├── content.js
-│   ├── stage.html / stage.js
-│   ├── options.html
-│   ├── options.js
-│   └── icons/
-├── bench/
-│   ├── danmaku-bench.html
-│   └── e2e/
-├── web/
-│   ├── app.ts
-│   ├── test/
-│   └── dist/
-├── worker/
-│   ├── src/
-│   ├── test/
-│   └── wrangler.jsonc
-├── sandbox/
-│   └── index.html
-├── docs/
-│   ├── CONTRACT.md
-│   ├── PERFORMANCE.md
-│   ├── RELEASE.md
-│   └── SECURITY.md
-└── scripts/
-    ├── check-sandbox.mjs
-    ├── package-extension.mjs
-    ├── security-check.mjs
-    ├── serve-sandbox.mjs
-    └── set-version.mjs
-```
-
-## Current Performance Focus
-
-Scoring is intentionally small and local. The next wins are in:
-
-- YouTube chat extraction robustness
-- queue/ring-buffer behavior
-- text rasterization budget
-- canvas draw loop
-- Long Task and frame p95/p99 diagnostics
-- keeping `maxActive=2000` responsive through admission control
-
-More notes are in [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
+| Document | Contents |
+| --- | --- |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | how comments are obtained and rendered, code map, repository layout |
+| [docs/CONTRACT.md](docs/CONTRACT.md) | message, poll envelope, and score shapes |
+| [docs/SCORING.md](docs/SCORING.md) | how a comment is scored |
+| [docs/PERFORMANCE.md](docs/PERFORMANCE.md) | measured bottlenecks and their fixes |
+| [docs/SECURITY.md](docs/SECURITY.md) | threat model and the security gate |
+| [docs/PRIVACY.md](docs/PRIVACY.md) | privacy policy |
+| [docs/RELEASE.md](docs/RELEASE.md) | release flow and store automation |
+| [docs/PLAN.md](docs/PLAN.md) | open work, gates, migration notes |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | setup, checks, boundaries |
 
 ## License
 

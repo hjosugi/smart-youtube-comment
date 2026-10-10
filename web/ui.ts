@@ -1,6 +1,6 @@
 // Touch sheets: schema-driven settings (controls + presets + NG editor) and a
 // help panel. Localized via i18n. Drives SYCSettings.save / SYCFilter.save; the
-// app subscribes to onChange for live preview. See ARCHITECTURE.md §8.
+// app subscribes to onChange for live preview. See ARCHITECTURE.md "Mobile specifics".
 
 import { buildControl, groupBy } from "./controls.ts"
 import { el } from "./dom.ts"

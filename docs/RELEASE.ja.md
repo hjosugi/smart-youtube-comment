@@ -1,140 +1,113 @@
 <!-- i18n: language-switcher -->
 [English](RELEASE.md) | [日本語](RELEASE.ja.md)
 
-# リリースガイド
+# リリース
 
-これはJavaScriptのみのChrome拡張機能のローカルリリースパスです。
+Chrome 拡張を `main` から Chrome ウェブストアへ出す手順です。PWA と Worker は `main` から自動でデプロイされます(`.github/workflows/deploy-web-worker.yml`)。
 
-## 公開中のリスティング
+## 掲載情報
 
-拡張機能はChrome ウェブストアで公開済みです：
+- ストアのページ: <https://chromewebstore.google.com/detail/nkphcfhnfjceplpgcjccnpfdkheafohp>
+- 拡張 ID: `nkphcfhnfjceplpgcjccnpfdkheafohp`
+- カテゴリ: エンターテイメント。掲載言語: 英語と日本語
+- プライバシーポリシー: `docs/PRIVACY.md`。掲載ページが GitHub の URL でリンクしているので、移動や改名をしないこと
+- サポート: GitHub の issue
 
-```text
-https://chromewebstore.google.com/detail/nkphcfhnfjceplpgcjccnpfdkheafohp
-```
+ストアは審査を通ってから更新されるので、公開中のバージョンは `main` より古いことがあります。
 
-- 拡張機能ID：`nkphcfhnfjceplpgcjccnpfdkheafohp`
-- カテゴリ：エンタテイメント
-- リスティングの言語：英語と日本語
-- プライバシーポリシー：`docs/PRIVACY.ja.md`
-- サポートサイト：GitHubのイシュートラッカー
+## 通常のリリース
 
-一度限りのリスティング・カテゴリ・プライバシー・データ使用宣言の設定は完了済みです。以降のリリースは`main`でバージョンを上げるだけで、`vX.Y.Z`タグはCIが付けます。
-
-## リリース戦略
-
-3つのステージを使用します：
-
-1. **ローカルのアンパックリリース**：`extension/`をChromeに直接読み込みます。
-2. **Zipリリース**：`.release/smart-youtube-comment-vX.Y.Z.zip`を作成し、アンパック拡張機能を読み込むことができるテスターと共有します。
-3. **Chromeウェブストアリリース**：`scripts/chrome-webstore.mjs`またはGitHub Actionsを通じてアップロードおよび公開します。
-
-`.release/`ディレクトリはGitによって無視されます。アーティファクトは追跡された拡張機能のソースから再現可能であり、ビルドステップはありません。
-
-## バージョニング
-
-これらのバージョンを同一に保ちます：
-
-- `package.json` -> `version`
-- `web/package.json` -> `version`
-- `worker/package.json` -> `version`
-- `extension/manifest.json` -> `version`
-
-すべてを一度に設定します。ロックファイルのルートメタデータも含めて：
+バージョンを上げたコミットが `main` に入ることがリリースです。手作業はこれだけです。
 
 ```sh
-npm run version:set -- 0.1.1
+npm run version:set -- X.Y.Z                # ルート、web/、worker/、lockfile、extension/manifest.json
+SYC_REQUIRE_E2E=1 npm run release:zip       # 全チェックの後に zip を作る
+SYC_EXTENSION_HEADLESS=1 npm run test:ext   # 展開した拡張を Chromium で確認
+git switch -c release-X.Y.Z
+git commit -am "Release X.Y.Z"
+git push -u origin HEAD                     # PR を作り、チェックを待ってマージ
 ```
 
-今のところ、シンプルなセマンティックバージョニングを使用します：
+`main` への push で `.github/workflows/chrome-webstore-release.yml` が次を行います。
 
-- パッチ：ドキュメント、小さなバグ修正、しきい値調整
-- マイナー：ユーザーに見える設定、レンダリング、フィルタリング、またはUI機能
-- メジャー：互換性を破る契約またはストレージの変更
+1. `Resolve release target` が、`vX.Y.Z` のタグがまだないので `publish=true` にする(タグ済みのバージョンなら zip を作るだけ)
+2. チェックを実行して zip を作り、実行の成果物として残す
+3. zip をストアにアップロードして審査に出す
+4. ストアが受け付けた後でだけ、`github-release` ジョブがコミットに `vX.Y.Z` のタグを付け、zip・チェックサム・テスター向けガイド付きの GitHub Release を作る
 
-## プレリリースチェックリスト
+`gh run watch` で見守り、ダッシュボードで「審査待ち」になったことを確認します。
 
-ローカルリリースチェックを実行する前に、すべてのパッケージルートをインストールします：
+守ること:
+
+- `main` がリリースするバージョンのタグを手で push しない。自動で付いたタグで 2 回目の実行は起きません。手で push した `vX.Y.Z` タグもそのタグをリリースしますが、`npm run version:set` が書いたバージョンと一致している必要があります。
+- ストアに出せる提出は一度に 1 つです。審査待ちのバージョンを置き換えるときは、ワークフローを `cancel_submission: true` で手動実行(または `npm run release:store:cancel`)してから、いつも通りバージョンを上げてマージします。
+- 通常のリリースでダッシュボードの「公開」ボタンを押さない。
+
+## バージョン
+
+`package.json`、`web/package.json`、`worker/package.json`、`extension/manifest.json` は常に同じバージョンにします。食い違うとワークフローが失敗します。`npm run version:set -- X.Y.Z` がこれらと lockfile のルート情報をまとめて書き換えます。
+
+- パッチ: 修正、しきい値の調整、ドキュメント
+- マイナー: 利用者に見える設定・描画・フィルタ・UI の機能
+- メジャー: 互換性を壊す契約やストレージの変更
+
+## チェック
 
 ```sh
-npm ci
-npm --prefix web ci
-npm --prefix worker ci
-```
-
-実行します：
-
-```sh
+npm ci && npm --prefix web ci && npm --prefix worker ci
 npm run release:check
 ```
 
-これにより、以下が実行されます：
+`release:check` は lint、フォーマットの確認、セキュリティゲート([SECURITY.ja.md](SECURITY.ja.md))、型チェック、web のビルド、ユニット・決定論・ブラウザ e2e のテスト、サンドボックスのスモークテストを実行します。`SYC_REQUIRE_E2E=1` を付けると、Chromium がないときにスキップではなく失敗にします。
 
-- lintおよびフォーマットチェック
-- セキュリティおよびサプライチェーンポリシーチェック
-- ルートおよびワーカーの型チェック
-- ウェブビルド
-- ユニット、決定論的、ブラウザe2eスイート
-- ローカルサンドボックスサーバースモークテスト
+次のものは YouTube に届くことと配信中であることに依存するので、`release:check` には入れていません。
 
-オプションですが便利です：
+- `SYC_REAL_YOUTUBE_URL="https://www.youtube.com/watch?v=…" npm run test:ext:youtube`: チャットが動いている実際のライブ配信で拡張を確認
+- `node worker/test/probe.mjs`: 既知の動画で中継を 1 回試す
+- `node worker/test/loadtest.mjs`: 負荷をかけたときの中継の遅延と再試行
+- `node web/test/chat-client-live.mjs`: PWA のチャットクライアントを実際のライブチャットで確認
 
-```sh
-npm run test:e2e
-npm run test:ext
-```
+抽出や描画を変えたリリースの前には手で確認します。`extension/` を展開状態で読み込み、チャットの多いライブ配信を開いて、数分間コメントが動画の上を流れ続けること、プレイヤーのトグルと「デフォルトのチャットを隠す」設定が効くこと、YouTube 自身の案内や警告が流れないこと、プレイヤーの操作が重くならないことを見ます。
 
-`test:ext`は、アンパックされた拡張機能を使用して実際のChromiumを開き、デスクトップセッションが必要な場合があります。デフォルトでは、オーバーレイ/チャットパス用に決定論的な偽YouTubeページを使用します。
+## zip
 
-実際のYouTubeスモークをオプトイン：
+`npm run release:zip` は `.release/`(Git では無視)に出力します。
 
-```sh
-SYC_REAL_YOUTUBE_URL="https://www.youtube.com/watch?v=..." npm run test:ext:youtube
-```
+- `smart-youtube-comment-vX.Y.Z.zip`、`.sha256`、`.release.json`
+- `smart-youtube-comment-vX.Y.Z-notes.md`、`-tester-install.md`
 
-アクティブなチャットを持つ公開ライブストリームを使用します。これは、YouTubeの可用性、地理/アカウントの状態、および実行中にチャットがアクティブであるかどうかに依存するため、意図的に`release:check`の外にあります。
+zip に入るのは `scripts/package-extension.mjs` に並べたファイルだけで、ビルド工程はありません。展開して読み込むテスターの手順: 解凍し、`chrome://extensions` でデベロッパーモードをオンにして「パッケージ化されていない拡張機能を読み込む」からフォルダを選ぶ。不具合のときは Chrome のバージョン、OS、配信の URL、コンソールのエラーをもらいます。
 
-手動ネットワークプローブは、実際のYouTubeの可用性とネットワークの動作に依存するため、意図的に`release:check`の一部ではありません：
+## ワークフローとローカルのコマンド
 
-- `worker/test/probe.mjs`：既知のビデオ/ライブURLのためのワンショットリレープローブ。
-- `worker/test/loadtest.mjs`：レイプレッシャーテストによるレイテンシとリトライ調整。
-- `web/test/chat-client-live.mjs`：ブラウザ側のライブチャットクライアントスモークチェック。
+`Chrome Web Store Release` ワークフローの手動実行(`workflow_dispatch`):
 
-有効な公開ビデオ/ライブURLが利用可能な場合、リリース候補の前に実行します。CIを決定論的かつフィクスチャに基づいて保ちます。
+| 入力 | 動作 |
+| --- | --- |
+| `status_only: true` | ストアの状態を取るだけ(認証情報の確認) |
+| `cancel_submission: true` | 審査待ちの提出を取り消す |
+| `publish_only: true` | 既存の下書きを公開する。アップロードはしない |
+| `publish: false` | アップロードだけして、公開は後で |
+| `version` | パッケージ前にバージョンを設定する。リポジトリに書き戻さないので緊急時のみ |
+| `skip_review`, `deploy_percentage` | 可能なら審査の省略を依頼、段階的な公開 |
+| `dry_run: true` | 検証して API 呼び出しを表示するだけ。通信しない |
 
-## Zipをビルド
-
-実行します：
+認証情報を環境変数に入れれば、シェルからも同じことができます。
 
 ```sh
-npm run release:zip
+npm run release:store:status
+npm run release:store:upload
+npm run release:store:publish
+npm run release:store:cancel
+npm run release:store            # release:zip の後にアップロードと提出
+node scripts/chrome-webstore.mjs submit --dry-run
 ```
 
-出力：
+環境変数での制御: `CHROME_WEBSTORE_SKIP_REVIEW=1`、`CHROME_WEBSTORE_DEPLOY_PERCENTAGE=25`、`CHROME_WEBSTORE_BLOCK_ON_WARNINGS=0`(既定では API の警告があると公開を止めるので、ポリシー上の警告がそのまま公開につながることはありません)、`CHROME_WEBSTORE_UPLOAD_POLL_ATTEMPTS=24`、`CHROME_WEBSTORE_UPLOAD_POLL_DELAY_MS=5000`。
 
-```text
-.release/smart-youtube-comment-v0.1.0.zip
-```
+### 認証情報
 
-リリーススクリプトは自動的に以下を作成します：
-
-- `.release/smart-youtube-comment-vX.Y.Z.zip`
-- `.release/smart-youtube-comment-vX.Y.Z.sha256`
-- `.release/smart-youtube-comment-vX.Y.Z.release.json`
-- `.release/smart-youtube-comment-vX.Y.Z-notes.md`
-- `.release/smart-youtube-comment-vX.Y.Z-tester-install.md`
-
-Zipには、`scripts/package-extension.mjs`によってリストされた拡張機能ファイルのみが含まれます。
-
-## Chromeウェブストアの自動化
-
-一度限りの設定、OAuthの詳細、およびCIリリースパスについては、`docs/STORE_AUTOMATION.md`を参照してください。
-
-考えずに手動チェックリストを使用するには、`docs/STORE_RELEASE_RUNBOOK_JA.md`を使用します。
-
-GitHubリポジトリのシークレットが設定されると、バージョンを上げたコミットを`main`にプッシュすることでチェックが実行され、拡張機能がパッケージ化され、リリースアーティファクトがアップロードされ、ZipがChromeウェブストアにアップロードされ、レビュー/公開のために提出されます。提出が成功した後、CIがそのコミットに`vX.Y.Z`タグを付けてGitHub Releaseを作成します。
-
-推奨されるCI認証は、サービスアカウントとGitHub OIDCを使用します：
+GitHub リポジトリの secrets に入れます。推奨はサービスアカウントと GitHub OIDC(Workload Identity Federation)です。
 
 ```text
 CHROME_WEBSTORE_PUBLISHER_ID
@@ -143,127 +116,122 @@ GCP_WORKLOAD_IDENTITY_PROVIDER
 GCP_SERVICE_ACCOUNT
 ```
 
-リフレッシュトークンのフォールバック：
+代替: パブリッシャーのアカウントで `https://www.googleapis.com/auth/chromewebstore` スコープの OAuth リフレッシュトークンを発行し、`CHROME_WEBSTORE_CLIENT_ID`、`CHROME_WEBSTORE_CLIENT_SECRET`、`CHROME_WEBSTORE_REFRESH_TOKEN` に入れます。ローカルでは `CHROME_WEBSTORE_ACCESS_TOKEN` も使えます。
 
-```text
-CHROME_WEBSTORE_PUBLISHER_ID
-CHROME_WEBSTORE_EXTENSION_ID
-CHROME_WEBSTORE_CLIENT_ID
-CHROME_WEBSTORE_CLIENT_SECRET
-CHROME_WEBSTORE_REFRESH_TOKEN
-```
+`scripts/chrome-webstore.mjs` はパブリッシャー ID、サービスアカウント、OAuth の秘密情報を `***` で表示するので、出力はそのまま issue に貼れます。これらの値を手で書き戻さないこと。パブリッシャー ID は UUID で、公開リポジトリでは GitHub のシークレットスキャンが裸の UUID を `OpenVSX Access Token` として検出します。
 
-ローカルのワンコマンドストアリリース：
+## 失敗したとき
 
-```sh
-npm run release:store
-```
+アップロードに失敗しても掲載は変わらず、最後に承認されたバージョンが公開されたままです。タグもまだ付いていません。
 
-アップロードのみとアップロード後の公開は、安全な回復のために分割されています：
-
-```sh
-npm run release:store:upload
-npm run release:store:publish
-```
-
-## 手動ブラウザスモークテスト
-
-Zipを共有する前に：
-
-1. `npm run release:zip`を実行します。
-2. `npm run sandbox`を実行し、`http://127.0.0.1:4173/`を開きます。
-3. ローカルサンドボックスがJSスコアラーでコメントをレンダリングすることを確認します。
-4. `chrome://extensions`を開きます。
-5. 開発者モードを有効にします。
-6. この拡張機能の古い読み込みコピーを削除します。
-7. `extension/`ディレクトリをアンパックとして読み込みます。
-8. アクティブなチャットを持つYouTubeライブストリームを開きます。
-9. コメントがビデオの上にレンダリングされることを確認します。
-10. シークバーエリアのダンマクトグルが機能することを確認します。
-11. デフォルトのチャット非表示/表示の動作が設定に従うことを確認します。
-12. 公式のYouTubeガイド/警告/推奨テキストがレンダリングされないことを確認します。
-13. 数分待って、新しいコメントが流れ続けることを確認します。
-14. CPU使用率とビデオコントロールが、忙しいチャットの中でも合理的であることを確認します。
-
-## テスターの指示
-
-テスターには、以下を送信することをお勧めします：
-
-- `.release/`からのZipアーティファクト
-- 生成された`.sha256`
-- 生成されたテスターインストールガイド
-- 短いインストール手順
-- 既知の制限
-- 失敗した場合のChromeバージョン、OS、ストリームURL、およびコンソールエラーのリクエスト
-
-テスターインストールフロー：
-
-1. アーティファクトの圧縮を解除します。
-2. `chrome://extensions`を開きます。
-3. 開発者モードを有効にします。
-4. `アンパックを読み込む`をクリックします。
-5. 解凍されたフォルダーを選択します。
-
-## 既知のリリース制限
-
-リスティングは公開済みですが、プロジェクト自体はまだ初期段階です：
-
-- YouTubeのDOMの変更が抽出を破損する可能性があります
-- パフォーマンスはまだ実際の忙しいストリームのプロファイリングが必要です
-- YouTubeのポップアウトチャットタブはサポートされていません。なぜなら、レンダラーが元の視聴ページのビデオプレーヤーを必要とするからです
-- 実際のYouTubeスモークはオプトインです。なぜなら、現在アクティブな公開ストリームとアクセス可能なチャットに依存するからです
-- ストアで公開されるバージョンはChrome ウェブストアの審査後にのみ更新されるため、`main`より1つ以上古い場合があります
-
-## ストアリリースゲート
-
-これらが完了した後にのみ、ストアリリースを提出してください：
-
-- 複数のストリームでの実際のストリームスモークテスト
-- 簡潔なプライバシーノート：すべてのスコアリング/フィルタリングはローカルで行われ、拡張機能によるネットワーク呼び出しは行われません
-- YouTubeのDOM破損に対するロールバックプラン
-- パブリッシャーの認証情報が有効であること：`npm run release:store:status`または`status_only`のworkflow dispatchで確認します
-- マニフェストのバージョンが最新の`vX.Y.Z`タグより上がっていること
-- 前のバージョンが審査待ちのまま残っていないこと：審査待ちがあるとストアはアップロードを拒否します。新しいバージョンで置き換えるときは、workflow dispatchを`cancel_submission: true`で実行し（または`npm run release:store:cancel`）、その後いつも通りバージョンを上げてマージします
-
-## ストアリリースのトラブルシューティング
-
-`Upload to Chrome Web Store`が次のエラーで失敗する場合：
-
-```text
-403 PERMISSION_DENIED
-Permission denied on resource 'publishers/<id>/items/<id>' (or it might not exist).
-```
-
-トークンはAPIに到達しているものの、その主体がそのアイテムを操作する権限を持っていない状態です。次の順に確認します：
-
-1. `CHROME_WEBSTORE_EXTENSION_ID`が公開中のアイテム（`nkphcfhnfjceplpgcjccnpfdkheafohp`）と一致していること。
-2. `CHROME_WEBSTORE_PUBLISHER_ID`がそのアイテムを所有するパブリッシャーと一致していること。
-3. `GCP_SERVICE_ACCOUNT`のサービスアカウントが、Chrome ウェブストア Developer Dashboardでそのパブリッシャーのメンバーとして追加され、招待が承認されていること。
-4. Google CloudプロジェクトでChrome Web Store APIが有効になっていること。
-
-ストアのパッケージに触れずに再確認します：
-
-```sh
-npm run release:store:status
-```
-
-この出力はそのままIssueに貼っても安全です。`scripts/chrome-webstore.mjs`が
-`CHROME_WEBSTORE_PUBLISHER_ID`・`GCP_SERVICE_ACCOUNT`・OAuthシークレットを、
-表示するペイロードとAPIエラーメッセージの両方で`***`に伏せ字化します。実値を
-手で書き戻さないでください。Publisher IDはUUIDであり、GitHubのsecret scanningは
-裸のUUIDを`OpenVSX Access Token`として検知するため、公開リポジトリでは
-シークレットスキャンのアラートが発生します。
-
-認証情報を直した後は、失敗したジョブを再実行するか、`.github/workflows/chrome-webstore-release.yml`の`workflow_dispatch`で再実行できます。CIはストアが受け付けた後にだけタグを付けるため、アップロードに失敗してもタグは残らず、ストアのリスティングも変更されません。審査済みの既存バージョンはそのまま公開され続けます。
+- **`does not match`**: パッケージのファイル、マニフェスト、手で push したタグのバージョンが食い違っています。`npm run version:set -- X.Y.Z` を実行してコミットします。間違ったタグは `git push origin ":refs/tags/<tag>"` で消します。
+- **アップロードや公開が一時的に失敗した**: 失敗したジョブを再実行すると、同じバージョンで再試行します。`github-release` だけが失敗したならそのジョブだけ再実行します。ストアへの提出は繰り返されません。
+- **`Missing required configuration`**: secret が足りません(`gh secret list | grep -E 'CHROME_WEBSTORE_|GCP_'`)。
+- **`publishers/<id>/items/<id>` への `403 PERMISSION_DENIED`**: トークンは有効ですが、その ID にアイテムを扱う権限がありません。`CHROME_WEBSTORE_EXTENSION_ID` が `nkphcfhnfjceplpgcjccnpfdkheafohp` であること、`CHROME_WEBSTORE_PUBLISHER_ID` がそのアイテムを持つパブリッシャーであること、`GCP_SERVICE_ACCOUNT` のサービスアカウントがダッシュボードでそのパブリッシャーに追加され招待が承認済みであること、`GCP_WORKLOAD_IDENTITY_PROVIDER` がこのリポジトリを指していること、Google Cloud プロジェクトで Chrome Web Store API が有効なことを確認します。確認し直すには `npm run release:store:status`。バージョンを上げて回避しようとしないこと。
+- **アップロードは成功し、警告で公開に失敗した**: ログを読み、ダッシュボードで警告を直し、パッチバージョンを上げてリリースし直します。
+- **審査で却下された**: 理由を [PLAN.ja.md](PLAN.ja.md) に書き、コード・権限・掲載文・プライバシーの回答を直し、パッチバージョンを上げてリリースし直します。
 
 ## ロールバック
 
-リリースビルドが不良の場合：
+すぐに戻す手段はありません。できるならダッシュボードで公開を止め、ソースを直し、パッチバージョンを上げてリリースし直します。zip をすでに配っていたなら、問題のあった `.release/*.release.json` を残しておきます。展開して使っているテスターには、古いものを削除して新しいフォルダを読み込んでもらいます。
 
-1. Zipの共有を停止します。
-2. デバッグに必要な場合を除き、不良アーティファクトは保持しません。
-3. ソースを修正します。
-4. パッチバージョンを上げます。
-5. `npm run release:zip`または`npm run release:store`を再実行します。
+---
 
-アンパックされたテスターには、古い拡張機能を削除し、新しい解凍されたフォルダーを読み込むように依頼します。
+## 付録: ストアのアイテムの初期設定
+
+一度だけ行う作業です。アイテムの監査や作り直し、掲載文を変えるときの貼り付け元として残しています。
+
+### 掲載文
+
+- 名前: `Smart YouTube Comment Overlay`
+- 概要: `Nico-style YouTube live chat overlay.`(ロケール文字列 `ext_desc`)
+- 詳細な説明:
+
+  ```text
+  Smart YouTube Comment Overlay displays YouTube live chat as a Nico-style overlay on top of the video.
+
+  The extension scores each comment and uses that score to adjust how quickly comments move across the screen. Short repeated reactions and emoji-heavy bursts move faster, while longer or more informative comments can remain visible longer.
+
+  The extension does not download remote code, does not use WebAssembly, and does not send chat text to an external server.
+
+  Permissions:
+  - storage: saves overlay, display, and performance settings. Blocked users and
+    words are stored locally on the current device.
+
+  Site access:
+  - https://www.youtube.com/*: content scripts read YouTube live chat and render the overlay on YouTube video pages.
+  ```
+
+- サポート URL: `https://github.com/hjosugi/smart-youtube-comment/issues`
+- 画像: `extension/icons/icon128.png`。スクリーンショットはライブ配信にコメントが重なった画面、設定ページ、プレイヤーのトグル。`npm run release:store:assets` で `.release/store-assets/` に宣伝用画像を出力できます。
+
+### プライバシーとデータの使用
+
+- 単一用途: `Display YouTube live chat as an on-video comment overlay and let the user tune local display, performance, and filter settings.`
+- データ収集: `No user data is collected by the developer.`
+- プライバシーの説明: `The extension processes YouTube live chat text locally in the browser only for overlay rendering and local scoring. Chat text is not sent to the developer or to an external server. Display, behavior, and performance settings are saved with Chrome Sync storage when available. Blocked users and blocked words are saved only in local extension storage on the current device and are not synced.`
+- 権限の理由:
+  - `storage: Saves user settings such as overlay enabled state, display options, and performance limits. It also saves blocked users and blocked words locally on the current device.`
+  - `https://www.youtube.com/* site access: Required for content scripts to read YouTube live chat elements and render the comment overlay on YouTube video pages.`
+- リモートコード: `No remote code is used.`
+- データの使用: 「個人を特定できる情報」「個人的なコミュニケーション」「ウェブサイトのコンテンツ」にチェックし、他はチェックしない。3 つの開示にはすべてチェック。
+- プライバシーポリシーの URL: `https://github.com/hjosugi/smart-youtube-comment/blob/main/docs/PRIVACY.md`
+
+### Google Cloud と GitHub
+
+`bash` で、値を自分のものに置き換えて実行します。
+
+```sh
+set -eu
+export GCP_PROJECT_ID="YOUR_GCP_PROJECT_ID"
+export SA_NAME="syc-cws-publisher"
+export WIF_POOL_ID="github"
+export WIF_PROVIDER_ID="smart-youtube-comment"
+export GITHUB_OWNER="$(gh repo view --json owner -q .owner.login)"
+export GITHUB_REPO="$(gh repo view --json name -q .name)"
+export SA_EMAIL="${SA_NAME}@${GCP_PROJECT_ID}.iam.gserviceaccount.com"
+
+gcloud config set project "$GCP_PROJECT_ID"
+gcloud services enable chromewebstore.googleapis.com iam.googleapis.com \
+  iamcredentials.googleapis.com sts.googleapis.com --project "$GCP_PROJECT_ID"
+
+gcloud iam service-accounts describe "$SA_EMAIL" --project "$GCP_PROJECT_ID" >/dev/null 2>&1 ||
+  gcloud iam service-accounts create "$SA_NAME" --project "$GCP_PROJECT_ID" \
+    --display-name "Smart YouTube Comment Chrome Web Store Publisher"
+
+gcloud iam workload-identity-pools describe "$WIF_POOL_ID" --project "$GCP_PROJECT_ID" \
+  --location global >/dev/null 2>&1 ||
+  gcloud iam workload-identity-pools create "$WIF_POOL_ID" --project "$GCP_PROJECT_ID" \
+    --location global --display-name "GitHub Actions"
+
+gcloud iam workload-identity-pools providers describe "$WIF_PROVIDER_ID" --project "$GCP_PROJECT_ID" \
+  --location global --workload-identity-pool "$WIF_POOL_ID" >/dev/null 2>&1 ||
+  gcloud iam workload-identity-pools providers create-oidc "$WIF_PROVIDER_ID" \
+    --project "$GCP_PROJECT_ID" --location global --workload-identity-pool "$WIF_POOL_ID" \
+    --display-name "smart-youtube-comment GitHub" \
+    --issuer-uri "https://token.actions.githubusercontent.com" \
+    --attribute-mapping "google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.repository_owner=assertion.repository_owner,attribute.ref=assertion.ref" \
+    --attribute-condition "assertion.repository == '${GITHUB_OWNER}/${GITHUB_REPO}'"
+
+PROJECT_NUMBER="$(gcloud projects describe "$GCP_PROJECT_ID" --format 'value(projectNumber)')"
+gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" --project "$GCP_PROJECT_ID" \
+  --role roles/iam.workloadIdentityUser \
+  --member "principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${WIF_POOL_ID}/attribute.repository/${GITHUB_OWNER}/${GITHUB_REPO}"
+
+GCP_WORKLOAD_IDENTITY_PROVIDER="$(gcloud iam workload-identity-pools providers describe "$WIF_PROVIDER_ID" \
+  --project "$GCP_PROJECT_ID" --location global --workload-identity-pool "$WIF_POOL_ID" --format 'value(name)')"
+```
+
+続けて:
+
+1. ダッシュボード(アカウント → パブリッシャーの設定)で `$SA_EMAIL` をサービスアカウントとして追加する。
+2. secrets を入れる。
+
+   ```sh
+   gh secret set CHROME_WEBSTORE_PUBLISHER_ID -b "<publisher id>"
+   gh secret set CHROME_WEBSTORE_EXTENSION_ID -b "nkphcfhnfjceplpgcjccnpfdkheafohp"
+   gh secret set GCP_WORKLOAD_IDENTITY_PROVIDER -b "$GCP_WORKLOAD_IDENTITY_PROVIDER"
+   gh secret set GCP_SERVICE_ACCOUNT -b "$SA_EMAIL"
+   ```
+
+3. ワークフローを `status_only: true` で実行する。`Fetch Chrome Web Store status` が成功し、ビルドやアップロードが走らなければ完了。

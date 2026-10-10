@@ -10,7 +10,7 @@
 ## 所有権
 
 - Claudeは、`extension/`（デスクトップChrome）および`web/`（モバイルPWA）内のライブチャット抽出、オーバーレイレンダリング、設定、フィルタリング、ブラウザUXを所有し、`worker/`（Cloudflare Worker）内のInnerTube CORSリレーも所有しています。
-- 以下の`ChatMessage` / `ScoreInput` / `ScoreResult`の形状は、すべての表面で共有されています。モバイルの`web/`ビルドは、スコアラー/レンダラーの最適化された独自のコピーを保持することができます（`extension/`とバイト単位で同一である必要はありません）が、これらの形状を生成/消費し続ける必要があります。
+- 以下の`ChatMessage` / `ScoreInput` / `ScoreResult`の形状は、すべての表面で共有されています。`web/scoring.js` は `extension/scoring.js` とバイト単位で同一に保ちます（`npm run check:shared-drift`）。モバイルのレンダラー（`web/danmaku.js`）は意図的な分岐ですが、これらの形状を受け付け続ける必要があります。`ARCHITECTURE.ja.md` の「共有コード」を参照してください。
 - 共有される動作の変更は、ここおよび`docs/PLAN.md`に反映されなければなりません。
 
 ## 現在のトランスポート

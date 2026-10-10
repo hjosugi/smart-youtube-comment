@@ -1,326 +1,401 @@
-# Smart YouTube Comment — アーキテクチャ / 実装方針
+<!-- i18n: language-switcher -->
+[English](ARCHITECTURE.md) | [日本語](ARCHITECTURE.ja.md)
 
-最終更新: 2026-07-05
+# Architecture
 
-このリポジトリは「YouTube のライブチャットを内容評価しながら niconico 風の弾幕で
-流す」プロジェクトの **単一の完成品リポジトリ**。**Chrome 拡張(デスクトップ)** と
-**モバイル PWA** の **両方** を成果物として含む。
+This repository ships two products that put YouTube live chat over the video as
+Nico-style danmaku:
 
-- **Chrome 拡張(`extension/`)**: デスクトップ www.youtube.com に弾幕を重ねる。既存実装。
-- **モバイル PWA(`web/` + `worker/`)**: モバイルブラウザ向け伴走 Web アプリ。新規実装。
+| Product | Where | How it gets comments | Talks to a server |
+| --- | --- | --- | --- |
+| Chrome extension | `extension/` (desktop, on the Chrome Web Store) | Reads the live-chat frame that YouTube already renders (DOM + `MutationObserver`) | No |
+| Mobile PWA | `web/` + `worker/` (iOS Safari, Android Chrome) | Polls YouTube's InnerTube API (`youtubei/v1`) through a Cloudflare Worker | Yes, the relay only |
 
-評価・描画の中核(`scoring.js` / `danmaku.js`)は両者で共有する。`web/` の
-オーケストレーションとリレー通信は TypeScript、`worker/` も TypeScript だが、
-**過度な共通化はしない**(複雑になるなら最小限に留める方針 — 詳細は §5)。
+Both handle live chat and chat replay (the chat of a past live stream). Neither
+reads the ordinary comment section under a video.
 
-モバイル対応ターゲット: **iOS Safari / Android Chrome / iPhone(Safari)**。
-YouTube 純正アプリへの適用は行わない(技術的に不可)。
+Both end in the same pipeline, with the shapes in [docs/CONTRACT.md](docs/CONTRACT.md):
 
----
-
-## 1. なぜ「拡張機能」ではなく「伴走 Web アプリ」なのか
-
-決定的な制約があり、これが全アーキテクチャを規定する。
-
-| 環境 | 拡張機能 | ユーザースクリプト | 素の Web アプリ |
-|---|---|---|---|
-| iOS Safari | △ Safari Web Extension(Xcode でネイティブアプリ化＋App Store 配布が必須) | △ Userscripts アプリ経由 | ◎ |
-| Android Chrome(素) | **✕ 不可**(Google 仕様) | **✕ 不可** | ◎ |
-| Firefox / Edge Android | ○ | ○ | ◎ |
-
-→ **素の Android Chrome と iOS Safari を 1 つの仕組みで満たせるのは Web アプリだけ。**
-よって「自前サイトに YouTube IFrame Player を埋め込み、その上に弾幕 Canvas を重ねる」
-**伴走 Web アプリ(PWA)** 方式を採用する。
-
-### 採用しなかった案
-
-- **Safari 拡張 + userscript**: 素の Android Chrome が必ず落ちる。iOS は App Store 配布が必要。
-- **userscript 一本化**: ユーザーがスクリプトマネージャ導入必須。素の Android Chrome 非対応。
-
----
-
-## 2. 割り切った制約(重要・仕様)
-
-### バックグラウンド再生は非対応
-
-YouTube IFrame Player を埋め込む方式では、**画面ロック/アプリ切替時の再生は原理的に
-不可能**(OS と YouTube 双方の制限)。これを超えられるのは純正アプリ(Premium)だけ。
-
-できる対策のみ実施する:
-- **Wake Lock API**: 前面にいる間は画面スリープを抑止する。
-- **Media Session API**: ロック画面/通知に再生メタとコントロールを出す(操作のみ。
-  実再生継続は保証しない)。
-
-弾幕視聴は本質的に「画面を見ている＝前面」の用途なので実害は小さい、という前提で割り切る。
-
----
-
-## 3. サーバー負荷を避ける設計(デバイス側オフロード)
-
-方針: **重い処理は全てデバイス側。サーバーは CORS 中継だけの極小プロキシ。**
-
-| 処理 | 実行場所 | 理由 |
-|---|---|---|
-| コメント評価(scoring) | デバイス | 純 JS・ローカル完結。ネットワーク不要 |
-| 重複排除 / 過負荷制御 | デバイス | Canvas レンダラ内で完結 |
-| 弾幕描画(Canvas) | デバイス | GPU/CPU はクライアント資源 |
-| **ライブチャット取得** | **極小 CF Worker** | InnerTube は CORS で**ブラウザから直接叩けない**ため中継が必須 |
-
-### なぜチャット取得だけサーバーが要るのか
-
-- ブラウザから `youtubei` (InnerTube) を直接 fetch すると **CORS で弾かれる**
-  (これがデスクトップ版で拡張機能が必要だった本質的理由)。
-- 公式 YouTube Data API は CORS 可だが、ライブチャットのポーリングで**無料割当が
-  すぐ枯渇**するため不採用。
-- **Cloudflare Worker**: 無料枠・ステートレス・スケール 0。CORS 中継のみを担い、
-  評価・描画は一切載せない。実質ゼロ運用負荷で「サーバー負荷を避ける」要件を満たす。
-
----
-
-## 4. システム構成
-
-```
-┌─────────────────────────── デバイス(ブラウザ / PWA) ───────────────────────────┐
-│                                                                                │
-│   [YouTube IFrame Player]  ◄── 動画再生(純正埋め込み)                          │
-│          ▲                                                                      │
-│          │ 重ねる(pointer-events:none の Canvas)                              │
-│   [Danmaku Canvas Overlay] ◄── danmaku.js(再利用)                            │
-│          ▲                                                                      │
-│          │ push(renderPlan)                                                     │
-│   [Orchestrator app.ts] ──► scoring.js(評価) / filter.js(NG) / settings.js  │
-│          ▲                                                                      │
-│          │ poll(ChatMessage[])                                                  │
-│   [chat-client.ts]                                                              │
-│          │ fetch(JSON, CORS OK)                                                 │
-└──────────┼─────────────────────────────────────────────────────────────────────┘
-           │ HTTPS
-┌──────────▼──────────── Cloudflare Worker(極小・ステートレス) ─────────────────┐
-│   /api/livechat?video=<id> / ?cont=<token> / ?cont=<token>&offset=<ms>&replay=1 │
-│     1. InnerTube `next` で初回 continuation を解決                              │
-│     2. InnerTube `get_live_chat` をポーリング中継                               │
-│     3. CORS ヘッダ付与して JSON を返す(整形は最小限、評価は載せない)          │
-└────────────────────────────────────────────────────────────────────────────────┘
-           │
-┌──────────▼──────────── YouTube InnerTube(youtubei/v1) ────────────────────────┘
+```text
+ChatMessage -> NG filter (filter.js) -> score (scoring.js) -> buildRenderPlan() -> DanmakuOverlay.push() (danmaku.js)
 ```
 
+Scoring, filtering, and rendering always run on the device. The Worker only
+relays chat; it never scores, deduplicates, or renders.
+
 ---
 
-## 5. ディレクトリ構成(拡張 + モバイル 共存)
+## 1. Chrome extension
 
+### 1.1 Frames
+
+A YouTube watch page holds three pieces of this extension, plus the background
+service worker:
+
+```text
+www.youtube.com/watch?v=…  (top frame)        content.js -> initRenderer()
+ ├─ ytd-live-chat-frame > iframe /live_chat     content.js -> initChatExtractor()
+ │    (YouTube's chat, or our hidden stand-in when the chat is closed)
+ └─ .html5-video-player > iframe stage.html     stage.js + danmaku.js
+      (extension origin, its own renderer process)
+
+background service worker                        background.mjs -> background.js
 ```
+
+`manifest.json` injects `content.js` twice: into `/watch*` and `/live/*` (top
+frame only, renderer side) and into `/live_chat*` with `all_frames: true`
+(extraction side). The last lines of `content.js` pick the role from
+`location.pathname`.
+
+### 1.2 How comments are obtained
+
+The extension never requests chat itself. YouTube's own chat frame fetches it
+and renders it into the DOM; the extension reads those DOM nodes. So there is
+no API key, no CORS problem, and no request of our own to YouTube. Users that
+the viewer blocked on YouTube never reach the DOM, so they never reach the
+overlay either.
+
+```text
+/live_chat iframe  (content.js, initChatExtractor)
+  MutationObserver on yt-live-chat-item-list-renderer #items
+  + scan() every 2.5 s: re-attach if YouTube replaced #items, re-read the last 80 nodes
+        |
+  processChatNode(node)
+    isUserChatMessageNode   drop banners, tickers, pinned, deleted/retracted
+    extractMessageParts     text runs + custom emoji <img> -> parts
+    author / kind / authorType / amount / paidColor / channel id
+    isOfficialChatText      drop YouTube's own welcome/guideline lines
+    SYCFilter.apply         NG lists: drop, or censor/replace the text
+    scorer.score -> buildRenderPlan
+        |  chrome.runtime.sendMessage({ type: "smart-comment:chat-message" })
+        v
+background.js
+    sender must be a tab on www.youtube.com; sanitizeRenderPayload
+        |  chrome.tabs.sendMessage(tabId, { type: "smart-comment:render-message" }, { frameId: 0 })
+        v
+top frame  (content.js, initRenderer)
+    sanitizeRenderPayload; optional on-device translation (translate.js)
+        |  stage.push -> postMessage({ type: "push" }) to the stage frame
+        v
+stage.html  (stage.js)
+    checks event.source and origin; sanitizeRenderPayload
+    DanmakuOverlay.push -> canvas
+```
+
+The payload is sanitized again at every hop (background, top frame, stage),
+because each hop receives it from another context.
+
+What `processChatNode()` reads:
+
+| YouTube element | `kind` |
+| --- | --- |
+| `yt-live-chat-text-message-renderer` | `text` |
+| `yt-live-chat-paid-message-renderer` | `paid` |
+| `yt-live-chat-membership-item-renderer` | `membership` |
+
+| Inside the element | Becomes |
+| --- | --- |
+| `#message` (text nodes and `<img>` emoji) | `text`, `parts` (`{t}` text runs, `{u, a}` images) |
+| `#author-name` | `author`; its `external-channel-id` (or the element's `author-external-channel-id`) is the channel ID used by the NG list |
+| `author-type` attribute, else badge `[type=…]` | `authorType`: `owner` / `moderator` / `member` / `normal` |
+| `#purchase-amount`, `--yt-live-chat-paid-message-*-color` | `amount`, `paidColor` (Super Chat) |
+
+Details:
+
+- **Duplicates.** `processedChatNodes` (a `WeakSet`) remembers each processed
+  node. A node is only marked once it has text, so a placeholder that YouTube
+  fills in later is picked up through the `characterData` mutation.
+- **Why only inside the chat frame.** A document-wide observer on the watch
+  page was a measurable source of jank, and the top frame holds no chat nodes.
+- **Chat closed.** Closing YouTube's chat unloads its frame.
+  `createChatSource()` then adds a hidden 1×1 iframe at the URL YouTube's frame
+  last showed (a replay needs its continuation), or at
+  `/live_chat?is_popout=1&v=<id>` for a live stream opened with the chat already
+  closed. For a replay it forwards the video's `timeupdate` as the same
+  `yt-player-video-progress` message YouTube's page sends its own chat frame. A
+  `MutationObserver` on the `collapsed` attribute of `ytd-live-chat-frame`
+  switches the stand-in on and off.
+- **"Hide default chat".** This setting only shrinks YouTube's chat to 1 px with
+  CSS. The frame stays loaded, so extraction continues.
+
+Code map:
+
+| File | Function | Role |
+| --- | --- | --- |
+| `extension/manifest.json` | `content_scripts` | which scripts run in which frames |
+| `extension/content.js` | `initChatExtractor`, `findChatItemsRoot` | observer and periodic re-attach |
+| | `processChatNode`, `isUserChatMessageNode`, `isOfficialChatText` | one node to one payload |
+| | `extractMessageParts`, `extractAuthorType`, `extractAmount`, `extractPaidColor`, `extractAuthorChannelId` | DOM readers |
+| | `safeRuntimeSend` | chat frame to background |
+| | `createChatSource` | hidden stand-in chat frame |
+| | `initRenderer`, `createStage` | top frame: toggle button, stage frame, pointer input, PiP |
+| `extension/background.js` | `onMessage` listener, `isAllowedSender` | chat frame to top frame relay |
+| `extension/stage.js` | `message` listener | stage side: push, clear, start/stop, hit test, pin, hide user |
+| `extension/sanitize.js` | `sanitizeRenderPayload`, `sanitizeMessageParts` | payload and emoji URL validation |
+| `extension/filter.js` | `SYCFilter.apply` | NG users, channels, words, regexes |
+| `extension/scoring.js` | `createFallbackScorer`, `buildRenderPlan` | tier and priority ([docs/SCORING.md](docs/SCORING.md)) |
+| `extension/danmaku.js` | `DanmakuOverlay` | canvas engine |
+
+### 1.3 Rendering in the stage frame
+
+The engine does not run in YouTube's page. `stage.html` is an extension page
+that `content.js` lays over the player as an iframe. It is the only
+`web_accessible_resources` entry, limited to `https://www.youtube.com/*` and
+served through `use_dynamic_url`. In the page, the engine's frame loop made
+YouTube's own page lifecycle run every vsync and froze whenever YouTube ran its
+routine 0.5 s tasks; in the stage it has its own process and frame clock (see
+"Stage Frame" in [docs/PERFORMANCE.md](docs/PERFORMANCE.md)).
+
+- The stage reads settings straight from `chrome.storage`
+  (`SYCSettings.load` / `onChange`). The top frame only forwards comments and
+  pointer input.
+- The stage takes no pointer events. The top frame listens on the player
+  (capture phase), sends `hover` / `select` / `drag*` messages, and the stage
+  answers with what is under the pointer. The right-click menu is built in the
+  page with DOM APIs and `textContent`. "Hide this user" makes the stage write
+  the author to the NG lists; the chat frame's `SYCFilter` sees the storage
+  change and drops that author from then on.
+- Picture-in-picture (beta) moves the `<video>` element into a Document
+  Picture-in-Picture window with a stage of its own. The stage accepts messages
+  from `parent.opener` for this case.
+- Inside the engine, comments are rasterized into shared sprite-atlas pages, so
+  the steady state allocates nothing (see "Sprite Atlas" in
+  [docs/PERFORMANCE.md](docs/PERFORMANCE.md)).
+
+### 1.4 Settings, storage, and the other pages
+
+- `settings.js` is a schema. `options.html` and `popup.html` draw their forms
+  from it, and `toEngineConfig()` turns it into the engine's config.
+  Settings live in `chrome.storage.sync`.
+- `filter.js` holds the NG lists (users, channel IDs, words, regexes, and the
+  drop / censor / replace mode) in `chrome.storage.local` only.
+- `background.js` also handles the `toggle-overlay` and `open-options`
+  keyboard commands.
+
+---
+
+## 2. Mobile PWA
+
+### 2.1 Why a companion web app
+
+| Environment | Extension | Userscript | Plain web app |
+| --- | --- | --- | --- |
+| iOS Safari | needs an Xcode app shipped through the App Store | via the Userscripts app | yes |
+| Android Chrome | not possible | not possible | yes |
+
+Only a web app covers both. The PWA embeds the YouTube IFrame Player on its own
+site and lays a danmaku canvas over it. The official YouTube app cannot be
+extended.
+
+No background playback: an embedded player stops when the screen locks or the
+app is switched, by OS and YouTube policy. The PWA only uses the Wake Lock API
+(keep the screen on while in front) and the Media Session API (lock-screen
+metadata and controls). Watching danmaku means looking at the screen, so this is
+accepted.
+
+### 2.2 Why a relay
+
+A page cannot call InnerTube (`youtubei/v1`) directly because of CORS. The
+official YouTube Data API allows CORS, but polling live chat exhausts its free
+quota quickly. So a stateless Cloudflare Worker relays the InnerTube calls and
+adds CORS headers. Everything else stays on the device.
+
+### 2.3 How comments are obtained
+
+```text
+device (PWA)                         Cloudflare Worker                     YouTube InnerTube
+------------                         -----------------                     -----------------
+app.ts  client.start(videoId)
+chat-client.ts
+  GET /api/livechat?video=<id> --->  index.ts handle() -> fetchEnvelope()
+                                       resolveLiveChat()  ----------------> POST youtubei/v1/next
+                                                          <---------------- conversationBar.liveChatRenderer
+                                                                            .continuations[]
+                                       pollLiveChat(cont) ----------------> POST live_chat/get_live_chat
+                                                          <---------------- actions[]
+                                       parseAction() -> ChatMessage[]
+                               <---  { messages, continuation, timeoutMs, ended, isReplay }
+  onMessages(messages)
+  wait (step() decides how long)
+  GET /api/livechat?cont=<token> ->  (repeat with the continuation)
+```
+
+1. **Resolve.** `?video=<id>`: `resolveLiveChat()` posts `next` and reads
+   `contents.twoColumnWatchNextResults.conversationBar.liveChatRenderer`. That
+   gives the first continuation and whether the chat is a replay. The first
+   poll runs in the same request.
+2. **Live poll.** `pollLiveChat()` posts `live_chat/get_live_chat` with the
+   continuation and reads `continuationContents.liveChatContinuation`:
+
+   ```text
+   actions[]
+     addChatItemAction.item                 (new message)
+     replaceChatItemAction.replacementItem  (a placeholder replaced)
+       liveChatTextMessageRenderer                          -> text
+       liveChatPaidMessageRenderer, liveChatPaidStickerRenderer -> paid
+       liveChatMembershipItemRenderer                       -> membership
+       liveChatSponsorshipsGiftPurchaseAnnouncementRenderer -> membership
+       anything else (banners, polls, …)                    -> dropped
+   continuations[]
+     next token + timeoutMs (clamped to 250–30000 ms)
+     no token -> ended: true, the device stops
+   ```
+
+   Author badges set `authorType`; message runs become text and emoji `parts`.
+3. **Replay poll.** `?cont=<token>&offset=<ms>&replay=1`: `pollReplay()` posts
+   `live_chat/get_live_chat_replay` with `currentPlayerState.playerOffsetMs`,
+   unwraps `replayChatItemAction`, and stamps each message with `offsetMs`. The
+   same continuation is reused; the player position moves the window, and the
+   relay always answers `ended: false` for a replay (the player owns the end). The
+   device shows only messages within 8 s behind to 1.5 s ahead of the playback
+   position (`makeFate` in `playback.ts`), and resets on a backwards seek.
+4. **Device loop.** `createLiveChatClient()` in `chat-client.ts` runs the poll
+   loop around a pure state machine, `step()`:
+   - healthy: wait the server's `timeoutMs`;
+   - quiet (empty polls): stretch the wait by `quietGrowth` per poll, up to 40 s;
+   - errors: exponential backoff with jitter, up to 30 s;
+   - after 4 failures in a row, or right away on a `410`: resolve again from
+     the video ID (the continuation expired);
+   - tab hidden or video paused: no polling at all;
+   - `ended`, or `404` (no live chat): stop.
+5. **Pipeline.** `app.ts` `onMessages()`: `sanitizeChatMessage` (URL checks) ->
+   replay window and seen-ID check -> `filter.apply` -> comment list and
+   `makeRenderer()` (`pipeline.ts`: score, `buildRenderPlan`) ->
+   `overlay.push()`.
+
+Code map:
+
+| File | Function | Role |
+| --- | --- | --- |
+| `worker/src/index.ts` | `handle`, `readParams`, `fetchEnvelope` | routing, validation, edge cache, in-flight collapse, rate limit |
+| `worker/src/innertube.ts` | `resolveLiveChat`, `pollLiveChat`, `pollReplay` | InnerTube calls |
+| | `postWithRetry`, `postOnce` | 3.5 s per attempt, one retry on timeout/5xx |
+| | `extractContinuation`, `parseAction`, `RENDERERS`, `runsToParts`, `authorTypeFromBadges` | pure response transforms |
+| `web/chat-client.ts` | `createLiveChatClient`, `step`, `buildUrl` | adaptive poll loop |
+| `web/app.ts` | `onMessages` | wiring: player, client, filter, list, overlay |
+| `web/pipeline.ts` | `makeRenderer`, `renderBatch` | ChatMessage to danmaku payload |
+| `web/playback.ts` | `makeFate`, `createSeenTracker` | replay window, dedup by ID |
+| `web/player.ts`, `web/lifecycle.ts` | | YouTube IFrame API, Wake Lock, Media Session |
+
+### 2.4 Relay robustness and cost
+
+- **Input.** `video` must be an 11-character ID and `cont` a bounded token;
+  ambiguous `cont` + `offset` without `replay=1` is rejected.
+- **Edge cache.** Envelopes are stored in `caches.default` with
+  `s-maxage = floor(timeoutMs / 1000)`, keyed only on `video` / `cont` / the
+  offset rounded to 3 s. Viewers of the same stream in the same Cloudflare
+  location share one upstream call. Polls with `timeoutMs < 1000` and terminal
+  envelopes are not cached.
+- **Cold bursts.** In-flight requests for the same key share one promise inside
+  an isolate.
+- **Upstream errors.** They come back as `429` (YouTube rate limit), `410` with
+  `reResolve: true` (a 4xx on a continuation: it expired), or `502`, and are
+  cached for 1 s so a stalled upstream is not hit by every viewer at once.
+  `404` means the video has no live chat.
+- **Retries.** The Worker retries once, only on timeout/5xx, which bounds the
+  worst case near 7 s. `429` is not retried; sustained trouble is the device's
+  backoff to handle. (Measured 2026-06-20: InnerTube is reachable from
+  Cloudflare egress at about 1 s per call; it occasionally tarpits a request for
+  a few seconds, which is not a lasting IP block.)
+- **Optional controls.** `ALLOWED_ORIGINS` rejects other browser origins;
+  `RATE_LIMIT_PER_MINUTE` (default 120) limits each client IP per isolate.
+- **Client version.** InnerTube is called as the public `WEB` client, version
+  `2.20240814.00.00` by default. Override it without a code change with the
+  `INNERTUBE_CLIENT_VERSION` variable. `GET /health?deep=1&video=<id>` runs a
+  canary `next` call to catch a rejected version before viewers do.
+- **Free tier.** Each poll is one Worker request, cache hit or not. At 10 s per
+  poll one viewer makes 8,640 requests a day, so the Workers Free 100k/day
+  covers about 11 viewers around the clock, or about 278 one-hour sessions. The
+  edge cache protects YouTube and the egress IP, not this quota. Pausing while
+  hidden and the quiet-chat stretch are what save requests. A WebSocket +
+  Durable Object single flight is the next step, gated in
+  [docs/PLAN.md](docs/PLAN.md).
+
+### 2.5 Mobile specifics
+
+- The canvas is a sibling of the player iframe inside a wrapper, with
+  `pointer-events: none`, so taps reach the YouTube controls.
+- `sw.js` caches the static shell. It never caches the chat API.
+- `store.js` is a `localStorage` shim with the `chrome.storage` surface, so
+  `settings.js` and `filter.js` work unchanged.
+- `ui.ts` / `controls.ts` draw a touch settings sheet from the same schema.
+- `?perf=1` shows a HUD (`perf.ts`): fps, active comments, drops, frame p95,
+  long tasks. Heavier renderer work waits until a real device fails the gate in
+  [docs/PLAN.md](docs/PLAN.md).
+
+---
+
+## 3. Shared code
+
+There is no `shared/` directory and no build step for the engine files. They are
+classic scripts that publish `globalThis.SYC*`, copied into both trees:
+
+| File | Extension vs web |
+| --- | --- |
+| `scoring.js`, `filter.js` | byte-identical; `npm run check:shared-drift` fails otherwise |
+| `emoji.js` | identical |
+| `translate.js` | same logic; the web copy is formatted by `oxfmt` |
+| `danmaku.js` | deliberate fork, tuned per surface |
+| `settings.js` | deliberate fork: same schema, different defaults |
+
+Default differences (`SYCSettings.PROFILE` names the surface; tests pin these
+values, and another test keeps the engine's `DEFAULTS` equal to
+`toEngineConfig(DEFAULTS)`):
+
+| Setting | Extension (desktop) | Web (mobile) |
+| --- | --- | --- |
+| `fontPx` | 24 | 18 |
+| `maxActive` | 2000 | 250 |
+| `maxQueue` | 2400 | 1000 |
+| `spawnPerFrame` | 10 | 6 |
+| `renderScalePct` | 75 | 60 |
+| `dedup` | off | on |
+| `listEnabled` | — | on (web only) |
+
+Change a message or score shape only together with
+[docs/CONTRACT.md](docs/CONTRACT.md).
+
+---
+
+## 4. What YouTube can break
+
+| Surface | Depends on | First check |
+| --- | --- | --- |
+| Extension, extraction | element names `yt-live-chat-*-renderer`, `#items`, `#message`, `#author-name`, the `author-type` attribute | `npm run test:ext:youtube` on a live stream |
+| Extension, page | `ytd-live-chat-frame[collapsed]`, `.html5-video-player`, `.ytp-right-controls`, the `yt-player-video-progress` message | same |
+| Relay | `twoColumnWatchNextResults.conversationBar.liveChatRenderer`, the `RENDERERS` keys, the continuation data keys, the client version | `/health?deep=1`, `node worker/test/probe.mjs` |
+
+---
+
+## 5. Repository layout
+
+```text
 .
-├── ARCHITECTURE.md          # 本ファイル(直下に配置)
-├── extension/               # 【既存・維持】Chrome 拡張(デスクトップ)
-│   ├── manifest.json / background.js / content.js / options.*
-│   ├── scoring.js           # ← 中核(web の出発点)
-│   ├── danmaku.js           # ← 中核(web の出発点)
-│   ├── settings.js / filter.js
-│   └── icons/ _locales/
-├── web/                     # モバイル PWA(静的配信。CF Pages 等)
-│   ├── index.html / styles.css
-│   ├── app.ts               # オーケストレーション(player+chat+scoring+danmaku)
-│   ├── player.ts            # YT IFrame ラッパ + Wake Lock + Media Session
-│   ├── chat-client.ts       # CF Worker をポーリングし ChatMessage[] を返す
-│   ├── store.js             # localStorage シム(chrome.storage の置換)
-│   ├── scoring.js           # ← extension 由来 / モバイル最適化で分岐可(§5.1)
-│   ├── danmaku.js           # ← extension 由来 / モバイル最適化で分岐可(§5.1)
-│   ├── settings.js / filter.js  # 流用(localStorage 化)
-│   ├── ui.ts                # モバイル向け設定パネル(タッチ UI)
-│   ├── sw.js / manifest.webmanifest / icons/
-├── worker/                  # Cloudflare Worker(CORS 中継, TypeScript)
-│   ├── src/index.ts         # Worker エントリ(CORS/ルーティング/キャッシュ)
-│   ├── src/innertube.ts     # InnerTube 中継ロジック(純粋・ランタイム非依存)
-│   ├── test/probe.mjs       # node 実機検証ハーネス
-│   └── wrangler.jsonc / package.json
-└── docs/                    # 補足ドキュメント(契約・性能ノート等)
+├── extension/        Chrome MV3 extension (plain JS, no build step)
+│   ├── manifest.json, background.mjs, background.js
+│   ├── content.js    chat extraction (chat frames) + stage host (top frame)
+│   ├── stage.html, stage.js   the frame the engine runs in
+│   ├── danmaku.js, scoring.js, filter.js, settings.js, sanitize.js, emoji.js, translate.js
+│   ├── options.*, popup.*, _locales/, icons/
+│   └── test/
+├── web/              mobile PWA (TypeScript modules + the shared classic scripts), built to web/dist
+├── worker/           Cloudflare Worker relay (src/index.ts, src/innertube.ts, test/)
+├── bench/            renderer benchmarks, jank traces, browser e2e (bench/e2e)
+├── sandbox/          local page with simulated chat (npm run sandbox)
+├── scripts/          test runner, security gate, packaging, store upload, version bump
+└── docs/             see below
 ```
 
-### 5.1 端末コードは「モバイル独立・最適化優先」
+## 6. Documents
 
-`scoring.js` と `danmaku.js` は extension を出発点にするが、**拡張とのバイト一致は
-要求しない**。`web/` 側はモバイル最適化のために自由に分岐してよい。方針:
-
-- **`shared/` 抽象化やビルドパイプラインは作らない**(複雑さに見合わない)。
-- `web/` 側はモバイル特化で最適化する(例: モバイル GPU 向けに弾幕の間引き・
-  `renderScalePct` 既定低下、スコアリング閾値・表示密度の調整)。extension を壊さず
-  独立して進化できる。
-- 守るのは **`docs/CONTRACT.md` の形(`ChatMessage`/`ScoreInput`/`ScoreResult`)だけ**。
-  実装は両者で分岐してよいが、この契約は両surfaceで満たす。
-- 出発点として両ファイルは `chrome.*` 非依存・`globalThis.SYC*` 公開なので、初期
-  コピーは改変ゼロでそのまま動く。そこからモバイル最適化を加える。
-
-> 言語の選択(なぜ Worker も端末も JS か): Worker は **I/O 中継のみ**(fetch→整形→
-> CORS→キャッシュ)で CPU 処理ゼロ。ボトルネックはネットワークとポーリング間隔。端末
-> スコアリングも軽量テキスト処理で、スコアラ時間はボトルネックではない
-> (`CONTRACT.md`: 実測で V8 に勝つまで別トランスポート追加禁止)。よって全面 JS が最適。
-
-### 5.2 拡張側はそのまま維持
-
-`extension/` の `background.js` / `content.js` / `manifest.json` / `options.*` /
-`_locales/` は **削除しない**。デスクトップ拡張も完成品の一部として残す。
-
----
-
-## 6. データ契約(Contract)
-
-評価ロジックは元実装の契約を踏襲する(`docs/CONTRACT.md` 準拠)。chat-client が
-InnerTube レスポンスを下記 `ChatMessage` 形に正規化し、scoring へ渡す。
-
-```jsonc
-// ChatMessage(worker が生成)
-{
-  "id": "string",
-  "ts": 0,
-  "kind": "text",          // "text" | "paid" | "membership"
-  "author": "string",
-  "authorType": "normal",  // "normal" | "member" | "moderator" | "owner"
-  "authorColor": null,
-  "text": "string",
-  "amount": null,          // paid のみ
-  "offsetMs": 0            // replay/VOD のみ
-}
-
-// LiveChat ポーリング・エンベロープ(worker → 端末)
-{ "messages": [], "continuation": "string|null", "timeoutMs": 1000, "ended": false, "isReplay": false }
-
-// ScoreInput(scoring.js への入力)
-{ "text": "string", "authorType": "normal", "kind": "text" }
-```
-
-正式な契約は `docs/CONTRACT.md`(`ChatMessage` / ポーリング・エンベロープ /
-`ScoreInput` / `ScoreResult`)。`SYCScoring.createFallbackScorer().score()` →
-`buildRenderPlan()` → `SYCDanmaku.DanmakuOverlay.push()` のホットパスは維持する。
-
----
-
-## 7. ライブチャット取得フロー(InnerTube)
-
-CF Worker が以下を中継する(クライアントには CORS 制約のため直接叩かせない)。
-
-1. **初回**: `POST youtubei/v1/next` に `{context, videoId}` を送り、
-   `conversationBar.liveChatRenderer.continuations[].continuation` を取得。
-2. **ポーリング**: `POST youtubei/v1/live_chat/get_live_chat` に
-   `{context, continuation}` を送る。レスポンスから:
-   - `actions[].addChatItemAction.item.*` / `replaceChatItemAction.replacementItem.*`
-     → コメント本体(プレースホルダ差し替えも拾う)
-     - `liveChatTextMessageRenderer`(通常)
-     - `liveChatPaidMessageRenderer` / `liveChatPaidStickerRenderer`(課金 → kind=paid)
-     - `liveChatMembershipItemRenderer` / 各種 Sponsorships(メンバー → kind=membership)
-   - `authorBadges[]` → owner / moderator / member 判定
-   - 次の `continuation` と `timeoutMs`(`[250,30000]` にクランプ)→ 次ポーリング間隔
-3. **終端**: 配信終了で YouTube が continuation を返さなくなったら、relay は
-   `ended:true` / `continuation:null` を返す。端末はこのシグナルで停止する
-   (古いトークンの無限再ポーリングを防ぐ)。
-4. **濫用対策**: relay はエッジキャッシュ(`caches.default`)に URL キーで
-   `s-maxage=floor(timeoutMs/1000)` 保存。同一配信を見る N 視聴者の同一トークン・
-   ポーリングを、同一 Cloudflare POP 内では 1 本の上流呼び出しに集約し、Worker IP の
-   BAN リスクを抑える。POP をまたいだグローバル集約ではないため、地理分散した視聴者は
-   POP ごとに上流呼び出しが発生しうる。`timeoutMs < 1000` の高速ポーリング窓は鮮度を
-   優先してキャッシュしない。キャッシュキーは `video`/`cont`/3秒窓に丸めた `offset` のみで
-   正規化し、無関係なクエリによるキャッシュバストを防ぐ。`video`(11文字ID)/`cont`(長さ・
-   文字集合)を上流呼び出し前に検証。
-5. Worker は最小整形(ChatMessage 化)のみ。**評価・重複排除・描画はクライアント。**
-
-### 7.1 信頼性 — 2層リトライ + 適応 cadence
-
-実測知見(2026-06-20, 実デプロイ): InnerTube は Cloudflare の egress IP からも到達でき、
-ライブ動画で定常的に約1秒・高成功率(キャッシュ無効で 12〜15/15)。ただし**稀に YouTube が
-リクエストを一時的にタールピット**し(数秒ハング→タイムアウト)、単発〜短い連続で失敗する。
-恒常的な IP ブロックではない。これを2層で吸収する:
-
-- **Worker 側(境界化リトライ)** — `postWithRetry` は per-attempt 3.5s タイムアウト
-  (fetch とボディ読取の両方をカバー)で、timeout/5xx のみ最大2回・ジッタ付きで再試行。
-  429 は Worker 側で再試行せず、端末バックオフへ委ねる。
-  **単発ブリップを吸収しつつ最悪レイテンシを ~7s に境界化**(ポーリング間隔内)。叩き続けない。
-- **端末側(適応バックオフ, `web/chat-client.ts`)** — 健全時は server の `timeoutMs`、
-  失敗が続くほど**指数バックオフ(ジッタ付き・上限30s)**で間隔を伸ばし、回復で即リセット。
-  持続失敗時は `videoId` から**再解決**(continuation 失効対策)。relay が stale continuation を
-  410 で返した場合は、閾値を待たず即 `videoId` から再解決する。これが「自動可変」本体で、
-  タールピット中の上流への負荷を下げて回復を早め、共有 egress IP にも優しい。
-- **Cold-key collapse** — Worker isolate 内では同じ正規化 cache key の in-flight Promise を
-  共有し、cache populate 前の同時リクエストも 1 本に寄せる。429/5xx/410 は 1 秒だけ
-  negative cache し、タールピット中の短時間増幅を抑える。
-
-> 持続的な不調は端末がバックオフして負荷を下げていなす設計。Worker は単発吸収＋境界化に
-> 徹し、リトライで上流を叩き続けない(それが throttling を悪化させるため)。
-
-### 7.2 Replay(VOD)対応 — 録画＋チャットリプレイに弾幕
-
-過去ライブの録画(チャットリプレイあり)も対応。リレーは `isReplay` を検出し、ライブの
-`get_live_chat` ではなく **`get_live_chat_replay` を再生位置(`playerOffsetMs`)で seek** する
-(`?cont=&offset=<ms>`)。各メッセージに動画タイムスタンプ `offsetMs` を付与。端末は
-`player.getCurrentTime()` を offset として送り、**現在地の窓 `[-8s, +1.5s]` のメッセージだけ表示**
-(バックログ一括ダンプ防止・id 重複排除)。前方は同期、後方シーク時は表示済み集合をリセット。
-
-### 7.3 端末の最適化
-
-- **デスクトップ拡張既定値**(`extension/settings.js`): `fontPx` 24 / `lineHeight` 30 /
-  `maxActive` 2000 / `maxQueue` 2400 / `spawnPerFrame` 10 / `renderScalePct` 75% /
-  `dedup` off。デスクトップ YouTube タブでは密度と視認性を優先する。
-- **モバイル PWA 既定値**(`web/settings.js`, extension からの分岐): `fontPx` 18 /
-  `lineHeight` 24 / `maxActive` 250 / `maxQueue` 1000 / `spawnPerFrame` 6 /
-  `renderScalePct` 60% / `dedup` on。`listEnabled` は web 専用。弱い端末はレンダラの
-  適応キャップが更に自動で守る。
-- 両 surface の `settings.js` は `SYCSettings.PROFILE` で対象と差分理由を公開し、
-  テストで主要な差分既定値を固定する。`danmaku.js` の renderer `DEFAULTS` は
-  `SYCSettings.toEngineConfig(SYCSettings.DEFAULTS)` と一致するよう回帰テストで守る。
-- **性能 HUD**(`?perf=1`, `web/perf.ts`): fps / active / drop / frameP95 / longTasks を実機表示。
-  OffscreenCanvas 等の重い最適化は**この実測で必要性を確認してから**入れる方針(「実測して
-  から」原則)。周期的なガクつきの実測結果は「コメント1件=canvas1枚」による GC 嵐であり、
-  レンダラを増やすのではなくスプライトアトラスで解決した(`docs/PERFORMANCE.md`)。
-
----
-
-## 8. モバイル特有の実装ポイント
-
-- **Canvas オーバーレイ**: IFrame 内部の DOM は触れない。IFrame を内包する
-  ラッパ div に対し、絶対配置・`pointer-events:none` の Canvas を兄弟要素として重ねる。
-  タップは IFrame(YouTube コントロール)へ素通りする。
-- **DPR / 解像度**: モバイル GPU 負荷を抑えるため `renderScalePct` 既定値を下げる
-  方向で調整(設定で可変)。
-- **タッチ UI**: 設定は元 `options.js` のスキーマ駆動を踏襲しつつ、ボトムシート等の
-  タッチ前提 UI(`ui.ts`)に置換。
-- **PWA**: `manifest.webmanifest` + `sw.js` でホーム画面追加・静的キャッシュ。
-  チャット API はキャッシュしない(常に最新)。
-- **ストレージ**: `chrome.storage` → `localStorage`(`store.js` のシムで吸収。
-  `settings.js` / `filter.js` はこのシム経由に最小改変)。
-
----
-
-## 9. 段階的実装ステップ
-
-1. ✅ **CF Worker(InnerTube 中継)を実装し、実ライブで取得確認**(最大リスクの先行検証)。
-   多視点レビューで堅牢化(終端シグナル・パース網羅・入力検証・非JSON分岐・エッジキャッシュ)。
-   `worker/test/probe.mjs` で実機検証可。
-2. ✅ **実デプロイ(`syc-livechat-relay.acofun.workers.dev`)で CF エッジ IP からの取得を確認**。
-   タールピット対策の **2層リトライ + 適応 cadence** を実装・検証(§7.1)。
-   端末側 `web/chat-client.ts`(適応バックオフ)は純粋な状態機械 `step` + 薄い副作用シェルに
-   分離し、純粋ユニット + 決定論 + 実ライブの3層で検証済み(`web/test/chat-client-pure.mjs`
-   / `chat-client-adaptive.mjs` / `chat-client-live.mjs`)。
-3. ✅ **垂直スライス**: `scoring.js`/`danmaku.js` を `extension/` からコピー、`app.ts` で
-   player + chat-client + scoring + danmaku を結線。**実ブラウザ(headless Chromium)で弾幕
-   描画を e2e 検証**(`web/test/e2e.mjs`)。FP の小モジュール分割(config/pipeline/player/mock)。
-4. ✅ **PWA + ライフサイクル**: `sw.js`(静的シェルキャッシュ・チャットAPIは非キャッシュ) +
-   `manifest.webmanifest` + Wake Lock/Media Session(`lifecycle.ts`)。SW activate を e2e 検証。
-5. ✅ **タッチ設定UI**: `store.js`(localStorage シム)で `settings.js`/`filter.js` を**無改変流用**、
-   schema 駆動の `controls.ts`/`ui.ts` ボトムシート。速度/表示/NG等をライブ反映+永続化を e2e 検証。
-6. 実機(iOS Safari / Android Chrome)で確認・チューニング(CF Pages へデプロイ → 実機)。
-   チェックリストと OffscreenCanvas 等の実測ゲートは `docs/DEVICE_TUNING.md` に従う。
-
-### 9.1 無料枠での運用(measured)
-
-実測した無料枠の天井(§7.1 のリレー + Workers Free 100k req/日):
-- **1ポーリング = 1 Worker リクエスト**(キャッシュ HIT/MISS 問わず Worker が起動)。10秒間隔で
-  1視聴者 8,640 req/日 → **常時24h なら ~11人**、**1時間セッションなら ~278/日**。
-- **キャッシュは無料枠の天井を上げない**(上流 YouTube 呼び出しと IP-BAN 対策にのみ効く)。
-  また、`caches.default` は POP 局所なのでグローバルな単一フライトではない。有料公開規模
-  (数千同時)は WebSocket + Durable Object 単一フライトが必要(ロードマップ)。
-
-無料枠を**有料機能なしで**広げる実装(`chat-client.ts`):
-- **非表示/一時停止中はポーリング停止**(Page Visibility + プレイヤー状態 → `pause()/resume()`)。
-  バックグラウンドのタブはリクエスト消費ゼロ。実利用で最大の節約。
-- **静寂適応**: 0件の窓が続くと間隔を `quietGrowth` 倍に延長(上限 `maxQuietMs`=40s)、
-  メッセージが戻れば即サーバー cadence に復帰。過疎チャットの無駄打ちを削減。
-```
+| Document | Contents |
+| --- | --- |
+| [README.md](README.md) | install, status, development commands |
+| [docs/CONTRACT.md](docs/CONTRACT.md) | `ChatMessage`, poll envelope, `ScoreInput`, `ScoreResult`, render plan |
+| [docs/SCORING.md](docs/SCORING.md) | how a comment is scored, with examples |
+| [docs/PERFORMANCE.md](docs/PERFORMANCE.md) | measured bottlenecks and their fixes |
+| [docs/SECURITY.md](docs/SECURITY.md) | threat model and the release security gate |
+| [docs/PRIVACY.md](docs/PRIVACY.md) | privacy policy (linked from the store listing) |
+| [docs/RELEASE.md](docs/RELEASE.md) | release flow, store automation, store listing reference |
+| [docs/PLAN.md](docs/PLAN.md) | open work, gates, migration notes |
+| [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md) | checks, boundaries, who edits what |

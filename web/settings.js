@@ -14,7 +14,7 @@ import { clamp } from "./math.js";
   });
 
   // Mobile PWA profile. Keep intentional differences from extension/settings.js
-  // in sync with ARCHITECTURE.md §7.3 and the settings tests.
+  // in sync with ARCHITECTURE.md "Shared code" and the settings tests.
   const SCHEMA = [
     { key: "enabled",      group: "General",     label: "Danmaku (overlay)",      type: "bool",                                   default: true },
     { key: "listEnabled",  group: "General",     label: "Comment list",           type: "bool",                                   default: true },

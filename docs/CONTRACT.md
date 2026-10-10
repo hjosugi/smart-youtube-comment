@@ -13,9 +13,10 @@ Contract version: `2`
   browser UX under `extension/` (desktop Chrome) and `web/` (mobile PWA), plus
   the InnerTube CORS relay under `worker/` (Cloudflare Worker).
 - The `ChatMessage` / `ScoreInput` / `ScoreResult` shapes below are shared across
-  all surfaces. The mobile `web/` build may keep its own optimized copy of the
-  scorer/renderer (it is NOT required to be byte-identical to `extension/`), but
-  it MUST keep producing/consuming these shapes.
+  all surfaces. `web/scoring.js` must stay byte-identical to
+  `extension/scoring.js` (`npm run check:shared-drift`); the mobile renderer
+  (`web/danmaku.js`) is a deliberate fork, but it MUST keep consuming these
+  shapes. See "Shared code" in `ARCHITECTURE.md`.
 - Shared behavior changes must be reflected here and in `docs/PLAN.md`.
 
 ## Current Transport

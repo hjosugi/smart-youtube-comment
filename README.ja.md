@@ -46,16 +46,16 @@ Chrome ウェブストアで公開済みです。実装済み:
 
 ## 仕組み
 
-拡張機能は、すべてのYouTubeフレームで`extension/content.js`を実行します。
+拡張機能は YouTube の API を呼びません。YouTube がすでに描画しているチャットを読みます。`extension/content.js` は視聴ページと YouTube のライブチャット iframe で動きます。
 
-1. チャットフレームはYouTubeライブチャットレンダラーノードを監視します。
-2. 各新しいチャットメッセージは`ScoreInput`に正規化されます。
+1. チャット iframe が YouTube のライブチャットのノードを監視します。
+2. 新しいメッセージを DOM から読み、NG リストと照合し、`ScoreInput` に正規化します。
 3. `extension/scoring.js`が端末内で採点します。絵文字や短いリアクションは速く、長文は遅く流れ、画面が混んだときは品質スコアの高いコメントが優先されます。採点でコメントが非表示になることはありません。ルールと例は[docs/SCORING.ja.md](docs/SCORING.ja.md)にあります。
 4. `buildRenderPlan()`は結果を速い/通常/遅い表示タイミングにマッピングします。
 5. バックグラウンドサービスワーカーがチャットフレームからトップビデオフレームにメッセージを中継します。
-6. トップフレームはコメントを`stage.html`（プレーヤー上に重ねた拡張のフレーム）へ渡し、`danmaku.js` canvasエンジンが拡張自身のプロセス、つまりYouTubeのメインスレッドの外でレンダリングします。コメントは共有のスプライトアトラスページに詰め込まれるため、定常状態では何も割り当てず、周期的なGCのガクつきは発生しません（`docs/PERFORMANCE.md`参照）。
+6. トップフレームはコメントを`stage.html`（プレーヤー上に重ねた拡張のフレーム）へ渡し、`danmaku.js` canvasエンジンが拡張自身のプロセス、つまりYouTubeのメインスレッドの外でレンダリングします。コメントは共有のスプライトアトラスページに詰め込まれるため、定常状態では何も割り当てず、周期的なGCのガクつきは発生しません（`docs/PERFORMANCE.ja.md`参照）。
 
-拡張機能はリモートコードを取得しません。
+拡張機能はリモートコードを取得しません。`web/` のモバイル PWA は、同じチャットを `worker/` の Worker 中継経由で YouTube の InnerTube API をポーリングして取得します。両方の経路と、関係するファイル・関数は [ARCHITECTURE.ja.md](ARCHITECTURE.ja.md) にあります。
 
 ## プライバシーとストレージ
 
@@ -114,7 +114,7 @@ SYC_REAL_YOUTUBE_URL="https://www.youtube.com/watch?v=..." npm run test:ext:yout
 
 `test:ext`はローカルで実際のブラウザを開きます。CIでは、デフォルトでスキップされますが、`SYC_REQUIRE_EXTENSION_E2E=1`が設定されている場合は実行されます。`npm test`がChromiumの欠如でスキップするのではなく失敗するようにするには、`SYC_REQUIRE_E2E=1`を設定します。
 
-## ワーカーレイ
+## Worker 中継
 
 `worker/`内のCloudflare WorkerはYouTube InnerTubeライブチャットコールを中継します。デフォルトでは、チェックインされたWEBクライアントバージョンを使用しますが、プロダクションではコード変更なしに上書きできます:
 
@@ -185,7 +185,7 @@ bun run release:zip:bun
 
 アーティファクトは`.release/`に書き込まれ、Gitによって無視されます。詳細は[docs/RELEASE.ja.md](docs/RELEASE.ja.md)を参照してください。
 
-ストアへのリリースは、バージョンを上げたコミットが`main`に入ると[`.github/workflows/chrome-webstore-release.yml`](.github/workflows/chrome-webstore-release.yml)経由で実行され、その後`vX.Y.Z`タグとGitHub Releaseが作成されます。ストアのリスティングとパブリッシャーの初回設定は完了済みです。ワークフローが必要とする認証情報については[docs/STORE_AUTOMATION.ja.md](docs/STORE_AUTOMATION.ja.md)を参照してください。
+ストアへのリリースは、バージョンを上げたコミットが`main`に入ると[`.github/workflows/chrome-webstore-release.yml`](.github/workflows/chrome-webstore-release.yml)経由で実行され、その後`vX.Y.Z`タグとGitHub Releaseが作成されます。ストアのリスティングとパブリッシャーの初回設定は完了済みです。ワークフローが必要とする認証情報は[docs/RELEASE.ja.md](docs/RELEASE.ja.md)にあります。
 
 パッケージとマニフェストのバージョンを一緒に設定します:
 
@@ -195,60 +195,19 @@ npm run version:set -- 0.1.1
 
 これにより、ルート、`web/`、`worker/`、それらのロックファイルのルートメタデータ、および`extension/manifest.json`が更新されます。
 
-## プロジェクトレイアウト
+## ドキュメント
 
-```text
-.
-├── extension/
-│   ├── manifest.json
-│   ├── background.js
-│   ├── scoring.js
-│   ├── danmaku.js
-│   ├── settings.js
-│   ├── filter.js
-│   ├── content.js
-│   ├── stage.html / stage.js
-│   ├── options.html
-│   ├── options.js
-│   └── icons/
-├── bench/
-│   ├── danmaku-bench.html
-│   └── e2e/
-├── web/
-│   ├── app.ts
-│   ├── test/
-│   └── dist/
-├── worker/
-│   ├── src/
-│   ├── test/
-│   └── wrangler.jsonc
-├── sandbox/
-│   └── index.html
-├── docs/
-│   ├── CONTRACT.md
-│   ├── PERFORMANCE.md
-│   ├── RELEASE.md
-│   └── SECURITY.md
-└── scripts/
-    ├── check-sandbox.mjs
-    ├── package-extension.mjs
-    ├── security-check.mjs
-    ├── serve-sandbox.mjs
-    └── set-version.mjs
-```
-
-## 現在のパフォーマンスフォーカス
-
-スコアリングは意図的に小さくローカルです。次の勝利は以下にあります:
-
-- YouTubeチャット抽出の堅牢性
-- キュー/リングバッファの動作
-- テキストラスタライゼーションの予算
-- キャンバス描画ループ
-- Long Taskおよびフレームp95/p99診断
-- `maxActive=2000`を入場制御を通じて応答性を保つ
-
-詳細は[docs/PERFORMANCE.md](docs/PERFORMANCE.md)にあります。
+| ドキュメント | 内容 |
+| --- | --- |
+| [ARCHITECTURE.ja.md](ARCHITECTURE.ja.md) | コメントの取得と描画の仕組み、コードの場所、リポジトリ構成 |
+| [docs/CONTRACT.ja.md](docs/CONTRACT.ja.md) | メッセージ、ポーリングのエンベロープ、採点結果の形 |
+| [docs/SCORING.ja.md](docs/SCORING.ja.md) | コメントの採点方法 |
+| [docs/PERFORMANCE.ja.md](docs/PERFORMANCE.ja.md) | 計測したボトルネックと対策 |
+| [docs/SECURITY.ja.md](docs/SECURITY.ja.md) | 脅威モデルとセキュリティゲート |
+| [docs/PRIVACY.ja.md](docs/PRIVACY.ja.md) | プライバシーポリシー |
+| [docs/RELEASE.ja.md](docs/RELEASE.ja.md) | リリースの流れとストア自動化 |
+| [docs/PLAN.ja.md](docs/PLAN.ja.md) | 残作業、着手条件、移行メモ |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | セットアップ、チェック、守る境界 |
 
 ## ライセンス
 

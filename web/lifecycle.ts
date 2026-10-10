@@ -1,7 +1,7 @@
 // Mobile lifecycle helpers — Wake Lock + Media Session. Both degrade gracefully
 // when the API is absent (older browsers, non-secure contexts, Node), so they are
-// safe to call unconditionally. See ARCHITECTURE.md §2 (no background playback;
-// we only keep the screen awake while in the foreground).
+// safe to call unconditionally. See ARCHITECTURE.md "Why a companion web app"
+// (no background playback; we only keep the screen awake while in the foreground).
 
 const hasNavigator = typeof navigator !== "undefined"
 
@@ -60,7 +60,8 @@ export const createWakeLock = () => {
 }
 
 // Show metadata/controls on the lock screen. (Playback continuation itself is not
-// guaranteed in the IFrame embed — see ARCHITECTURE.md §2.)
+// guaranteed in the IFrame embed — see ARCHITECTURE.md "Why a companion web
+// app".)
 const clearMediaAction = (session: any, action: string) => {
   try {
     session.setActionHandler?.(action, null)

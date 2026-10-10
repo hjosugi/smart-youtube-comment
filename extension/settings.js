@@ -14,7 +14,7 @@
   });
 
   // Desktop profile. Keep intentional differences from web/settings.js in sync
-  // with ARCHITECTURE.md §7.3 and the settings tests.
+  // with ARCHITECTURE.md "Shared code" and the settings tests.
   const SCHEMA = [
     { key: "enabled",      group: "General",     label: "Overlay enabled",        type: "bool",                                   default: true },
     { key: "hideDefaultChat", group: "General",  label: "Hide YouTube chat while overlay is on", type: "bool",                     default: false },

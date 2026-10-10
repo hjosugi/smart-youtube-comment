@@ -13,8 +13,8 @@
 //
 // Edge cache (s-maxage = floor(timeoutMs / 1000)) collapses post-population
 // polls of the same normalized key onto one upstream call (IP-ban mitigation,
-// NOT a quota win — see ARCHITECTURE.md §9.1). A small in-isolate in-flight map
-// also collapses cold-key bursts before cache population.
+// NOT a quota win — see ARCHITECTURE.md "Relay robustness and cost"). A small
+// in-isolate in-flight map also collapses cold-key bursts before cache population.
 
 import {
   DEFAULT_INNERTUBE_CLIENT_VERSION,

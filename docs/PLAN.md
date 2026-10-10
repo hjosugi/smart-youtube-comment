@@ -3,170 +3,114 @@
 
 # Plan
 
-## Current Architecture
+What ships is listed under "Status" in the [README](../README.md), and how it
+works is in [ARCHITECTURE.md](../ARCHITECTURE.md). This file holds what is still
+open, the gates that keep heavier work from starting too early, and migration
+notes for shape changes.
 
-The desktop Chrome extension under `extension/` is JavaScript-only. The mobile
-PWA under `web/` uses TypeScript modules plus copied classic browser scripts,
-and the CORS relay under `worker/` is a TypeScript Cloudflare Worker. Scorer
-time is not the bottleneck; browser rendering, chat extraction, and relay
-resilience are.
+## Open
 
-## Current Split
+- **Real-display check of the stage frame and picture-in-picture.** Headless
+  traces measure main-thread load only. Frame pacing of the stage frame and of
+  PiP (beta) on a real monitor has not been confirmed.
+- **Chat observation when YouTube replaces the chat.** Re-attaching after
+  YouTube recreates `#items`, and the stand-in chat frame used while the chat is
+  closed, have no automated test. Both are checked by hand on a real stream.
+- **PWA on real devices.** Run the checklist below on the deployed PWA.
+- **Pin and drag in the PWA.** The YouTube iframe owns pointer events there, so
+  pinning needs a capture layer first. It works in the extension.
 
-- Claude: `extension/`
-- Codex: CI/tooling, `web/`, `worker/`, and shared release automation when a
-  change needs end-to-end validation
-- Shared: `docs/`, release scripts, package scripts, interface contracts
-- Local notes: `.private-discussion/`
+### PWA device checklist
 
-## Current Scoring Path
+Devices: iOS Safari (current, low-power mode off and then on), Android Chrome
+(current, mid-range device), optionally an older Android device if frame p95
+is close to the gate.
 
-`extension/scoring.js` provides:
+1. Open the deployed PWA.
+2. Start a live stream from the URL field and from the Web Share Target.
+3. Tap-to-play, pause, and the custom controls work.
+4. Live hides the seekbar; replay enables it.
+5. Media Session metadata shows, and play/pause works where supported.
+6. Wake Lock keeps the screen on while in front and releases on stop.
+7. Open `?perf=1` and watch an active chat for at least 3 minutes. Record
+   `fps`, `frameP95`, `frameP99`, `longTasks`, `active`, and `dropped`.
 
-- `SYCScoring.createFallbackScorer()`
-- `SYCScoring.buildRenderPlan(text, result)`
-- speed tiers: fast / normal / slow
+If a device fails, lower `renderScalePct`, `spawnPerFrame`, or `maxActive`
+first. Give iOS and Android different `renderScalePct` defaults only if both
+measurements support it. Put the final values and HUD captures in the release
+notes.
 
-The scorer runs locally in the content script and performs no network calls.
+## Gates
 
-## Contract Migration Notes
+Do not start these until the evidence exists.
 
-- Relay input now accepts YouTube continuation tokens containing percent escapes
-  by decoding one additional layer before validation and cache lookup. The poll
-  envelope and client encoding stay the same; no client migration is required.
-- `paidColor` is an optional display-only `ChatMessage` / render payload field
-  for Super Chat tier color. Older messages without it remain valid; `amount`
-  remains nullable as before.
-- Replay continuation polls now use `replay=1` alongside `cont` and `offset`.
-  Ambiguous `cont + offset` requests without `replay=1` receive a 400 response.
-  Replay `ended` remains device/player-owned, not relay-owned.
+### New scorer transport
 
-## Performance Work
+The scorer is plain JavaScript in the content script (chat frame) and the PWA,
+and it is not the bottleneck. Add another transport only if all hold:
 
-Status as of the current implementation:
+1. a batch or stateful scorer exists outside the extension hot path first;
+2. Chrome/V8 benchmarks show a clear end-to-end win over the JS scorer;
+3. [CONTRACT.md](CONTRACT.md) is updated before the extension depends on the
+   new shape;
+4. the manifest CSP and web-accessible resources are reviewed again.
 
-| Item | Status | Notes |
-| --- | --- | --- |
-| Dev frame/long-task diagnostics | Done | `danmaku.js` exposes frame p50/p95/p99, FPS, active count, cache size, and long-task counters through `stats()`. |
-| Renderer queue/ring-buffer hotspots | Done | Pending comments use `pendingHead` compaction instead of `Array.shift()`, and spawn work is budgeted per frame. |
-| Off-frame rasterization | Done | `push()` enqueues; the frame loop rasterizes under `rasterBudgetMs` with no timers on the render thread (a 1s stats timer caused a ~1 Hz jolt). |
-| Frame-interval smoothing / idle skip | Done | Motion advances by the smoothed frame interval (`frameEMA`) so a missed vsync is a hold, not a hold plus a double jump; the overlay canvas is `desynchronized`; idle frames skip the full-canvas clear. |
-| Configurable maxActive with interactivity guard | Done | `maxActive`, `maxQueue`, and `spawnPerFrame` are settings-backed; spawn budget falls under high frame EMA. |
-| Chat observation after player replacement | Partial | Lifecycle and chat-client tests cover reconnection behavior, but real YouTube DOM replacement remains a manual smoke item. |
-| Official guide/warning filtering | Done | Extension extraction tests cover official-message filtering and sanitized render payloads. |
-| Real device tuning | Checklist ready | `docs/DEVICE_TUNING.md` defines iOS/Android smoke steps, HUD metrics, and tuning thresholds. |
-| Sprite atlas (periodic jolt fix) | Done | Comments are packed into shared GPU-backed atlas pages that are recycled by reference count; per-comment canvases caused a major-GC storm every 0.5–3 s. `bench/jank-trace.mjs` guards it. |
-| Heavy renderer optimizations | Gated | OffscreenCanvas/worker rasterization requires the `docs/DEVICE_TUNING.md` performance gate to fail on real devices first. |
+### Heavier renderer (OffscreenCanvas, worker rasterization)
 
-The next performance work should focus on the browser path:
+Keep Canvas2D unless a real device in the checklist above shows one of:
 
-1. Add dev-only long-task and frame p95/p99 diagnostics.
-2. Fix queue/ring-buffer hotspots in renderer admission.
-3. Keep `maxActive` configurable up to 2000 while protecting video interactivity.
-4. Keep YouTube chat observation attached after iframe or `#items` replacement.
-5. Keep official YouTube guide/warning/recommendation messages out of danmaku.
+- `frameP95 > 33 ms` for more than 30 s while `active < maxActive`;
+- long tasks growing repeatedly during normal chat bursts;
+- touch or video controls visibly delayed while comments flow.
 
-Use these commands:
+A prototype must include before/after HUD captures on those devices and must not
+regress emoji, Super Chat color, or comment-list scrolling.
 
-- `npm run security`
-- `npm test`
-- `npm run coverage`
-- `npm run test:e2e` for renderer performance
-- `npm run test:ext` for real Chromium extension smoke testing
-- `SYC_REAL_YOUTUBE_URL="https://www.youtube.com/watch?v=..." npm run test:ext:youtube`
-  for opt-in real YouTube smoke testing
+### Relay single flight (WebSocket + Durable Object)
 
-## Scorer Transport Gate
+The relay stays stateless HTTP polling (edge cache, in-flight collapse, rate
+limit; see "Relay robustness and cost" in ARCHITECTURE.md). Move on only when
+relay metrics show:
 
-Do not add a new scorer transport unless all are true:
+- a high MISS rate among many viewers of the same video;
+- upstream 429/5xx bursts despite cache tuning;
+- client-visible latency from repeated re-resolve or continuation churn.
 
-1. A batch or stateful scorer exists outside the extension hot path first.
-2. Chrome/V8 benchmarks show a clear end-to-end win over the JS scorer.
-3. `docs/CONTRACT.md` is updated before the extension depends on the new shape.
-4. Manifest CSP and web-accessible resources are reviewed again.
+Candidate: one Durable Object per video ID owns a single upstream poll loop and
+broadcasts `PollEnvelope` batches to clients over WebSocket; clients send their
+playback offset for replay. HTTP `/api/livechat` stays as the fallback until the
+WebSocket path is measured. Acceptance: no scoring or rendering moves into the
+Worker; per-video memory stays bounded under disconnect churn; replay offsets
+are grouped or sampled so one scrubbing viewer cannot multiply upstream calls;
+metrics compare upstream calls, latency, and errors between the two paths.
 
-## Release Automation
+## Migration notes
 
-Chrome Web Store update publishing is automated through:
+Shapes (see [CONTRACT.md](CONTRACT.md)):
 
-- `scripts/chrome-webstore.mjs`
-- `npm run release:store`
-- `.github/workflows/chrome-webstore-release.yml`
+- The relay decodes one more layer of percent escapes in continuation tokens
+  before validation and cache lookup. Envelope and client encoding are
+  unchanged.
+- `paidColor` is an optional, display-only field on `ChatMessage` and the render
+  payload. Messages without it stay valid; `amount` stays nullable.
+- Replay polls send `replay=1` with `cont` and `offset`. `cont` + `offset`
+  without `replay=1` is a 400. The relay keeps replay `ended: false`; the player
+  decides when a replay is over.
 
-The one-time Chrome Web Store Developer Dashboard setup is done. The item is
-published as `nkphcfhnfjceplpgcjccnpfdkheafohp`, and a version bump on `main`
-runs checks, builds the zip, uploads it, submits it for review/publishing, then
-tags `vX.Y.Z` and creates the GitHub Release.
+Stored settings:
 
-The remaining manual work per release is Chrome Web Store review itself, so the
-published version can trail `main`. Keep the publisher credentials for the
-release workflow valid; `docs/RELEASE.md` has the checklist for `403` upload
-failures.
+- `lineHeight` (px) is no longer read. Stored values normalize to the
+  `lineHeightScale` default; the engine still receives px (`fontPx * scale`).
+- The filter store gained `mode` (`drop` / `censor` / `replace`) and
+  `replacement`. Older records normalize to `drop` and the default replacement.
 
-## Upstream Feature Adoption
+## Store review
 
-Reference: `ys-j/YoutubeLiveChatFlusher` (independent implementation; no code is
-copied, only feature ideas). Work is split into phases so each one is
-independently testable and releasable.
+Record rejection reasons here.
 
-Phase 1 — settings/renderer polish (done in v0.2.5):
+## Credits
 
-- Per-type visibility gates (`showNormal`, `showMember`, `showModerator`,
-  `showOwner`, `showPaid`, `showMembership`), enforced in `DanmakuOverlay.push`.
-- Per-type font multipliers (`scaleMember`, `scaleModerator`, `scaleOwner`,
-  `scalePaid`) and a `sizeByScore` toggle.
-- `authorName` mode (`never` / `nontext` / `always`).
-- Outline `outlineColor` and `outlineBlur` (part of the raster cache key).
-- `lineHeightScale` replaces the absolute `lineHeight` px setting; the engine
-  still receives `lineHeight` px, derived as `fontPx * scale`.
-- NG words gain `mode` (`drop` / `censor` / `replace`) and `replacement` in the
-  local filter store; `SYCFilter.apply()` returns `{ drop, text }` and
-  `content.js` / `web/app.ts` mask instead of dropping when configured.
-- `open-options` command (`Alt+Shift+O`) alongside `toggle-overlay`.
-
-Phase 2 — rendering expression:
-
-- Done: `flowDirection` (`rtl` / `ltr`) and `density` (`top` / `bottom` /
-  `random`) in the engine spawn/lane logic.
-- Done: `maxWidthPct` clamps a comment to a fraction of the stage, trimming with
-  an ellipsis (pixel-measured, not char-counted).
-- Done: `layerCss` injects user CSS into the overlay layer (`<style>` with
-  `textContent`, 4000-char cap).
-- Done: `wrapText` wraps overflowing comments into up to 3 lines instead of
-  trimming them; `maxWidthPct` still applies.
-- Done: custom emoji images in the extension. `content.js` extracts text runs
-  and emoji `<img>` elements from the live-chat DOM, `sanitize.js` validates the
-  URLs (`sanitizeMessageParts`), and the renderer draws emoji parts like the
-  PWA does. `extension/emoji.js` loads the images.
-- Remaining: PiP.
-
-Phase 3 — interaction:
-
-- Done: `timeshiftMs` (web only) shifts the chat replay gate so archive comments
-  can be shown earlier or later; the extension has no reliable per-message
-  timestamps, so it is PWA-only.
-- Done: right-click a comment to pin it in place (it stops moving and will not
-  expire or be evicted), then drag it with the left button; the same toggle
-  releases it. Gated by the `pinComments` setting and bound in the capture
-  phase so YouTube's own player handlers do not fire when a comment is hit.
-  Note: this works in the extension (content script on the watch page). In the
-  PWA the YouTube iframe owns pointer events, so pin/drag needs a dedicated
-  capture layer before it can work there.
-- Done: on-device translation via the browser's built-in Translator /
-  LanguageDetector APIs (Chrome, experimental). `extension/translate.js` (shared
-  verbatim with `web/`) caches results, detects the source language, and returns
-  the original text when the API or a language pack is unavailable. Nothing
-  leaves the device, so the privacy stance is unchanged. Enabled by the
-  `translateTo` setting (default off).
-- Remaining: PiP.
-
-Migration note: `lineHeight` px settings are no longer read; stored values
-normalize to the new `lineHeightScale` default. The filter store gains `mode`
-and `replacement`; older records without them normalize to `drop` and the
-default replacement, so no migration step is required.
-
-## Worker Roadmap
-
-`docs/WORKER_ROADMAP.md` tracks the WebSocket + Durable Object single-flight
-candidate. It remains gated on HTTP relay metrics proving cache/in-flight
-collapse insufficient.
+Several settings and interactions (per-type visibility and size, author name
+mode, outline, flow direction, density, maximum width, wrapping, user layer CSS,
+pinning, time shift) follow ideas from `ys-j/YoutubeLiveChatFlusher`. They are
+independent implementations; no code was copied.

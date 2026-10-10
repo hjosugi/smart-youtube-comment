@@ -1,6 +1,6 @@
 // Service Worker — caches the built app shell for instant load / home-screen
 // launch. The live-chat API and all cross-origin requests (YouTube, the relay)
-// are NEVER cached: chat must always be fresh. See ARCHITECTURE.md §8.
+// are NEVER cached: chat must always be fresh. See ARCHITECTURE.md "Mobile specifics".
 // (web/dist is the deployed output: app.js is the bundled module graph; the rest
 // are script globals, shared helpers, and static assets.)
 
