@@ -71,6 +71,7 @@
 
 - `lineHeight`(px)は読まなくなりました。保存済みの値は `lineHeightScale` の既定値に正規化されます。エンジンには引き続き px(`fontPx * scale`)を渡します。
 - フィルターの保存データに `mode`(`drop` / `censor` / `replace`)と `replacement` が加わりました。古いレコードは `drop` と既定の置換文字に正規化されます。
+- 真偽値の `scaleWithPlayer` は `fontScaleMode` セレクト(`fixed` / `up` / `relative`)になりました。保存済みの `true` は `up`、`false` は `fixed` として読みます。`relative` は `fontPx` を 720px のプレイヤーでのサイズとして扱い、小さいウィンドウでは縮小もします(下限 0.5 倍)。
 
 ## ストアの審査
 

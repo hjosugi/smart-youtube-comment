@@ -39,7 +39,8 @@ Published on the Chrome Web Store. Implemented:
 - canvas danmaku renderer in an extension stage frame over the player
 - right-click menu on a comment: pin and drag it, or hide everything from its
   author (saved to the NG list)
-- text that grows with the player in fullscreen
+- text size that can track the player (grows in fullscreen, shrinks in small
+  windows with the "relative" font scaling mode)
 - comments keep flowing when YouTube's chat is closed (a hidden chat frame
   stands in, replays included)
 - picture-in-picture with comments (beta, Document Picture-in-Picture)

@@ -45,7 +45,7 @@
   "s_outlineBlur": { "message": "縁取りのぼかし" },
   "s_authorName": { "message": "投稿者名を表示" },
   "s_sizeByScore": { "message": "スコアで文字サイズを変える" },
-  "s_scaleWithPlayer": { "message": "大きいプレーヤーでは文字を大きくする（全画面など）" },
+  "s_fontScaleMode": { "message": "文字サイズの拡大縮小" },
   "s_showNormal": { "message": "一般ユーザーを表示" },
   "s_showMember": { "message": "メンバーを表示" },
   "s_showModerator": { "message": "モデレーターを表示" },

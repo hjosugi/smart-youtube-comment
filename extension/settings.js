@@ -49,7 +49,12 @@
         { value: "always", label: "Always" }
       ] },
     { key: "sizeByScore",  group: "Display",     label: "Vary size by score",     type: "bool",                                   default: true },
-    { key: "scaleWithPlayer", group: "Display",  label: "Enlarge text in big players (fullscreen)", type: "bool",                  default: true },
+    { key: "fontScaleMode", group: "Display",    label: "Font scaling",           type: "select",  default: "up",
+      options: [
+        { value: "fixed", label: "Fixed size (same in every player)" },
+        { value: "up", label: "Enlarge in big players (fullscreen)" },
+        { value: "relative", label: "Scale with player size (relative)" }
+      ] },
     { key: "pinComments",  group: "Behavior",    label: "Right-click menu on comments (pin, hide user)", type: "bool",                             default: true },
     { key: "translateTo",  group: "Behavior",    label: "Translate comments (on-device)", type: "select", default: "",
       options: [
@@ -178,7 +183,10 @@
     const clean = {};
     for (const spec of SCHEMA) {
       const value = input[spec.key];
-      if (spec.type === "bool") clean[spec.key] = normalizeBool(value, spec.default);
+      // v0.3.x stored a boolean `scaleWithPlayer`; migrate it to the select.
+      if (spec.key === "fontScaleMode" && value == null && input.scaleWithPlayer != null) {
+        clean[spec.key] = normalizeBool(input.scaleWithPlayer, true) ? "up" : "fixed";
+      } else if (spec.type === "bool") clean[spec.key] = normalizeBool(value, spec.default);
       else if (spec.type === "range") clean[spec.key] = normalizeRange(spec, value);
       else if (spec.type === "color") clean[spec.key] = normalizeColor(value, spec.default);
       else if (spec.type === "text") clean[spec.key] = normalizeText(value, spec.default, spec.maxLength);
@@ -219,7 +227,7 @@
       outlineBlur: safe.outlineBlur,
       authorName: safe.authorName,
       sizeByScore: safe.sizeByScore,
-      scaleWithPlayer: safe.scaleWithPlayer,
+      fontScaleMode: safe.fontScaleMode,
       pinComments: safe.pinComments,
       showNormal: safe.showNormal,
       showMember: safe.showMember,

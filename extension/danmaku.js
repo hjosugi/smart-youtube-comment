@@ -33,7 +33,7 @@
     topPct: 0.08,         // keep top 8% clear
     bottomPct: 0.14,      // keep bottom 14% clear (controls)
     gapPx: 28,            // min horizontal gap between same-lane comments
-    scaleWithPlayer: true, // enlarge text in players taller than SCALE_REF_HEIGHT (fullscreen)
+    fontScaleMode: "up",  // fixed | up (enlarge in big players) | relative (scale both ways)
     dedup: false,         // drop near-duplicates of recently shown comments
     simThreshold: 3,      // Hamming distance <= this => near-duplicate
     recentMax: 400,
@@ -88,16 +88,19 @@
     "textColor",
     "roleColors"
   ];
-  const GEOMETRY_CONFIG_KEYS = ["dpr", "lineHeight", "topPct", "bottomPct", "scaleWithPlayer"];
+  const GEOMETRY_CONFIG_KEYS = ["dpr", "lineHeight", "topPct", "bottomPct", "fontScaleMode"];
 
   const COLORS = { owner: "#ffca28", moderator: "#5e9bff", member: "#7CFC8C", normal: "#ffffff" };
   const AUTHOR_BOOST = { owner: 0.40, moderator: 0.25, member: 0.10, normal: 0 };
   const TARGET_FRAME_MS = 1000 / 60;
   const MIN_CAP_FRAME_MS = 50;
   const LONG_GAP_MS = 500; // frame gap above this is a pause, not a hitch
-  // With scaleWithPlayer, sizes are as set up to this player height and grow
-  // with it beyond (fullscreen); normal and theater players look unchanged.
+  // Font scaling relative to this player height. `up` keeps the configured size
+  // up to this height and only grows beyond (fullscreen). `relative` treats the
+  // configured size as the size at this reference, so a small window shrinks the
+  // text too (down to SCALE_MIN) instead of letting it dominate the player.
   const SCALE_REF_HEIGHT = 720;
+  const SCALE_MIN = 0.5;
   const SCALE_MAX = 3;
   const MAX_WRAP_LINES = 3; // hard cap on wrapped lines per comment
   // Sprite-atlas geometry (device px). A page is 2 MB RGBA; pages are opened
@@ -128,6 +131,16 @@
     return (sig >>> (32 - DEDUP_BUCKET_BITS)) & ((1 << DEDUP_BUCKET_BITS) - 1);
   }
 
+  // Accept the legacy boolean `scaleWithPlayer` from older configs/callers and
+  // express it as the current `fontScaleMode` select (extension/settings.js).
+  function normalizeScaleConfig(cfg) {
+    if (!cfg || typeof cfg !== "object") return cfg;
+    if (cfg.fontScaleMode == null && cfg.scaleWithPlayer != null) {
+      return Object.assign({}, cfg, { fontScaleMode: cfg.scaleWithPlayer ? "up" : "fixed" });
+    }
+    return cfg;
+  }
+
   function truncateText(text, maxChars) {
     const s = String(text || "");
     if (s.length <= maxChars) return text; // fast path: no spread/array for short text
@@ -153,7 +166,7 @@
 
   class DanmakuOverlay {
     constructor(cfg) {
-      this.cfg = Object.assign({}, DEFAULTS, cfg);
+      this.cfg = Object.assign({}, DEFAULTS, normalizeScaleConfig(cfg));
       this.active = [];
       this.nextActive = [];
       this.activeMinHeap = [];
@@ -197,7 +210,7 @@
       this.drag = null;         // active pin-drag state
       this._loop = this._loop.bind(this);
       this.w = 1; this.h = 1; this.laneCount = 1; this.laneTop = 0; this.laneH = this.cfg.lineHeight;
-      this.scale = 1;           // text scale for the player size (scaleWithPlayer)
+      this.scale = 1;           // text scale for the player size (fontScaleMode)
       this.gap = this.cfg.gapPx;
     }
 
@@ -283,13 +296,14 @@
     }
 
     setConfig(partial) {
+      const next = normalizeScaleConfig(partial) || {};
       const shouldClearRasterCache = RASTER_CONFIG_KEYS.some((key) =>
-        partial[key] != null && partial[key] !== this.cfg[key]
+        next[key] != null && next[key] !== this.cfg[key]
       );
       const shouldResize = GEOMETRY_CONFIG_KEYS.some((key) =>
-        partial[key] != null && partial[key] !== this.cfg[key]
+        next[key] != null && next[key] !== this.cfg[key]
       );
-      Object.assign(this.cfg, partial);
+      Object.assign(this.cfg, next);
       if (shouldClearRasterCache) this.cache.clear();
       if (partial.maxActive != null || partial.minActive != null) this._updateDynamicCap();
       if (this.canvas && shouldResize) this._resize();
@@ -332,9 +346,13 @@
       this.canvas.height = Math.round(this.h * dpr);
       const usable = this.h * (1 - this.cfg.topPct - this.cfg.bottomPct);
       // Steps of 5% so a window being dragged does not re-rasterize every pixel.
-      this.scale = this.cfg.scaleWithPlayer
-        ? Math.round(clamp(1, SCALE_MAX, this.h / SCALE_REF_HEIGHT) * 20) / 20
-        : 1;
+      const ratio = this.h / SCALE_REF_HEIGHT;
+      const target = this.cfg.fontScaleMode === "relative"
+        ? clamp(SCALE_MIN, SCALE_MAX, ratio)
+        : this.cfg.fontScaleMode === "fixed"
+          ? 1
+          : clamp(1, SCALE_MAX, ratio);
+      this.scale = Math.round(target * 20) / 20;
       this.laneH = Math.round(this.cfg.lineHeight * this.scale);
       this.gap = Math.round(this.cfg.gapPx * this.scale);
       this.laneCount = Math.max(3, Math.floor(usable / this.laneH));

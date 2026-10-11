@@ -103,6 +103,10 @@ Stored settings:
   `lineHeightScale` default; the engine still receives px (`fontPx * scale`).
 - The filter store gained `mode` (`drop` / `censor` / `replace`) and
   `replacement`. Older records normalize to `drop` and the default replacement.
+- The `scaleWithPlayer` boolean became the `fontScaleMode` select (`fixed` /
+  `up` / `relative`); a stored `true` reads as `up`, `false` as `fixed`.
+  `relative` treats `fontPx` as the size at a 720 px player and also shrinks the
+  text in smaller windows (down to 0.5x).
 
 ## Store review
 

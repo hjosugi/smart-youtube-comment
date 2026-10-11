@@ -45,7 +45,7 @@
   "s_outlineBlur": { "message": "Outline blur" },
   "s_authorName": { "message": "Show author name" },
   "s_sizeByScore": { "message": "Vary size by score" },
-  "s_scaleWithPlayer": { "message": "Enlarge text in big players (fullscreen)" },
+  "s_fontScaleMode": { "message": "Font scaling" },
   "s_showNormal": { "message": "Show normal users" },
   "s_showMember": { "message": "Show members" },
   "s_showModerator": { "message": "Show moderators" },
