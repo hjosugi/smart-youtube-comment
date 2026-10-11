@@ -54,6 +54,6 @@
     "oxlint": "1.85.0",
     "playwright": "1.63.0",
     "typescript": "7.0.2",
-    "wrangler": "4.138.0"
+    "wrangler": "4.148.0"
   }
 }
