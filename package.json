@@ -54,7 +54,7 @@
     "oxlint": "1.87.0",
     "playwright": "1.64.0",
     "typescript": "7.0.2",
-    "wrangler": "4.148.0"
+    "wrangler": "4.151.3"
   },
   "overrides": {
     "sharp@>=0.0.0 <0.35.5": "0.35.5",
