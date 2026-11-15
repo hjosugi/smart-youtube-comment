@@ -42,6 +42,19 @@
     return window.top === window;
   }
 
+  // When the extension is updated, reloaded or removed, this script keeps
+  // running in the tabs that were already open, cut off from the extension:
+  // its stage frame is gone and chrome.* calls throw. It then takes down what
+  // it added (see retire() in initRenderer), so that a YouTube chat it was
+  // hiding comes back.
+  function extensionAlive() {
+    try {
+      return Boolean(chrome.runtime?.id);
+    } catch {
+      return false;
+    }
+  }
+
   function safeRuntimeSend(message) {
     try {
       chrome.runtime.sendMessage(message, () => {
@@ -670,6 +683,11 @@
     };
 
     const attach = () => {
+      if (retired) return;
+      if (!extensionAlive()) {
+        retire();
+        return;
+      }
       observeShell();
       if (!isWatchPage() || !hasLiveChatShell()) {
         toggle?.remove();
@@ -729,6 +747,10 @@
     };
 
     const saveSettings = async (next) => {
+      if (!extensionAlive()) {
+        retire();
+        return;
+      }
       applySettings(next);
       if (!Settings) return;
       try {
@@ -770,14 +792,42 @@
       pageObserver.observe(shell, { childList: true, subtree: true });
     };
 
+    const navigationListeners = [];
+    // Cut off from the extension: remove the buttons, the stage, the stand-in
+    // chat frame, the styles and the "hide YouTube chat" class, and stop
+    // listening. YouTube's own MutationObserver traffic on a watch page reaches
+    // attach() within a fraction of a second, which is what notices it.
+    let retired = false;
+    const retire = () => {
+      if (retired) return;
+      retired = true;
+      clearTimeout(attachTimer);
+      pageObserver?.disconnect();
+      chatShellObserver?.disconnect();
+      for (const [event, listener] of navigationListeners) window.removeEventListener(event, listener);
+      trackedVideo?.removeEventListener?.("pause", applyVideoPauseState);
+      trackedVideo?.removeEventListener?.("play", applyVideoPauseState);
+      trackedVideo = null;
+      pip?.win.close(); // its pagehide puts the video back (closePip)
+      toggle?.remove();
+      pipButton?.remove();
+      overlay.detach();
+      chatSource.remove();
+      document.documentElement.classList.remove("syc-hide-default-chat");
+      document.getElementById("syc-runtime-styles")?.remove();
+      document.getElementById("syc-layer-css")?.remove();
+    };
+
     attach();
     for (const event of ["yt-navigate-finish", "yt-page-data-updated", "yt-player-updated", "popstate"]) {
-      window.addEventListener(event, () => {
+      const listener = () => {
         if (event === "yt-navigate-finish") pip?.win.close();
         overlay.clear();
         observeShell();
         scheduleAttach();
-      });
+      };
+      navigationListeners.push([event, listener]);
+      window.addEventListener(event, listener);
     }
 
     Settings?.onChange((next) => {
@@ -791,9 +841,13 @@
       return false;
     });
 
-    // On-device translation happens here (top frame), before the stage. The
-    // engine keeps its raster cache keyed on text, so repeated messages reuse
-    // bitmaps. translate() never throws and returns the source when unavailable.
+    // On-device translation happens here (top frame), before the stage. Each
+    // text run is translated and custom emoji stay where they were; the stage
+    // draws a comment from its parts, so the parts are what must change.
+    // translate() never throws and returns the source when unavailable.
+    // Translations of one language pair run one after another, so in a fast
+    // chat they fall behind: a comment whose translation is not back within
+    // TRANSLATE_WAIT_MS is shown as it is, while it is still live.
     const pushPayload = (payload) => {
       const target = settings.translateTo;
       const T = globalThis.SYCTranslate;
@@ -801,11 +855,41 @@
         overlay.push(payload);
         return;
       }
-      T.translate(payload.text, target).then((text) => {
+      let shown = false;
+      const show = (next) => {
+        if (shown) return;
+        shown = true;
+        clearTimeout(timer);
         if (!settings.enabled || !overlay.attached || settings.translateTo !== target) return;
-        overlay.push(text && text !== payload.text ? { ...payload, text } : payload);
-      });
+        overlay.push(next);
+      };
+      const timer = setTimeout(() => show(payload), TRANSLATE_WAIT_MS);
+      translatePayload(T, payload, target).then(show, () => show(payload));
     };
+
+    // A translator needs a user gesture before this site's first use of it;
+    // T.activate() creates the ones comments asked for meanwhile.
+    for (const type of ["pointerdown", "keydown"]) {
+      window.addEventListener(type, () => {
+        const T = globalThis.SYCTranslate;
+        if (settings.translateTo && T?.waiting?.()) T.activate();
+      }, { capture: true, passive: true });
+    }
+  }
+
+  const TRANSLATE_WAIT_MS = 1500;
+
+  async function translatePayload(T, payload, target) {
+    const parts = payload.parts?.length ? payload.parts : [{ t: payload.text }];
+    let changed = false;
+    const translated = await Promise.all(parts.map(async (part) => {
+      if (part.t == null || !part.t.trim()) return part;
+      const out = await T.translate(part.t, target);
+      if (!out || out === part.t) return part;
+      changed = true;
+      return { t: out };
+    }));
+    return changed ? { ...payload, text: partsToText(translated), parts: translated } : payload;
   }
 
   // A watch page, whatever its URL: /watch?v=, /live/<id>, or a channel's
@@ -871,7 +955,14 @@
     const start = () => {
       observe();
       scan();
-      window.setInterval(() => {
+      const timer = window.setInterval(() => {
+        // Cut off from the extension (updated or removed): nothing can be
+        // sent any more, so stop watching the chat.
+        if (!extensionAlive()) {
+          window.clearInterval(timer);
+          observer?.disconnect();
+          return;
+        }
         observe();
         scan();
       }, 2500);
@@ -912,7 +1003,7 @@
     return fresh.length - first;
   }
 
-  async function processChatNode(node) {
+  function processChatNode(node) {
     if (!isUserChatMessageNode(node)) return;
     if (processedChatNodes.has(node)) return;
 
@@ -1123,6 +1214,7 @@
       isOfficialChatText,
       isUserChatMessageNode,
       processChatNode,
+      translatePayload,
       resetProcessedNodes() {
         processedChatNodes = new WeakSet();
       },

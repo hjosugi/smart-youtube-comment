@@ -34,6 +34,7 @@ const hasKey = key => {
 for (const spec of sandbox.globalThis.SYCSettings.SCHEMA) {
   hasKey(`s_${spec.key}`)
   hasKey(`g_${String(spec.group).toLowerCase()}`)
+  if (spec.note) hasKey(`sn_${spec.key}`)
 }
 
 for (const key of Object.keys(sandbox.globalThis.SYCSettings.SPEED_PRESETS)) {
@@ -58,4 +59,11 @@ for (const key of [
   hasKey(key)
 }
 
-console.log("i18n ok (locale keys + schema/preset coverage)")
+// Every __MSG_name__ in the manifest (name, description, action title,
+// shortcut descriptions) resolves in both locales.
+const manifest = readFileSync(resolve("extension/manifest.json"), "utf8")
+const manifestKeys = [...manifest.matchAll(/__MSG_(\w+)__/g)].map(match => match[1])
+assert.ok(manifestKeys.includes("cmd_toggle_overlay"), "shortcut descriptions are localized")
+for (const key of manifestKeys) hasKey(key)
+
+console.log("i18n ok (locale keys + schema/preset coverage + manifest messages)")

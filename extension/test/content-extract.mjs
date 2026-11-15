@@ -161,6 +161,7 @@ const loadLiveChatStartup = () => {
     chrome: {
       i18n: { getMessage: () => "" },
       runtime: {
+        id: "test-extension",
         lastError: null,
         sendMessage(message, callback) {
           sandbox.sentMessages.push(message)
@@ -182,8 +183,11 @@ const loadLiveChatStartup = () => {
     sentMessages: [],
     window: {
       setInterval(callback, delay) {
-        intervals.push({ callback, delay })
+        intervals.push({ callback, delay, cleared: false })
         return intervals.length
+      },
+      clearInterval(id) {
+        intervals[id - 1].cleared = true
       },
     },
   }
@@ -368,6 +372,32 @@ assert.equal(sandbox.sentMessages[4].payload.kind, "text")
   assert.equal(startup.sandbox.sentMessages.length, 0)
   assert.equal(startup.intervals.length, 1)
   assert.equal(startup.intervals[0].delay, 2500)
+
+  // While the extension is there the periodic scan keeps going; once it has
+  // been updated or removed (chrome.runtime.id is gone) the scan stops.
+  startup.intervals[0].callback()
+  assert.equal(startup.intervals[0].cleared, false)
+  delete startup.sandbox.chrome.runtime.id
+  startup.intervals[0].callback()
+  assert.equal(startup.intervals[0].cleared, true)
+}
+
+{
+  // Translation changes the parts the stage draws from: each text run is
+  // translated and custom emoji stay where they were.
+  const { helpers: tr } = loadHelpers()
+  const T = { translate: async (source) => (source.trim() === "hello" ? "こんにちは" : source) }
+  const emoji = { u: "https://yt3.ggpht.com/e.png", a: ":wave:" }
+  const payload = { text: "hello :wave:", parts: [{ t: "hello " }, emoji], kind: "text" }
+  const out = await tr.translatePayload(T, payload, "ja")
+  assert.equal(JSON.stringify(out.parts), JSON.stringify([{ t: "こんにちは" }, emoji]))
+  assert.equal(out.text, "こんにちは:wave:")
+  // Nothing translated: the payload is passed on unchanged.
+  const same = { text: "8888", parts: [{ t: "8888" }], kind: "text" }
+  assert.equal(await tr.translatePayload(T, same, "ja"), same)
+  // A payload without parts is translated from its text.
+  const plain = await tr.translatePayload(T, { text: "hello", parts: [], kind: "text" }, "ja")
+  assert.equal(JSON.stringify(plain.parts), JSON.stringify([{ t: "こんにちは" }]))
 }
 
 {
@@ -407,4 +437,4 @@ assert.equal(sandbox.sentMessages[4].payload.kind, "text")
   assert.equal(box.sentMessages.at(-1).payload.text, "new one")
 }
 
-console.log("content-extract ok (69 assertions)")
+console.log("content-extract ok (76 assertions)")

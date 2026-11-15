@@ -33,14 +33,14 @@
         "default": "Alt+Shift+D",
         "mac": "Alt+Shift+D"
       },
-      "description": "Toggle danmaku overlay"
+      "description": "__MSG_cmd_toggle_overlay__"
     },
     "open-options": {
       "suggested_key": {
         "default": "Alt+Shift+O",
         "mac": "Alt+Shift+O"
       },
-      "description": "Open overlay settings"
+      "description": "__MSG_cmd_open_options__"
     }
   },
   "options_ui": {

@@ -47,6 +47,7 @@ const SUITES = [
   ["unit", "extension/test/i18n.mjs"],
   ["unit", "extension/test/options.mjs"],
   ["unit", "extension/test/settings-filter.mjs"],
+  ["unit", "extension/test/translate.mjs"],
   ["unit", "web/test/playback.mjs"],
   ["unit", "web/test/config.mjs"],
   ["unit", "web/test/history.mjs"],
