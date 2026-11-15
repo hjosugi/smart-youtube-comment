@@ -57,7 +57,7 @@
       ] },
     { key: "pinComments",  group: "Behavior",    label: "Right-click menu on comments (pin, hide user)", type: "bool",                             default: true },
     { key: "translateTo",  group: "Behavior",    label: "Translate comments (on-device)", type: "select", default: "",
-      note: "Uses the browser's built-in translation (Chrome 138 or later), on this device. Before a language is translated for the first time, the browser needs a click or key press on the YouTube page; until then comments are shown as they are. Browsers without the translation models (Brave, for one) show them untranslated.",
+      note: "Uses the browser's built-in translation (Chrome 138 or later), on this device. Before a language is translated for the first time, the browser needs a click or key press on the YouTube page, then downloads that language (this can take a minute); until then comments are shown as they are. Browsers without the translation models (Brave, for one) show them untranslated.",
       options: [
         { value: "", label: "Off" },
         { value: "en", label: "English" },

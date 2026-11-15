@@ -847,7 +847,8 @@
     // translate() never throws and returns the source when unavailable.
     // Translations of one language pair run one after another, so in a fast
     // chat they fall behind: a comment whose translation is not back within
-    // TRANSLATE_WAIT_MS is shown as it is, while it is still live.
+    // TRANSLATE_WAIT_MS is shown as it is, while it is still live, and its
+    // translation is cancelled so that it does not hold up the ones after it.
     const pushPayload = (payload) => {
       const target = settings.translateTo;
       const T = globalThis.SYCTranslate;
@@ -855,6 +856,7 @@
         overlay.push(payload);
         return;
       }
+      const controller = new AbortController();
       let shown = false;
       const show = (next) => {
         if (shown) return;
@@ -863,8 +865,11 @@
         if (!settings.enabled || !overlay.attached || settings.translateTo !== target) return;
         overlay.push(next);
       };
-      const timer = setTimeout(() => show(payload), TRANSLATE_WAIT_MS);
-      translatePayload(T, payload, target).then(show, () => show(payload));
+      const timer = setTimeout(() => {
+        controller.abort();
+        show(payload);
+      }, TRANSLATE_WAIT_MS);
+      translatePayload(T, payload, target, controller.signal).then(show, () => show(payload));
     };
 
     // A translator needs a user gesture before this site's first use of it;
@@ -879,12 +884,12 @@
 
   const TRANSLATE_WAIT_MS = 1500;
 
-  async function translatePayload(T, payload, target) {
+  async function translatePayload(T, payload, target, signal) {
     const parts = payload.parts?.length ? payload.parts : [{ t: payload.text }];
     let changed = false;
     const translated = await Promise.all(parts.map(async (part) => {
       if (part.t == null || !part.t.trim()) return part;
-      const out = await T.translate(part.t, target);
+      const out = await T.translate(part.t, target, { signal });
       if (!out || out === part.t) return part;
       changed = true;
       return { t: out };

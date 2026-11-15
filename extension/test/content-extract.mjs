@@ -386,10 +386,19 @@ assert.equal(sandbox.sentMessages[4].payload.kind, "text")
   // Translation changes the parts the stage draws from: each text run is
   // translated and custom emoji stay where they were.
   const { helpers: tr } = loadHelpers()
-  const T = { translate: async (source) => (source.trim() === "hello" ? "こんにちは" : source) }
+  const signals = []
+  const T = {
+    translate: async (source, _target, { signal } = {}) => {
+      signals.push(signal)
+      return source.trim() === "hello" ? "こんにちは" : source
+    },
+  }
   const emoji = { u: "https://yt3.ggpht.com/e.png", a: ":wave:" }
   const payload = { text: "hello :wave:", parts: [{ t: "hello " }, emoji], kind: "text" }
-  const out = await tr.translatePayload(T, payload, "ja")
+  const controller = new AbortController()
+  const out = await tr.translatePayload(T, payload, "ja", controller.signal)
+  // The caller's signal reaches translate(), so a translation it stops waiting for is cancelled.
+  assert.equal(signals.length === 1 && signals[0] === controller.signal, true)
   assert.equal(JSON.stringify(out.parts), JSON.stringify([{ t: "こんにちは" }, emoji]))
   assert.equal(out.text, "こんにちは:wave:")
   // Nothing translated: the payload is passed on unchanged.
@@ -437,4 +446,4 @@ assert.equal(sandbox.sentMessages[4].payload.kind, "text")
   assert.equal(box.sentMessages.at(-1).payload.text, "new one")
 }
 
-console.log("content-extract ok (76 assertions)")
+console.log("content-extract ok (77 assertions)")
