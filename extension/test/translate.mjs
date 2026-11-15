@@ -13,15 +13,25 @@ const equal = (actual, expected, message) => {
   assertions++
 }
 
-function loadTranslate({ detected = {}, availableSite = new Set(), detectorAvailable = false, failCreate = new Set(), detectorMissing = false } = {}) {
-  const log = { creates: [], destroyed: [], translateCalls: 0, detectorCreates: 0 }
+function loadTranslate({ detected = {}, availableSite = new Set(), detectorAvailable = false, failCreate = new Set(), detectorMissing = false, translateMs = 0, gestureExpiresOnCreate = false } = {}) {
+  const log = { creates: [], destroyed: [], translateCalls: 0, detectorCreates: 0, detectCalls: 0 }
   const activation = { isActive: false }
   class FakeTranslator {
     constructor(sourceLanguage, targetLanguage) {
       this.pair = `${sourceLanguage}>${targetLanguage}`
     }
-    async translate(text) {
+    async translate(text, { signal } = {}) {
       log.translateCalls++
+      if (translateMs) {
+        // a slow translation that its signal can cancel, as Chrome's can
+        await new Promise((done, fail) => {
+          const timer = setTimeout(done, translateMs)
+          signal?.addEventListener("abort", () => {
+            clearTimeout(timer)
+            fail(signal.reason)
+          }, { once: true })
+        })
+      }
       return `[${this.pair}] ${text}`
     }
     destroy() {
@@ -41,7 +51,11 @@ function loadTranslate({ detected = {}, availableSite = new Set(), detectorAvail
         const pair = `${sourceLanguage}>${targetLanguage}`
         log.creates.push(pair)
         if (failCreate.has(pair)) throw new Error("NetworkError")
-        if (!activation.isActive && !availableSite.has(pair)) throw new Error("NotAllowedError")
+        if (gestureExpiresOnCreate) {
+          gestureExpiresOnCreate = false // only the first time
+          activation.isActive = false
+        }
+        if (!activation.isActive && !availableSite.has(pair)) throw new DOMException("needs a user gesture", "NotAllowedError")
         availableSite.add(pair) // created once on this site: available from now on
         return new FakeTranslator(sourceLanguage, targetLanguage)
       },
@@ -53,10 +67,11 @@ function loadTranslate({ detected = {}, availableSite = new Set(), detectorAvail
       },
       async create() {
         log.detectorCreates++
-        if (!activation.isActive && !detectorAvailable) throw new Error("NotAllowedError")
+        if (!activation.isActive && !detectorAvailable) throw new DOMException("needs a user gesture", "NotAllowedError")
         detectorAvailable = true
         return {
           async detect(text) {
+            log.detectCalls++
             const hit = detected[text]
             return hit ? [{ detectedLanguage: hit[0], confidence: hit[1] }] : [{ detectedLanguage: "und", confidence: 1 }]
           },
@@ -79,25 +94,63 @@ const flush = () => new Promise(done => setTimeout(done, 0))
   equal(log.detectorCreates, 0, "the detector is not created without a gesture")
   equal(T.waiting(), true, "the detector waits for a gesture")
 
-  // A gesture creates the detector; the pair then needs one of its own.
+  // One gesture creates the detector and, while the gesture still counts,
+  // the pair of the comment that waited for it.
   activation.isActive = true
   T.activate()
   await flush()
   activation.isActive = false
   equal(log.detectorCreates, 1, "the gesture created the detector")
-  equal(await T.translate("안녕하세요", "ja"), "안녕하세요", "still untranslated: the pair has no translator yet")
+  equal(log.creates, ["ko>ja"], "and the waiting comment's pair")
+  equal(T.waiting(), false, "nothing waits any more")
+  equal(await T.translate("안녕하세요", "ja"), "[ko>ja] 안녕하세요", "translated after one gesture")
+  equal(await T.translate("안녕하세요", "ja"), "[ko>ja] 안녕하세요", "repeated text is served from the cache")
+  equal(log.translateCalls, 1, "the waiting comment was translated on the gesture; repeats come from the cache")
+}
+
+{
+  // The gesture expired before the detector was ready: the pair waits for
+  // the next one.
+  const { T, log, activation } = loadTranslate({ detected: { "안녕하세요": ["ko", 0.98] } })
+  await T.translate("안녕하세요", "ja")
+  activation.isActive = true
+  T.activate()
+  activation.isActive = false
+  await flush()
+  equal(log.detectorCreates, 1, "the gesture created the detector")
   equal(log.creates, [], "the pair is not created without a gesture")
   equal(T.waiting(), true, "the pair waits for a gesture")
+  equal(await T.translate("안녕하세요", "ja"), "안녕하세요", "still untranslated")
 
   activation.isActive = true
   T.activate()
   await flush()
   activation.isActive = false
-  equal(log.creates, ["ko>ja"], "the gesture created the pair's translator")
+  equal(log.creates, ["ko>ja"], "the next gesture created the pair's translator")
   equal(T.waiting(), false, "nothing waits any more")
-  equal(await T.translate("안녕하세요", "ja"), "[ko>ja] 안녕하세요", "translated after the gesture")
-  equal(await T.translate("안녕하세요", "ja"), "[ko>ja] 안녕하세요", "repeated text is served from the cache")
-  equal(log.translateCalls, 1, "the cache saved a second translate() call")
+  equal(await T.translate("안녕하세요", "ja"), "[ko>ja] 안녕하세요", "translated after the second gesture")
+}
+
+{
+  // create() refused because the gesture ran out between the check and the
+  // call: the pair waits for the next gesture instead of counting as failed.
+  const { T, log, activation } = loadTranslate({
+    detected: { "hello there": ["en", 0.9] },
+    detectorAvailable: true,
+    gestureExpiresOnCreate: true,
+  })
+  activation.isActive = true
+  equal(await T.translate("hello there", "ja"), "hello there", "a refused create() leaves the text as it is")
+  await flush()
+  equal(log.creates, ["en>ja"], "create() was tried once")
+  equal(T.waiting(), true, "and the pair waits for a gesture")
+  equal(await T.translate("hello there", "ja"), "hello there", "it is not tried again without one")
+  equal(log.creates, ["en>ja"], "still one create()")
+  activation.isActive = true
+  T.activate()
+  await flush()
+  activation.isActive = false
+  equal(await T.translate("hello there", "ja"), "[en>ja] hello there", "the next gesture created it")
 }
 
 {
@@ -178,6 +231,29 @@ const flush = () => new Promise(done => setTimeout(done, 0))
   activation.isActive = true
   T.activate()
   equal(log.detectorCreates, 0, "and a gesture does not try to create it")
+}
+
+{
+  // A caller that stopped waiting (the comment was already shown as it is):
+  // the original comes back, the queued translation is cancelled, and nothing
+  // is cached, so the next copy of the text is translated.
+  const { T, log } = loadTranslate({
+    detected: { "hello there": ["en", 0.9] },
+    availableSite: new Set(["en>ja"]),
+    detectorAvailable: true,
+    translateMs: 1000,
+  })
+  const controller = new AbortController()
+  const started = Date.now()
+  const pending = T.translate("hello there", "ja", { signal: controller.signal })
+  while (log.translateCalls === 0) await flush()
+  controller.abort()
+  equal(await pending, "hello there", "a cancelled translation leaves the text as it is")
+  equal(Date.now() - started < 500, true, "without waiting for the translation to finish")
+
+  equal(await T.translate("hello there", "ja", { signal: AbortSignal.abort() }), "hello there", "already given up: left as it is")
+  equal(log.detectCalls, 1, "and no work is started for it")
+  equal(log.translateCalls, 1, "not even a translation")
 }
 
 console.log(`translate ok (${assertions} assertions)`)

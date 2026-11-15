@@ -11,7 +11,8 @@
   // "downloadable" until then. Comments arrive without a gesture, so a pair
   // that needs one is noted and created on the user's next click or key press
   // on the page (activate(), wired up in content.js). Its comments are shown
-  // untranslated until then.
+  // untranslated until then. One click is enough for both: the comments that
+  // waited for the detector name the pairs to create while the click counts.
   //
   // Classic script (export-free) so Chrome can load it as a content script;
   // consumers read globalThis.SYCTranslate.
@@ -20,15 +21,19 @@
   const MAX_TRANSLATORS = 4; // each holds a language model; the least recently used is destroyed
   const RETRY_MS = 60000; // a create() that failed is not tried again for this long
   const MIN_CONFIDENCE = 0.5; // below this a short comment's language is a guess: leave it as is
+  const MAX_UNDETECTED = 8;
   const cache = new Map(); // `${target}\u0000${source}` -> translated text
   const translators = new Map(); // "from>to" -> { instance, creating, failedAt }, least recently used first
   const wanted = new Set(); // "from>to" pairs waiting for a user gesture
+  const undetected = []; // [text, target] of comments that waited for the detector, newest last
   let detector = { instance: null, creating: null, failedAt: 0, wanted: false };
 
   const hasTranslator = () => typeof globalThis.Translator?.create === "function";
   const hasDetector = () => typeof globalThis.LanguageDetector?.create === "function";
   const hasGesture = () => globalThis.navigator?.userActivation?.isActive === true;
   const primaryTag = (tag) => String(tag || "").toLowerCase().split("-")[0];
+  // create() rejects with this when the gesture it needed has expired.
+  const needsGesture = (error) => error?.name === "NotAllowedError";
 
   function cacheGet(key) {
     const value = cache.get(key);
@@ -65,8 +70,9 @@
       .then((instance) => {
         state.instance = instance;
         return instance;
-      }, () => {
-        state.failedAt = Date.now();
+      }, (error) => {
+        if (needsGesture(error)) state.wanted = true;
+        else state.failedAt = Date.now();
         return null;
       })
       .finally(() => {
@@ -113,8 +119,13 @@
       .then((instance) => {
         entry.instance = instance;
         return instance;
-      }, () => {
-        entry.failedAt = Date.now();
+      }, (error) => {
+        if (needsGesture(error)) {
+          if (translators.get(key) === entry) translators.delete(key);
+          wanted.add(key);
+        } else {
+          entry.failedAt = Date.now();
+        }
         return null;
       })
       .finally(() => {
@@ -145,12 +156,12 @@
   }
 
   // The comment's language, "" when it cannot be told, or null when there is
-  // no detector (yet).
-  async function detectLanguage(text) {
+  // no detector (yet) or the caller gave up.
+  async function detectLanguage(text, signal) {
     const instance = await getDetector();
-    if (!instance) return null;
+    if (!instance || signal?.aborted) return null;
     try {
-      const [best] = await instance.detect(text);
+      const [best] = await instance.detect(text, { signal });
       const lang = best?.detectedLanguage || "";
       return lang && lang !== "und" && (best.confidence ?? 1) >= MIN_CONFIDENCE ? lang : "";
     } catch {
@@ -159,23 +170,38 @@
   }
 
   // Returns the translated text, or the original when translation is off,
-  // unavailable, unnecessary, or fails. Never throws.
-  async function translate(text, targetLanguage) {
+  // unavailable, unnecessary, or fails. Never throws. A caller that stops
+  // waiting aborts `signal`: the work still queued for the text is dropped
+  // (a translator handles one text at a time, so in a fast chat it would
+  // hold up the comments after it) and the original comes back.
+  /**
+   * @param {string} text
+   * @param {string} targetLanguage
+   * @param {{ signal?: AbortSignal }} [options]
+   */
+  async function translate(text, targetLanguage, { signal } = {}) {
     const source = String(text || "");
     if (!targetLanguage || !source.trim() || !hasTranslator()) return source;
     const key = `${targetLanguage}\u0000${source}`;
     const hit = cacheGet(key);
     if (hit !== undefined) return hit;
-    const from = await detectLanguage(source);
-    if (from === null) return source; // no detector yet: try again next time
+    const from = await detectLanguage(source, signal);
+    if (from === null) {
+      // No detector yet: try again next time.
+      if (detector.wanted) {
+        undetected.push([source, targetLanguage]);
+        if (undetected.length > MAX_UNDETECTED) undetected.shift();
+      }
+      return source;
+    }
     if (!from || primaryTag(from) === primaryTag(targetLanguage)) {
       cacheSet(key, source);
       return source;
     }
     const instance = await getTranslator(from, targetLanguage);
-    if (!instance) return source;
+    if (!instance || signal?.aborted) return source;
     try {
-      const out = await instance.translate(source);
+      const out = await instance.translate(source, { signal });
       const value = typeof out === "string" && out ? out : source;
       cacheSet(key, value);
       return value;
@@ -191,7 +217,15 @@
   // one, the most recently wanted pairs first.
   function activate() {
     if (!waiting() || !hasGesture()) return;
-    if (detector.wanted && hasDetector()) createDetector();
+    if (detector.wanted && hasDetector()) {
+      const waited = undetected.splice(0);
+      // The gesture still counts for a few seconds once the detector is
+      // ready: translating the comments that waited for it creates their
+      // pairs now, instead of on another click.
+      createDetector().then((instance) => {
+        if (instance) for (const [text, target] of waited) translate(text, target);
+      });
+    }
     if (!hasTranslator()) return;
     const keys = [...wanted].slice(-MAX_TRANSLATORS);
     wanted.clear();
@@ -211,6 +245,7 @@
       for (const entry of translators.values()) entry.instance?.destroy?.();
       translators.clear();
       wanted.clear();
+      undetected.length = 0;
       detector = { instance: null, creating: null, failedAt: 0, wanted: false };
     }
   };
