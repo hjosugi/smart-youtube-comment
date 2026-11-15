@@ -134,6 +134,12 @@ const schema = [
 const defaults = Object.fromEntries(schema.map((spec) => [spec.key, spec.default]))
 const saves = []
 const filterSaves = []
+let stored = { ...defaults }
+const settingsListeners = []
+let storedFilters = { users: ["old-user"], words: ["old-word"], channels: ["UCold"] }
+let filterMode = "censor"
+let filterReplacement = "■"
+const filterListeners = []
 const document = buildDocument()
 const sandbox = {
   clearTimeout,
@@ -155,22 +161,41 @@ sandbox.globalThis.SYCSettings = {
     niconico: { label: "Niconico (fast)", speedPct: 120, fastMs: 3500, normalMs: 4000, slowMs: 5000, spreadStrength: 20 },
   },
   async load() {
-    return { ...defaults }
+    return { ...stored }
   },
   async save(values) {
     saves.push(values)
+    stored = { ...values }
+  },
+  onChange(callback) {
+    settingsListeners.push(callback)
   },
   normalize(values) {
     return { ...defaults, ...(values || {}) }
   },
 }
 sandbox.globalThis.SYCFilter = {
+  MODES: ["drop", "censor", "replace"],
+  // Like the real filter, load() returns the lists only; mode and replacement
+  // are getters.
   async load() {
-    return { users: ["old-user"], words: ["old-word"], channels: ["UCold"] }
+    return { ...storedFilters }
   },
   async save(values) {
     filterSaves.push(values)
+    storedFilters = { users: values.users, words: values.words, channels: values.channels }
+    if (values.mode) filterMode = values.mode
+    if (typeof values.replacement === "string") filterReplacement = values.replacement
     return values
+  },
+  get mode() {
+    return filterMode
+  },
+  get replacement() {
+    return filterReplacement
+  },
+  onChange(callback) {
+    filterListeners.push(callback)
   },
   cleanList(input) {
     const list = Array.isArray(input) ? input : String(input || "").split("\n")
@@ -263,8 +288,8 @@ assert.equal(
     users: ["alice"],
     words: ["spam", "/w{5,}/"],
     channels: ["UC1"],
-    mode: "drop",
-    replacement: "",
+    mode: "censor",
+    replacement: "■",
   }),
 )
 
@@ -275,4 +300,38 @@ assert.equal(
   JSON.stringify({ users: [], words: [], channels: [] }),
 )
 
-console.log("options ok (21 assertions)")
+// The filter mode and replacement shown are the stored ones, not "drop" and "".
+const modeSelect = document.querySelectorAll("select").at(-1)
+assert.equal(modeSelect.value, "censor")
+
+// A setting changed elsewhere while the page is open (the player button, the
+// popup) is shown here, and a later edit on this page does not put the old
+// value back.
+stored = { ...stored, fastMs: 4500 }
+for (const listener of settingsListeners) listener({ ...stored })
+const fastRange = document.querySelectorAll("input").filter((input) => input.type === "range")[1]
+assert.equal(Number(fastRange.value), 4500)
+speed.value = 160
+speed.dispatchEvent("input")
+stored = { ...stored, slowMs: 12000 } // changed elsewhere while this edit waits to be saved
+await wait(800)
+assert.equal(saves.at(-1).speedPct, 160)
+assert.equal(saves.at(-1).fastMs, 4500)
+assert.equal(saves.at(-1).slowMs, 12000)
+
+// A user hidden from a comment while the page is open is not dropped by the
+// next edit of another filter field.
+const textareas = document.querySelectorAll("textarea")
+const [usersField, wordsField] = textareas
+storedFilters = { ...storedFilters, users: [...storedFilters.users, "troll"] }
+for (const listener of filterListeners) listener({ ...storedFilters })
+assert.equal(usersField.value, "troll")
+wordsField.value = "spam\nnew-word"
+wordsField.dispatchEvent("input")
+await wait(800)
+assert.deepEqual([...filterSaves.at(-1).users], ["troll"])
+assert.deepEqual([...filterSaves.at(-1).words], ["spam", "new-word"])
+assert.equal(filterSaves.at(-1).mode, "censor")
+assert.equal(filterSaves.at(-1).replacement, "■")
+
+console.log("options ok (31 assertions)")

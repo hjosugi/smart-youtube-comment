@@ -2,6 +2,8 @@
   "ext_name": { "message": "スマート YouTube コメントオーバーレイ" },
   "ext_desc": { "message": "YouTube ライブチャットをニコニコ風に重ねて表示。" },
   "action_title": { "message": "コメントオーバーレイ — 設定" },
+  "cmd_toggle_overlay": { "message": "コメントオーバーレイの表示を切り替える" },
+  "cmd_open_options": { "message": "オーバーレイの設定を開く" },
 
   "opt_title": { "message": "スマート YouTube コメントオーバーレイ" },
   "opt_subtitle": { "message": "設定は開いている YouTube タブに即時反映されます。" },
@@ -37,6 +39,7 @@
   "s_renderer": { "message": "描画方式" },
   "s_maxActive": { "message": "最大同時表示数" },
   "sn_maxActive": { "message": "表示数が多いほど、毎フレームの処理が増えます。既定値（100）より多くするとカクつくことがあり、環境（性能の低い PC、リモートデスクトップ、画面共有など）によっては既定値でもなめらかに表示されないことがあります。カクつくときは下げてください。リモートデスクトップでは 30 前後が目安です。" },
+  "sn_translateTo": { "message": "ブラウザ内蔵の翻訳機能（Chrome 138 以降）を使い、この端末内で翻訳します。ある言語を初めて翻訳する前に、YouTube のページでのクリックかキー操作が 1 回必要です。それまではコメントを原文のまま表示します。翻訳モデルを持たないブラウザ（Brave など）では原文のまま表示されます。" },
   "s_maxQueue": { "message": "待機コメント数" },
   "s_spawnPerFrame": { "message": "1フレームの生成数(Canvas 描画時)" },
   "s_renderScalePct": { "message": "描画解像度(Canvas 描画時)" },

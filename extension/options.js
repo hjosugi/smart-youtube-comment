@@ -13,6 +13,14 @@
   const BACKUP_VERSION = 1;
   let filterInputs = null;
   let statusTimer = 0;
+  // What the user changed on this page since it was last saved: setting keys,
+  // and filter fields (users, words, channels, mode, replacement). A save
+  // writes only these over what is stored now. Settings also change elsewhere
+  // while this page is open (the player button, the popup, the shortcut,
+  // "hide this user"), and those changes update the other controls here
+  // instead of being overwritten with this page's stale copy.
+  const dirtySettings = new Set();
+  const dirtyFilters = new Set();
 
   const t = (name, fallback) => {
     const msg = (typeof chrome !== "undefined" && chrome.i18n) ? chrome.i18n.getMessage(name) : "";
@@ -124,11 +132,14 @@
     };
   }
 
+  // Import and reset replace everything, so nothing is left to merge.
   async function importBackupText(text) {
     const next = parseBackup(text);
+    dirtySettings.clear();
     applySettings(next.settings);
     await S.save(next.settings);
     if (globalThis.SYCFilter) {
+      dirtyFilters.clear();
       await globalThis.SYCFilter.save(next.filters);
       applyFilterLists(next.filters);
     }
@@ -136,14 +147,29 @@
   }
 
   async function resetAll() {
+    dirtySettings.clear();
     const defaults = applySettings({ ...S.DEFAULTS });
     await S.save(defaults);
     if (globalThis.SYCFilter) {
+      dirtyFilters.clear();
       const empty = { users: [], words: [], channels: [] };
       await globalThis.SYCFilter.save(empty);
       applyFilterLists(empty);
     }
     setStatus("opt_reset_done", "Reset");
+  }
+
+  // Take the dirty keys for one save; put them back if the save fails.
+  async function saveDirty(dirty, write) {
+    const keys = [...dirty];
+    dirty.clear();
+    if (!keys.length) return;
+    try {
+      await write(keys);
+    } catch (error) {
+      for (const key of keys) dirty.add(key);
+      throw error;
+    }
   }
 
   async function saveWithStatus(action) {
@@ -155,14 +181,24 @@
     }
   }
 
-  const scheduleSettingsPersist = debounce(() => {
-    const values = currentSettings();
-    return saveWithStatus(() => S.save(values));
-  }, SAVE_DEBOUNCE_MS);
+  const scheduleSettingsPersist = debounce(() => saveWithStatus(() => saveDirty(dirtySettings, async (keys) => {
+    const changed = {};
+    for (const key of keys) changed[key] = getters[key]();
+    await S.save({ ...(await S.load()), ...changed });
+  })), SAVE_DEBOUNCE_MS);
 
-  function scheduleSave() {
+  function scheduleSave(...keys) {
+    for (const key of keys) dirtySettings.add(key);
     updatePreview();
     scheduleSettingsPersist();
+  }
+
+  // A change saved elsewhere (or this page's own save coming back).
+  function onStoredSettings(next) {
+    for (const [key, value] of Object.entries(next)) {
+      if (!dirtySettings.has(key) && getters[key] && getters[key]() !== value) setters[key](value);
+    }
+    updatePreview();
   }
 
   function makeControl(spec, value) {
@@ -170,7 +206,7 @@
       const input = document.createElement("input");
       input.type = "checkbox";
       input.checked = Boolean(value);
-      input.addEventListener("change", scheduleSave);
+      input.addEventListener("change", () => scheduleSave(spec.key));
       getters[spec.key] = () => input.checked;
       setters[spec.key] = (v) => { input.checked = Boolean(v); };
       return input;
@@ -179,7 +215,7 @@
       const input = document.createElement("input");
       input.type = "color";
       input.value = /^#[0-9a-f]{6}$/i.test(value || "") ? value : (spec.default || "#ffffff");
-      input.addEventListener("input", scheduleSave);
+      input.addEventListener("input", () => scheduleSave(spec.key));
       getters[spec.key] = () => input.value;
       setters[spec.key] = (v) => { if (/^#[0-9a-f]{6}$/i.test(v || "")) input.value = v; };
       return input;
@@ -191,7 +227,7 @@
       input.className = "text";
       input.value = value ?? "";
       input.placeholder = spec.placeholder || "system default";
-      input.addEventListener("input", scheduleSave);
+      input.addEventListener("input", () => scheduleSave(spec.key));
       getters[spec.key] = () => input.value;
       setters[spec.key] = (v) => { input.value = v ?? ""; };
       return input;
@@ -205,7 +241,7 @@
         sel.appendChild(o);
       }
       sel.value = value ?? spec.default;
-      sel.addEventListener("change", scheduleSave);
+      sel.addEventListener("change", () => scheduleSave(spec.key));
       getters[spec.key] = () => sel.value;
       setters[spec.key] = (v) => { sel.value = v; };
       return sel;
@@ -223,7 +259,7 @@
     out.className = "val";
     const render = () => { out.textContent = `${input.value}${spec.unit || ""}`; };
     render();
-    input.addEventListener("input", () => { render(); scheduleSave(); });
+    input.addEventListener("input", () => { render(); scheduleSave(spec.key); });
     getters[spec.key] = () => Number(input.value);
     setters[spec.key] = (v) => { input.value = v; render(); };
     wrap.append(input, out);
@@ -266,8 +302,7 @@
       bar.appendChild(makeButton(t(`sp_${key}`, preset.label), () => {
         const { label: _label, ...vals } = preset;
         for (const [k, v] of Object.entries(vals)) setters[k]?.(v);
-        updatePreview();
-        scheduleSave();
+        scheduleSave(...Object.keys(vals).filter((k) => setters[k]));
       }));
     }
     insertBeforeActions(bar);
@@ -316,14 +351,15 @@
       option.textContent = t(`f_mode_${value}`, value);
       modeSelect.appendChild(option);
     }
-    modeSelect.value = lists.mode || "drop";
+    // load() returns the lists; the mode and replacement are read from the filter.
+    modeSelect.value = F.mode ?? lists.mode ?? "drop";
     const modeField = document.createElement("label");
     modeField.className = "fcol";
     const modeSpan = document.createElement("span");
     modeSpan.textContent = t("f_mode", "Blocked-word action");
     modeField.append(modeSpan, modeSelect);
 
-    const replacement = makeFilterField("f_replacement", "Replacement text", lists.replacement ?? "");
+    const replacement = makeFilterField("f_replacement", "Replacement text", F.replacement ?? lists.replacement ?? "");
     replacement.input.rows = 1;
     replacement.input.placeholder = F.replacement;
     filterInputs = {
@@ -337,12 +373,42 @@
     insertBeforeActions(modeField);
     insertBeforeActions(replacement.field);
 
-    const save = debounce(() => saveWithStatus(() => F.save(currentFilters())), SAVE_DEBOUNCE_MS);
-    users.input.addEventListener("input", save);
-    words.input.addEventListener("input", save);
-    channels.input.addEventListener("input", save);
-    modeSelect.addEventListener("change", save);
-    replacement.input.addEventListener("input", save);
+    const persist = debounce(() => saveWithStatus(() => saveDirty(dirtyFilters, async (keys) => {
+      const mine = currentFilters();
+      const stored = await F.load();
+      const next = { ...stored, mode: F.mode ?? stored.mode, replacement: F.replacement ?? stored.replacement };
+      for (const key of keys) next[key] = mine[key];
+      await F.save(next);
+    })), SAVE_DEBOUNCE_MS);
+    const save = (key) => {
+      dirtyFilters.add(key);
+      persist();
+    };
+    users.input.addEventListener("input", () => save("users"));
+    words.input.addEventListener("input", () => save("words"));
+    channels.input.addEventListener("input", () => save("channels"));
+    modeSelect.addEventListener("change", () => save("mode"));
+    replacement.input.addEventListener("input", () => save("replacement"));
+
+    // Lists changed elsewhere ("hide this user" on a comment) or this page's
+    // own save coming back. A field is only rewritten when its entries
+    // differ, so a field being typed in keeps its caret and its blank line.
+    F.onChange?.((next) => {
+      const sync = (key, input, clean) => {
+        if (dirtyFilters.has(key)) return;
+        const want = (next[key] || []).join("\n");
+        if (clean(input.value).join("\n") !== want) input.value = want;
+      };
+      sync("users", users.input, F.cleanList);
+      sync("words", words.input, F.cleanWordList);
+      sync("channels", channels.input, F.cleanChannelList);
+      if (!dirtyFilters.has("mode") && F.mode) modeSelect.value = F.mode;
+      // An empty field means the default replacement: leave it empty.
+      const shown = replacement.input.value;
+      if (!dirtyFilters.has("replacement") && F.replacement != null && shown && shown !== F.replacement) {
+        replacement.input.value = F.replacement;
+      }
+    });
 
     if (F.PRESETS && Object.keys(F.PRESETS).length) {
       const bar = document.createElement("div");
@@ -352,7 +418,7 @@
         bar.appendChild(makeButton(`+ ${t(i18nKey, preset.label)}`, () => {
           const merged = F.cleanWordList(words.input.value).concat(preset.words || []);
           words.input.value = [...new Set(merged)].join("\n");
-          save();
+          save("words");
         }));
       }
       insertBeforeActions(bar);
@@ -414,6 +480,7 @@
     }
 
     updatePreview();
+    S.onChange?.(onStoredSettings);
     buildSpeedPresets();
     await buildFilters();
     buildBackupActions();
