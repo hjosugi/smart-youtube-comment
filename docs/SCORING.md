@@ -56,7 +56,7 @@ priority = 0.55 × emphasis + 0.30 × quality + role bonus + 0.5 for a Super Cha
 
 - **Role bonus**: owner 0.40, moderator 0.25, member 0.10.
 - **Emphasis**: 0.62 or more draws the comment slightly larger with a soft glow; 0.18 or less draws it slightly smaller ("Vary size by score").
-- **When the screen is full**: once the on-screen limit is reached, a new comment replaces the lowest-priority one only if its own priority is higher. Otherwise it is skipped and counted as "dropped". This is the only way the score can keep a comment off screen, and it only happens under load.
+- **When the screen is full**: once the on-screen limit is reached, a new comment replaces the lowest-priority one only if its own priority is higher. Otherwise it is skipped and counted as "dropped". This is the only way the score can keep a comment off screen, and it only happens under load. The limit is the "Max comments on screen" setting (default 100).
 
 ## 4. Measured on real chat
 
@@ -86,6 +86,6 @@ treated as duplicates.
 
 - Scoring: `extension/scoring.js` (`createFallbackScorer`, `buildRenderPlan`, `measureComment`)
 - Scorer call: `extension/content.js` → `processChatNode` (chat frame)
-- Timing, lanes and priority: `extension/danmaku.js` → `_prepare`, `_admit`, `_laneReadyAt`, `_priority`
-- Tests: `extension/test/scoring.mjs`, `web/test/danmaku.mjs`
+- Timing, lanes and priority: `extension/danmaku.js` → `_look`, `_duration`, `_admit`, `_laneReadyAt`, `_priority` (shared by both renderers)
+- Tests: `extension/test/scoring.mjs`, `extension/test/danmaku.mjs`, `web/test/danmaku.mjs`
 - Data shapes: [CONTRACT.md](CONTRACT.md)

@@ -32,6 +32,7 @@ bun run security:bun
 - `manifest.json`がManifest V3を離れる。
 - 権限が`storage`を超えて拡大する。
 - `host_permissions`が追加される; コンテンツスクリプトの`matches`がYouTubeインジェクションのスコープを持ち、拡張機能全体のホストアクセスを許可しない。
+- 描画側のコンテンツスクリプトが、トップフレームの`https://www.youtube.com/*`以外に一致する、または`/live_chat*`を除外しなくなる。視聴ページのURLだけでなくyoutube.com全体を対象にしているのは、YouTubeがドキュメントを読み込まずに遷移し、コンテンツスクリプトは読み込み時にしか注入されないためです。視聴ページ以外ではスクリプトは何もしません。
 - 拡張機能のCSPがインライン/eval/リモート/blob/dataスクリプトソースを許可する。
 - `stage.html`（弾幕ステージのフレーム。`https://www.youtube.com/*` から動的URL経由でのみ埋め込み可能）以外のウェブアクセス可能リソースが公開される。
 - 拡張機能のソースが`innerHTML`、`insertAdjacentHTML`、`document.write`、`eval`、または`new Function`のような危険なインジェクションシンクを使用する。

@@ -38,6 +38,11 @@ The gate fails if:
 - permissions expand beyond `storage`.
 - `host_permissions` is added; content-script `matches` scopes YouTube injection
   without granting extension-wide host access.
+- the renderer content script matches anything other than
+  `https://www.youtube.com/*` in the top frame, or stops excluding
+  `/live_chat*`. It covers all of youtube.com, not just watch URLs, because
+  YouTube navigates without loading a document and a content script is only
+  injected on a load; off a watch page the script stays idle.
 - extension CSP allows inline/eval/remote/blob/data script sources.
 - any web-accessible resource other than `stage.html` (the danmaku stage frame,
   embeddable on `https://www.youtube.com/*` only, through its dynamic URL) is exposed.

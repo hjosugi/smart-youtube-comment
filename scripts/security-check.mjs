@@ -74,17 +74,24 @@ function checkManifest() {
   }
 
   const contentScripts = manifest.content_scripts ?? []
+  // The renderer side runs on every youtube.com page, not just /watch: YouTube
+  // is a single-page app, and a content script is only injected on a document
+  // load. Scoped to watch URLs it never started for a stream opened from the
+  // home page, a search or a channel. content.js stays idle off a watch page.
   const rendererScript = contentScripts.find(script =>
-    sameArray(script.matches, ["https://www.youtube.com/watch*", "https://www.youtube.com/live/*"]),
+    sameArray(script.matches, ["https://www.youtube.com/*"]),
   )
   const extractorScript = contentScripts.find(script =>
     sameArray(script.matches, ["https://www.youtube.com/live_chat*"]),
   )
   if (!rendererScript) {
-    fail("renderer content_script must remain scoped to youtube watch/live top-frame pages.")
+    fail("renderer content_script must remain scoped to the www.youtube.com top frame.")
   } else {
     if (rendererScript.all_frames !== false)
       fail("renderer content_script all_frames must be false.")
+    if (!sameArray(rendererScript.exclude_matches, ["https://www.youtube.com/live_chat*"])) {
+      fail("renderer content_script must exclude live_chat pages (the extractor runs there).")
+    }
     if (
       !sameArray(rendererScript.js, [
         "sanitize.js",

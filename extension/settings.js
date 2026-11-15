@@ -87,10 +87,16 @@
     { key: "fastMs",       group: "Speed",       label: "Fast tier time",         type: "range", min: 2000, max: 12000, step: 250, unit: "ms", default: 3000 },
     { key: "normalMs",     group: "Speed",       label: "Normal tier time",       type: "range", min: 3000, max: 16000, step: 250, unit: "ms", default: 4000 },
     { key: "slowMs",       group: "Speed",       label: "Slow tier time",         type: "range", min: 4000, max: 20000, step: 250, unit: "ms", default: 5000 },
-    { key: "maxActive",    group: "Performance", label: "Max comments on screen", type: "range", min: 100, max: 2000, step: 50,            default: 2000 },
+    { key: "renderer",     group: "Performance", label: "Renderer",               type: "select",  default: "compositor",
+      options: [
+        { value: "compositor", label: "Smooth (GPU compositor, recommended)" },
+        { value: "canvas", label: "Canvas (extremely dense chats)" }
+      ] },
+    { key: "maxActive",    group: "Performance", label: "Max comments on screen", type: "range", min: 10,  max: 2000, step: 10,            default: 100,
+      note: "More comments mean more work in every frame. Above the default (100) comments can stutter, and on some setups (a slow PC, a remote desktop, screen sharing) they may not move smoothly even at the default. If they stutter, lower this; on a remote desktop try about 30." },
     { key: "maxQueue",     group: "Performance", label: "Pending comment queue",  type: "range", min: 100, max: 5000, step: 100,           default: 2400 },
-    { key: "spawnPerFrame", group: "Performance", label: "Comments prepared per frame", type: "range", min: 1, max: 24, step: 1,          default: 10 },
-    { key: "renderScalePct", group: "Performance", label: "Render resolution",    type: "range", min: 50,  max: 150,  step: 5, unit: "%",  default: 75 },
+    { key: "spawnPerFrame", group: "Performance", label: "Comments prepared per frame (canvas renderer)", type: "range", min: 1, max: 24, step: 1,          default: 10 },
+    { key: "renderScalePct", group: "Performance", label: "Render resolution (canvas renderer)", type: "range", min: 50,  max: 150,  step: 5, unit: "%",  default: 75 },
     { key: "debugHud",     group: "Performance", label: "Debug stats HUD",        type: "bool",                                   default: false },
     { key: "maxTextChars", group: "Performance", label: "Max comment length",     type: "range", min: 80,  max: 500,  step: 20,            default: 260 },
     { key: "lineHeightScale", group: "Layout",    label: "Lane height (of font)",  type: "range", min: 100, max: 250,  step: 5, unit: "%", default: 125 },
@@ -132,7 +138,7 @@
     if (!store) return defaultValues();
     try {
       const got = await store.get(STORAGE_KEY);
-      return got?.[STORAGE_KEY] ? normalize(got[STORAGE_KEY]) : defaultValues();
+      return got?.[STORAGE_KEY] ? migrate(got[STORAGE_KEY]) : defaultValues();
     } catch {
       return defaultValues();
     }
@@ -141,14 +147,28 @@
   async function save(values) {
     const store = area();
     if (!store) throw new Error("no storage available");
-    await store.set({ [STORAGE_KEY]: normalize(values) });
+    await store.set({ [STORAGE_KEY]: { ...normalize(values), rev: SETTINGS_REV } });
+  }
+
+  // Up to 0.3.x "Max comments on screen" defaulted to 2000, and saving any
+  // setting stored every value, so most saved settings hold a 2000 nobody
+  // chose. With the compositor renderer that many is no longer harmless: such
+  // a value falls back to today's default, once. Settings saved since carry
+  // `rev` and keep what was chosen, 2000 included.
+  const SETTINGS_REV = 2;
+  function migrate(stored) {
+    const values = normalize(stored);
+    if (stored && typeof stored === "object" && !(stored.rev >= SETTINGS_REV) && Number(stored.maxActive) === 2000) {
+      values.maxActive = DEFAULTS.maxActive;
+    }
+    return values;
   }
 
   function onChange(callback) {
     if (typeof chrome === "undefined" || !chrome.storage) return;
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if ((areaName === "sync" || areaName === "local") && changes[STORAGE_KEY]) {
-        callback(normalize(changes[STORAGE_KEY].newValue));
+        callback(migrate(changes[STORAGE_KEY].newValue));
       }
     });
   }

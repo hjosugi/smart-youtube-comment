@@ -52,7 +52,7 @@
 
 - **役割ボーナス**: 配信者 0.40、モデレーター 0.25、メンバー 0.10。
 - **強調**: 0.62以上は少し大きく、ふんわり光らせて描きます。0.18以下は少し小さく描きます（「スコアで文字サイズを変える」）。
-- **画面が混んだとき**: 同時表示数の上限に達すると、新しいコメントは、画面上で一番優先度の低いコメントより優先度が高い場合にだけ入れ替わります。そうでなければ表示されず、「dropped」として数えられます。採点がコメントを画面に出さない原因になるのはここだけで、それも混雑時だけです。
+- **画面が混んだとき**: 同時表示数の上限に達すると、新しいコメントは、画面上で一番優先度の低いコメントより優先度が高い場合にだけ入れ替わります。そうでなければ表示されず、「dropped」として数えられます。採点がコメントを画面に出さない原因になるのはここだけで、それも混雑時だけです。上限は「最大同時表示数」の設定です（既定値 100）。
 
 ## 4. 実際のチャットでの計測
 
@@ -76,6 +76,6 @@
 
 - 採点: `extension/scoring.js`（`createFallbackScorer`、`buildRenderPlan`、`measureComment`）
 - 採点の呼び出し: `extension/content.js` の `processChatNode`（チャットのフレーム内）
-- 時間・レーン・優先度: `extension/danmaku.js` の `_prepare`、`_admit`、`_laneReadyAt`、`_priority`
-- テスト: `extension/test/scoring.mjs`、`web/test/danmaku.mjs`
+- 時間・レーン・優先度: `extension/danmaku.js` の `_look`、`_duration`、`_admit`、`_laneReadyAt`、`_priority`(両方のレンダラーで共通)
+- テスト: `extension/test/scoring.mjs`、`extension/test/danmaku.mjs`、`web/test/danmaku.mjs`
 - データの形: [CONTRACT.ja.md](CONTRACT.ja.md)

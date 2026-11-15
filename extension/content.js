@@ -303,6 +303,10 @@
   // routine. The stage has its own process and frame clock. This side only
   // forwards comments and the player's pointer input; the stage reads settings
   // from storage itself. See docs/PERFORMANCE.md "Stage Frame".
+  const STAGE_QUEUE_MAX = 40;
+  const STAGE_READY_TIMEOUT_MS = 4000;
+  const STAGE_RELOAD_MAX = 2;
+
   function createStage() {
     let frame = null;
     let player = null;
@@ -310,6 +314,8 @@
     let origin = "";
     let ready = false;
     let queue = [];
+    let readyTimer = 0;
+    let reloads = 0;
     let hit = 0; // what the stage reports under the pointer: 0 none, 1 comment, 2 pinned
     let dragging = false;
     let menu = null;
@@ -317,8 +323,28 @@
 
     const send = (message) => {
       if (!frame) return;
-      if (ready) frame.contentWindow?.postMessage(message, origin);
-      else if (queue.length < 200) queue.push(message);
+      if (ready) {
+        frame.contentWindow?.postMessage(message, origin);
+        return;
+      }
+      // Until the stage reports ready, keep only the newest comments: a long
+      // wait must not turn into a wall of old ones.
+      queue.push(message);
+      if (queue.length > STAGE_QUEUE_MAX) {
+        const oldest = queue.findIndex((queued) => queued.type === "push");
+        queue.splice(oldest >= 0 ? oldest : 0, 1);
+      }
+    };
+    // A stage frame that never reports ready (its document failed to load) is
+    // replaced, a couple of times at most.
+    const watchReady = () => {
+      clearTimeout(readyTimer);
+      readyTimer = setTimeout(() => {
+        if (ready || !frame?.isConnected || reloads >= STAGE_RELOAD_MAX) return;
+        reloads++;
+        frame.src = chrome.runtime.getURL("stage.html");
+        watchReady();
+      }, STAGE_READY_TIMEOUT_MS);
     };
     const local = (event) => {
       const r = frame.getBoundingClientRect();
@@ -387,6 +413,7 @@
       const data = event.data;
       if (data?.type === "ready") {
         ready = true;
+        clearTimeout(readyTimer);
         for (const message of queue) frame.contentWindow.postMessage(message, origin);
         queue = [];
       } else if (data?.type === "hit") {
@@ -464,6 +491,8 @@
         player.addEventListener("contextmenu", onContextMenu, true);
         player.addEventListener("pointerdown", onPointerDown, true);
         player.appendChild(frame);
+        reloads = 0;
+        watchReady();
       },
       detach() {
         if (dragging) onDragEnd();
@@ -473,6 +502,7 @@
         player?.removeEventListener("pointerleave", onLeave);
         player?.removeEventListener("contextmenu", onContextMenu, true);
         player?.removeEventListener("pointerdown", onPointerDown, true);
+        clearTimeout(readyTimer);
         frame?.remove();
         frame = null;
         player = null;
@@ -640,7 +670,8 @@
     };
 
     const attach = () => {
-      if (!hasLiveChatShell()) {
+      observeShell();
+      if (!isWatchPage() || !hasLiveChatShell()) {
         toggle?.remove();
         pipButton?.remove();
         pip?.win.close();
@@ -720,20 +751,27 @@
     // NO polling interval: a periodic attach() tick showed up as a ~2s jolt on
     // the render thread, and the observer + navigation events already cover
     // player/chat replacement.
+    //
+    // This script runs on every youtube.com page, because YouTube navigates
+    // without loading a document and a content script is only injected on a
+    // load: a stream opened from the home page would otherwise never get the
+    // overlay. Off a watch page nothing is observed at all; the navigation
+    // events below are the only thing that wakes it up.
     let pageObserver = null;
     let observedShell = null;
     const observeShell = () => {
-      const shell = document.querySelector("ytd-watch-flexy") || document.body;
-      if (!shell || shell === observedShell) return;
+      const shell = isWatchPage() ? document.querySelector("ytd-watch-flexy") || document.body : null;
+      if (shell === observedShell) return;
       pageObserver?.disconnect();
+      pageObserver = null;
       observedShell = shell;
+      if (!shell) return;
       pageObserver = new MutationObserver(scheduleAttach);
       pageObserver.observe(shell, { childList: true, subtree: true });
     };
 
-    observeShell();
     attach();
-    for (const event of ["yt-navigate-finish", "yt-page-data-updated", "yt-player-updated"]) {
+    for (const event of ["yt-navigate-finish", "yt-page-data-updated", "yt-player-updated", "popstate"]) {
       window.addEventListener(event, () => {
         if (event === "yt-navigate-finish") pip?.win.close();
         overlay.clear();
@@ -770,6 +808,16 @@
     };
   }
 
+  // A watch page, whatever its URL: /watch?v=, /live/<id>, or a channel's
+  // /@handle/live, which YouTube serves as the watch page of its live stream.
+  function isWatchPage(pathname = location.pathname) {
+    return (
+      pathname === "/watch" ||
+      pathname.startsWith("/live/") ||
+      /^\/(?:@[^/]+|(?:channel|c|user)\/[^/]+)\/live\/?$/.test(pathname)
+    );
+  }
+
   function hasLiveChatShell() {
     return Boolean(
       document.querySelector?.("ytd-live-chat-frame, #chat iframe[src*='live_chat'], ytd-watch-flexy #chat")
@@ -785,16 +833,7 @@
     let observedRoot = null;
 
     const scan = () => {
-      const selectors = [
-        "yt-live-chat-text-message-renderer",
-        "yt-live-chat-paid-message-renderer",
-        "yt-live-chat-membership-item-renderer"
-      ];
-
-      const nodes = [...document.querySelectorAll(selectors.join(","))];
-      for (const node of nodes.slice(-80)) {
-        processChatNode(node);
-      }
+      processChatNodes([...document.querySelectorAll(MESSAGE_SELECTOR)].slice(-80));
     };
 
     const observe = () => {
@@ -813,21 +852,20 @@
     };
 
     const handleMutations = (mutations) => {
+      const batch = new Set(); // in document order: YouTube appends new messages
       for (const mutation of mutations) {
         if (mutation.type === "characterData") {
           const node = mutation.target.parentElement?.closest?.(MESSAGE_SELECTOR);
-          if (node) processChatNode(node);
+          if (node) batch.add(node);
           continue;
         }
         for (const node of mutation.addedNodes) {
-          if (node instanceof Element) {
-            processChatNode(node);
-            node
-              .querySelectorAll?.("yt-live-chat-text-message-renderer, yt-live-chat-paid-message-renderer, yt-live-chat-membership-item-renderer")
-              .forEach(processChatNode);
-          }
+          if (!(node instanceof Element)) continue;
+          if (node.matches(MESSAGE_SELECTOR)) batch.add(node);
+          for (const inner of node.querySelectorAll(MESSAGE_SELECTOR)) batch.add(inner);
         }
       }
+      if (batch.size) processChatNodes(batch);
     };
 
     const start = () => {
@@ -850,6 +888,28 @@
       document.querySelector("yt-live-chat-item-list-renderer #items") ||
       document.querySelector("#items.yt-live-chat-item-list-renderer")
     );
+  }
+
+  // Live chat adds a few messages at a time. A batch larger than it ever adds
+  // at once is a backlog being replayed: the history YouTube renders when the
+  // chat loads, after a seek in a replay, or when a background tab is shown
+  // again and the chat catches up. Flowing all of it would bury the video under
+  // comments that are no longer current, so only its newest few are shown.
+  const LIVE_BATCH_MAX = 24;
+  const BACKLOG_KEEP = 8;
+
+  function processChatNodes(nodes) {
+    const fresh = [];
+    for (const node of nodes) {
+      if (!processedChatNodes.has(node) && isUserChatMessageNode(node)) fresh.push(node);
+    }
+    let first = 0;
+    if (fresh.length > LIVE_BATCH_MAX) {
+      first = fresh.length - BACKLOG_KEEP;
+      for (let i = 0; i < first; i++) processedChatNodes.add(fresh[i]);
+    }
+    for (let i = first; i < fresh.length; i++) processChatNode(fresh[i]);
+    return fresh.length - first;
   }
 
   async function processChatNode(node) {
@@ -1055,6 +1115,10 @@
       extractDisplayText,
       normalizeDisplayText,
       hasLiveChatShell,
+      isWatchPage,
+      processChatNodes,
+      LIVE_BATCH_MAX,
+      BACKLOG_KEEP,
       extractAuthorType,
       isOfficialChatText,
       isUserChatMessageNode,

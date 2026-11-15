@@ -10,9 +10,30 @@ notes for shape changes.
 
 ## Open
 
-- **Real-display check of the stage frame and picture-in-picture.** Headless
-  traces measure main-thread load only. Frame pacing of the stage frame and of
-  PiP (beta) on a real monitor has not been confirmed.
+- **A physical monitor.** Every headed run of the compositor renderer so far
+  was in a GNOME remote-desktop session, on a virtual 60 Hz monitor whose
+  clock is irregular; most held frames there belong to that clock (see the section on
+  reading "held" on a remote-desktop display in
+  [PERFORMANCE.md](PERFORMANCE.md)).
+  Repeat `SYC_WAYLAND=1 node bench/real-page-trace.mjs` on a physical panel,
+  ideally also above 60 Hz, and read "held by cause".
+- **`BATCH_MS`.** Batching cut the holds that coincide with a stage main-thread
+  frame from about 12 to about 5 per 12 s; the total did not move in the
+  remote-desktop session. If a physical monitor shows the same, the 250 ms
+  entry latency buys little and can come down.
+- **Viewers on a remote desktop.** A dense overlay can exceed what the
+  remote-desktop stream carries ("Through a Remote Desktop" in
+  [PERFORMANCE.md](PERFORMANCE.md)). The extension cannot detect that; today
+  the answer is a low "Max comments on screen". Moving comments at the video's
+  frame rate, in step with its frames, might halve what the stream has to
+  carry. Not built: it needs proof that the two stay in step.
+- **Canvas without `desynchronized`.** The canvas renderer is held and skipped
+  because its frames reach the display compositor out of step. In the stage
+  frame the page's commit pipeline is light, so a regular (synchronized) canvas
+  may present evenly there. Not measured yet: it needs headed runs, alternated
+  and compared by cause.
+- **Picture-in-picture on a real display.** Frame pacing of PiP (beta) on a
+  real monitor has not been confirmed.
 - **Chat observation when YouTube replaces the chat.** Re-attaching after
   YouTube recreates `#items`, and the stand-in chat frame used while the chat is
   closed, have no automated test. Both are checked by hand on a real stream.
@@ -97,8 +118,20 @@ Shapes (see [CONTRACT.md](CONTRACT.md)):
   without `replay=1` is a 400. The relay keeps replay `ended: false`; the player
   decides when a replay is over.
 
+Injection and behavior:
+
+- The renderer content script now matches `https://www.youtube.com/*` (minus
+  `/live_chat*`) instead of `/watch*` and `/live/*`, so the overlay starts
+  after YouTube's in-page navigation. The host is unchanged, so the install
+  warning is the same. `scripts/security-check.mjs` pins the new scope.
+- Comments are no longer queued while the engine is not rendering, and a chat
+  backlog (more than 24 new messages at once) is cut to its newest 8. Message
+  and score shapes are unchanged.
+
 Stored settings:
 
+- `renderer` (`compositor` / `canvas`) is new and defaults to `compositor`.
+  Stored settings without it get the default.
 - `lineHeight` (px) is no longer read. Stored values normalize to the
   `lineHeightScale` default; the engine still receives px (`fontPx * scale`).
 - The filter store gained `mode` (`drop` / `censor` / `replace`) and

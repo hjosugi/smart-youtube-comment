@@ -62,10 +62,18 @@ assert.equal(settings.normalize({ scaleWithPlayer: false }).fontScaleMode, "fixe
 assert.equal(settings.normalize({ scaleWithPlayer: true }).fontScaleMode, "up")
 assert.equal(settings.toEngineConfig({ scaleWithPlayer: false }).fontScaleMode, "fixed")
 assert.equal(settings.toEngineConfig(settings.DEFAULTS).fontScaleMode, "up")
-assert.equal(settings.DEFAULTS.maxActive, 2000)
+assert.equal(settings.DEFAULTS.maxActive, 100)
+assert.match(settings.SCHEMA.find(spec => spec.key === "maxActive").note, /stutter/)
+// A low cap is what keeps a remote-desktop stream within its link (docs/PERFORMANCE.md).
+assert.equal(settings.normalize({ maxActive: 20 }).maxActive, 20)
+assert.equal(settings.normalize({ maxActive: 150 }).maxActive, 150) // values saved under the old 50 step survive
+assert.equal(settings.normalize({ maxActive: 3 }).maxActive, 10)
 assert.equal(settings.DEFAULTS.maxQueue, 2400)
 assert.equal(settings.DEFAULTS.spawnPerFrame, 10)
 assert.equal(settings.DEFAULTS.renderScalePct, 75)
+assert.equal(settings.DEFAULTS.renderer, "compositor")
+assert.equal(settings.normalize({ renderer: "canvas" }).renderer, "canvas")
+assert.equal(settings.normalize({ renderer: "webgl" }).renderer, "compositor")
 assert.equal(settings.DEFAULTS.lineHeightScale, 125)
 assert.equal(settings.DEFAULTS.outlineColor, "#000000")
 assert.equal(settings.DEFAULTS.authorName, "nontext")
@@ -85,6 +93,16 @@ assert.equal(local.data.has(settings.STORAGE_KEY), false)
 assert.equal((await settings.load()).enabled, false)
 assert.equal((await settings.load()).opacity, 100)
 assert.equal((await settings.load()).textColor, "#abcdef")
+
+// 0.3.x saved its default 2000 with every setting: it falls back to the new
+// default once, other saved values stay, and 2000 chosen since stays too.
+sync.data.set(settings.STORAGE_KEY, { maxActive: 2000, opacity: 80 })
+assert.equal((await settings.load()).maxActive, 100)
+assert.equal((await settings.load()).opacity, 80)
+sync.data.set(settings.STORAGE_KEY, { maxActive: 300 })
+assert.equal((await settings.load()).maxActive, 300)
+await settings.save({ ...settings.DEFAULTS, maxActive: 2000 })
+assert.equal((await settings.load()).maxActive, 2000)
 
 await filter.save({
   users: " Alice \nALICE\nBob ",
@@ -123,4 +141,4 @@ assert.equal(filter.apply("ALICE", "spam spam").drop, true)
   assert.equal((await reducedSettings.load()).enabled, true)
 }
 
-console.log("settings-filter ok (48 assertions)")
+console.log("settings-filter ok (56 assertions)")

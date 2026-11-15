@@ -39,6 +39,7 @@ const required = [
   "scoring.js",
   "emoji.js",
   "danmaku.js",
+  "danmaku-dom.js",
   "settings.js",
   "filter.js",
   "translate.js",

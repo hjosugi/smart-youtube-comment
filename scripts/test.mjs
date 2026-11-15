@@ -43,6 +43,7 @@ const SUITES = [
   ["unit", "extension/test/background.mjs"],
   ["unit", "extension/test/content-extract.mjs"],
   ["unit", "extension/test/scoring.mjs"],
+  ["unit", "extension/test/danmaku.mjs"],
   ["unit", "extension/test/i18n.mjs"],
   ["unit", "extension/test/options.mjs"],
   ["unit", "extension/test/settings-filter.mjs"],
