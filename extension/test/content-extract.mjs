@@ -370,4 +370,41 @@ assert.equal(sandbox.sentMessages[4].payload.kind, "text")
   assert.equal(startup.intervals[0].delay, 2500)
 }
 
-console.log("content-extract ok (45 assertions)")
+{
+  // The renderer side runs on every youtube.com page and must tell a watch
+  // page from the rest, whatever shape its URL has.
+  const { helpers: page } = loadHelpers()
+  for (const path of ["/watch", "/live/abcdefghijk", "/@channel/live", "/channel/UCxyz/live", "/c/name/live/"]) {
+    assert.equal(page.isWatchPage(path), true, `${path} is a watch page`)
+  }
+  for (const path of ["/", "/results", "/feed/subscriptions", "/@channel", "/@channel/streams", "/shorts/abc", "/live_chat", "/@livestream", "/live"]) {
+    assert.equal(page.isWatchPage(path), false, `${path} is not a watch page`)
+  }
+}
+
+{
+  // A batch no bigger than live chat produces flows completely.
+  const { helpers: batch, sandbox: box } = loadHelpers()
+  const live = Array.from({ length: batch.LIVE_BATCH_MAX }, (_, i) => makeChatRenderer({ textValue: `live ${i}` }))
+  assert.equal(batch.processChatNodes(live), batch.LIVE_BATCH_MAX)
+  assert.equal(box.sentMessages.length, batch.LIVE_BATCH_MAX)
+
+  // A bigger one is a backlog (chat history on load, a seek, a background tab
+  // catching up): only its newest few are shown, and the rest never come back.
+  box.sentMessages.length = 0
+  const backlog = Array.from({ length: 200 }, (_, i) => makeChatRenderer({ textValue: `old ${i}` }))
+  assert.equal(batch.processChatNodes(backlog), batch.BACKLOG_KEEP)
+  assert.equal(box.sentMessages.length, batch.BACKLOG_KEEP)
+  assert.equal(box.sentMessages[0].payload.text, `old ${200 - batch.BACKLOG_KEEP}`)
+  assert.equal(box.sentMessages.at(-1).payload.text, "old 199")
+  box.sentMessages.length = 0
+  assert.equal(batch.processChatNodes(backlog), 0, "a rescan must not replay the skipped backlog")
+  assert.equal(box.sentMessages.length, 0)
+
+  // Already-seen nodes do not count toward the batch size.
+  const next = [...backlog, makeChatRenderer({ textValue: "new one" })]
+  assert.equal(batch.processChatNodes(next), 1)
+  assert.equal(box.sentMessages.at(-1).payload.text, "new one")
+}
+
+console.log("content-extract ok (69 assertions)")

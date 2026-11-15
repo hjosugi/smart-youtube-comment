@@ -12,9 +12,14 @@
   const { sanitizeRenderPayload } = globalThis.SYCSanitize;
   const Settings = globalThis.SYCSettings;
 
-  const overlay = new globalThis.SYCDanmaku.DanmakuOverlay();
-  globalThis.__sycOverlay = overlay; // exposed for debugging / e2e perf checks
-  overlay.attach(document.getElementById("stage"));
+  // Two renderers share one engine (see danmaku-dom.js): the compositor-driven
+  // one is the default, the canvas one is kept for extremely dense chats. The
+  // "renderer" setting picks; switching rebuilds the stage in place.
+  const { DanmakuOverlay, CompositorOverlay } = globalThis.SYCDanmaku;
+  const stageEl = document.getElementById("stage");
+  let overlay = null;
+  let renderer = "";
+  let stopped = false; // content.js paused the comments with the video
 
   const post = (message) => parent.postMessage(message, PARENT_ORIGIN);
 
@@ -26,7 +31,7 @@
   let probe = 0;
   const reportHover = () => {
     probe = 0;
-    const state = hover ? overlay.hitState(hover.x, hover.y) : 0;
+    const state = hover && overlay ? overlay.hitState(hover.x, hover.y) : 0;
     if (state !== hoverState) {
       hoverState = state;
       post({ type: "hit", state });
@@ -62,7 +67,7 @@
   const fromPage = (source) => source === parent || (source != null && source === parent.opener);
 
   addEventListener("message", (event) => {
-    if (!fromPage(event.source) || event.origin !== PARENT_ORIGIN) return;
+    if (!overlay || !fromPage(event.source) || event.origin !== PARENT_ORIGIN) return;
     const message = event.data;
     switch (message?.type) {
       case "push": {
@@ -74,9 +79,11 @@
         overlay.clear();
         break;
       case "start":
+        stopped = false;
         overlay.start();
         break;
       case "stop":
+        stopped = true;
         overlay.stop();
         break;
       case "hover":
@@ -117,7 +124,22 @@
     }
   });
 
-  const apply = (settings) => overlay.setConfig(Settings.toEngineConfig(settings));
+  const apply = (settings) => {
+    const config = Settings.toEngineConfig(settings);
+    const wanted = settings.renderer === "canvas" ? "canvas" : "compositor";
+    if (wanted === renderer) {
+      overlay.setConfig(config);
+      return;
+    }
+    overlay?.detach();
+    selected = null;
+    hoverState = 0;
+    renderer = wanted;
+    overlay = wanted === "canvas" ? new DanmakuOverlay(config) : new CompositorOverlay(config);
+    globalThis.__sycOverlay = overlay; // exposed for debugging / e2e perf checks
+    overlay.attach(stageEl);
+    if (stopped) overlay.stop();
+  };
   Settings.onChange(apply);
   Settings.load().then((settings) => {
     apply(settings);

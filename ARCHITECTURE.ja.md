@@ -38,7 +38,9 @@ www.youtube.com/watch?v=…  (トップフレーム)    content.js -> initRender
 バックグラウンド service worker                  background.mjs -> background.js
 ```
 
-`manifest.json` は `content.js` を 2 か所に注入します。`/watch*` と `/live/*` のトップフレーム(描画側)と、`all_frames: true` の `/live_chat*`(抽出側)です。役割は `content.js` の末尾で `location.pathname` を見て決めます。
+`manifest.json` は `content.js` を 2 か所に注入します。`/live_chat*` を除く `www.youtube.com` の全ページのトップフレーム(描画側)と、`all_frames: true` の `/live_chat*`(抽出側)です。役割は `content.js` の末尾で `location.pathname` を見て決めます。
+
+描画側を視聴ページの URL に限定していないのは、YouTube がシングルページアプリだからです。コンテンツスクリプトが注入されるのはドキュメントの読み込み時だけで、トップページ・検索・チャンネルから配信を開いてもドキュメントは読み込まれません。`/watch*` に限定していた頃は、この開き方だとオーバーレイが起動しませんでした。視聴ページ以外(`isWatchPage()` が偽)では何も監視せず、YouTube の `yt-navigate-finish` イベントで動き出します。
 
 ### 1.2 コメントの取得方法
 
@@ -68,7 +70,8 @@ background.js
         v
 stage.html  (stage.js)
     event.source と origin を確認; sanitizeRenderPayload
-    DanmakuOverlay.push -> canvas
+    overlay.push -> コメント1件=1要素、コンポジターが移動(CompositorOverlay)
+                    または canvas(DanmakuOverlay)
 ```
 
 ペイロードは中継のたびに(background、トップフレーム、ステージで)サニタイズし直します。どの段も別のコンテキストから受け取るからです。
@@ -111,7 +114,8 @@ stage.html  (stage.js)
 | `extension/sanitize.js` | `sanitizeRenderPayload`, `sanitizeMessageParts` | ペイロードと絵文字 URL の検証 |
 | `extension/filter.js` | `SYCFilter.apply` | NG ユーザー・チャンネル・語句・正規表現 |
 | `extension/scoring.js` | `createFallbackScorer`, `buildRenderPlan` | 段と優先度([docs/SCORING.ja.md](docs/SCORING.ja.md)) |
-| `extension/danmaku.js` | `DanmakuOverlay` | canvas エンジン |
+| `extension/danmaku.js` | `DanmakuOverlay` | キュー、採用判定、レーン、ピン留め。canvas レンダラー |
+| `extension/danmaku-dom.js` | `CompositorOverlay` | コンポジターレンダラー(既定)。コメント1件=1要素 |
 
 ### 1.3 ステージフレームでの描画
 
@@ -120,7 +124,9 @@ stage.html  (stage.js)
 - ステージは設定を `chrome.storage` から直接読みます(`SYCSettings.load` / `onChange`)。トップフレームが送るのはコメントとポインタ入力だけです。
 - ステージはポインタイベントを受けません。トップフレームがプレイヤー上でイベントを(キャプチャフェーズで)受け、`hover` / `select` / `drag*` を送り、ステージがポインタの下に何があるかを返します。右クリックメニューはページ側で DOM API と `textContent` だけで組み立てます。「このユーザーを非表示」はステージが投稿者を NG リストへ書き込み、チャット iframe の `SYCFilter` がストレージの変更を受けて以後そのユーザーを除外します。
 - ピクチャーインピクチャー(ベータ)は `<video>` 要素を Document Picture-in-Picture のウィンドウへ移し、そこに専用のステージを置きます。このためステージは `parent.opener` からのメッセージも受け付けます。
-- エンジン内部ではコメントを共有のスプライトアトラスに描くので、定常状態では何も確保しません([docs/PERFORMANCE.ja.md](docs/PERFORMANCE.ja.md) の「スプライトアトラス」)。
+- 2 つのレンダラーが 1 つのエンジンを共有します。`CompositorOverlay`(`danmaku-dom.js`、既定)はコメントを 1 件ずつ要素にし、Chrome のコンポジターがスクリプトなしで実行する transform アニメーションで動かします。メインスレッドがするのは要素の追加と削除だけで、それもまとめて行います。コメントは届いてから 250 ms 後に画面へ入り、同じ区間に届いたコメントは 1 回のフレームで追加され(それぞれ自分の入場時刻を保てるだけ画面外の遠くから出発します)、画面を出たコメントもそのフレームで削除されます。`DanmakuOverlay`(`danmaku.js`)は共有のスプライトアトラスから全コメントを毎フレーム canvas に描き直します。同時に扱える数はこちらがはるかに多く、「描画方式」設定で選びます。既定を変えた理由と計測は [docs/PERFORMANCE.ja.md](docs/PERFORMANCE.ja.md) の「コンポジターレンダラー」にあります。
+- コメントはライブ扱いです。フレームを生成していない間(背面のタブ、画面外にスクロールしたプレイヤー、「動画停止中はコメントも止める」での停止中)、`push()` はコメントを受け付けません。待ち行列で 2 秒を超えて待ったコメントは捨て、フレームが再開した時点で残っていた分も破棄します。背面で溜まって、戻ったときに動画を埋め尽くすことはありません。
+- バックログ。ライブチャットが一度に追加するのは数件です。1 回のまとまりで 24 件を超える新着があれば、それは YouTube が履歴を流し直しています(チャット読み込み時の履歴、リプレイのシーク後、背面のタブを表示し直したときの追いつき)。そのまとまりは最新の 8 件だけを流し、残りは処理済みにします(`processChatNodes`)。
 
 ### 1.4 設定・保存・その他のページ
 
@@ -247,7 +253,7 @@ chat-client.ts
 | 設定 | 拡張(デスクトップ) | web(モバイル) |
 | --- | --- | --- |
 | `fontPx` | 24 | 18 |
-| `maxActive` | 2000 | 250 |
+| `maxActive` | 100 | 250 |
 | `maxQueue` | 2400 | 1000 |
 | `spawnPerFrame` | 10 | 6 |
 | `renderScalePct` | 75 | 60 |
@@ -276,7 +282,7 @@ chat-client.ts
 │   ├── manifest.json, background.mjs, background.js
 │   ├── content.js    チャット抽出(チャット iframe)+ ステージの管理(トップフレーム)
 │   ├── stage.html, stage.js   エンジンが動くフレーム
-│   ├── danmaku.js, scoring.js, filter.js, settings.js, sanitize.js, emoji.js, translate.js
+│   ├── danmaku.js, danmaku-dom.js, scoring.js, filter.js, settings.js, sanitize.js, emoji.js, translate.js
 │   ├── options.*, popup.*, _locales/, icons/
 │   └── test/
 ├── web/              モバイル PWA(TypeScript モジュール + 共有のクラシックスクリプト)。web/dist にビルド

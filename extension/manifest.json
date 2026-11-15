@@ -64,8 +64,10 @@
   "content_scripts": [
     {
       "matches": [
-        "https://www.youtube.com/watch*",
-        "https://www.youtube.com/live/*"
+        "https://www.youtube.com/*"
+      ],
+      "exclude_matches": [
+        "https://www.youtube.com/live_chat*"
       ],
       "js": [
         "sanitize.js",

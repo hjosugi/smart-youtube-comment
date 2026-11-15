@@ -42,10 +42,17 @@ www.youtube.com/watch?v=…  (top frame)        content.js -> initRenderer()
 background service worker                        background.mjs -> background.js
 ```
 
-`manifest.json` injects `content.js` twice: into `/watch*` and `/live/*` (top
-frame only, renderer side) and into `/live_chat*` with `all_frames: true`
-(extraction side). The last lines of `content.js` pick the role from
-`location.pathname`.
+`manifest.json` injects `content.js` twice: into every `www.youtube.com` page
+except `/live_chat*` (top frame only, renderer side) and into `/live_chat*`
+with `all_frames: true` (extraction side). The last lines of `content.js` pick
+the role from `location.pathname`.
+
+The renderer side is not limited to watch URLs because YouTube is a
+single-page app: a content script is injected when a document loads, and
+opening a stream from the home page, a search or a channel loads no document.
+Scoped to `/watch*`, the overlay never started in that case. Off a watch page
+(`isWatchPage()`) the script observes nothing; YouTube's `yt-navigate-finish`
+event wakes it up.
 
 ### 1.2 How comments are obtained
 
@@ -60,6 +67,8 @@ overlay either.
   MutationObserver on yt-live-chat-item-list-renderer #items
   + scan() every 2.5 s: re-attach if YouTube replaced #items, re-read the last 80 nodes
         |
+  processChatNodes(batch)   a batch of more than 24 new messages is a backlog:
+        |                   only its newest 8 go on (see "Backlog" below)
   processChatNode(node)
     isUserChatMessageNode   drop banners, tickers, pinned, deleted/retracted
     extractMessageParts     text runs + custom emoji <img> -> parts
@@ -79,7 +88,8 @@ top frame  (content.js, initRenderer)
         v
 stage.html  (stage.js)
     checks event.source and origin; sanitizeRenderPayload
-    DanmakuOverlay.push -> canvas
+    overlay.push -> one element per comment, moved by the compositor
+                    (CompositorOverlay), or canvas (DanmakuOverlay)
 ```
 
 The payload is sanitized again at every hop (background, top frame, stage),
@@ -105,6 +115,12 @@ Details:
 - **Duplicates.** `processedChatNodes` (a `WeakSet`) remembers each processed
   node. A node is only marked once it has text, so a placeholder that YouTube
   fills in later is picked up through the `characterData` mutation.
+- **Backlog.** Live chat adds a few messages at a time. When more than 24 new
+  messages arrive in one batch, YouTube is replaying history: the messages it
+  renders when the chat loads, after a seek in a replay, or when a background
+  tab is shown again and the chat catches up. Only the newest 8 of such a batch
+  are forwarded; the rest are marked as seen. The engine guards the other half
+  of this (see 1.3): it refuses comments while it is not producing frames.
 - **Why only inside the chat frame.** A document-wide observer on the watch
   page was a measurable source of jank, and the top frame holds no chat nodes.
 - **Chat closed.** Closing YouTube's chat unloads its frame.
@@ -134,7 +150,8 @@ Code map:
 | `extension/sanitize.js` | `sanitizeRenderPayload`, `sanitizeMessageParts` | payload and emoji URL validation |
 | `extension/filter.js` | `SYCFilter.apply` | NG users, channels, words, regexes |
 | `extension/scoring.js` | `createFallbackScorer`, `buildRenderPlan` | tier and priority ([docs/SCORING.md](docs/SCORING.md)) |
-| `extension/danmaku.js` | `DanmakuOverlay` | canvas engine |
+| `extension/danmaku.js` | `DanmakuOverlay` | queue, admission, lanes, pinning; canvas renderer |
+| `extension/danmaku-dom.js` | `CompositorOverlay` | compositor renderer (default): one element per comment |
 
 ### 1.3 Rendering in the stage frame
 
@@ -158,9 +175,22 @@ routine 0.5 s tasks; in the stage it has its own process and frame clock (see
 - Picture-in-picture (beta) moves the `<video>` element into a Document
   Picture-in-Picture window with a stage of its own. The stage accepts messages
   from `parent.opener` for this case.
-- Inside the engine, comments are rasterized into shared sprite-atlas pages, so
-  the steady state allocates nothing (see "Sprite Atlas" in
-  [docs/PERFORMANCE.md](docs/PERFORMANCE.md)).
+- Two renderers share one engine. `CompositorOverlay` (`danmaku-dom.js`, the
+  default) makes each comment an element and moves it with a transform
+  animation that Chrome's compositor runs without script. The main thread
+  only adds and removes elements, and does so in batches: a comment enters
+  250 ms after it arrived, comments of one such window are added in a single
+  frame (each starting far enough off-stage to keep its own entry time), and
+  that frame also removes the comments that have left. `DanmakuOverlay`
+  (`danmaku.js`) redraws every comment on a canvas each frame from shared
+  sprite-atlas pages; it handles far more comments at once and is selected
+  with the "Renderer" setting. Why the default changed, with measurements, is
+  in "Compositor Renderer" in [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
+- Comments are live. `push()` refuses a comment while no frames are being
+  produced (hidden tab, player scrolled out of view, video paused with "Pause
+  comments with video"), a comment that waited more than 2 s in the queue is
+  dropped, and whatever is still queued when frames resume is discarded.
+  Nothing piles up in the background and floods the video on return.
 
 ### 1.4 Settings, storage, and the other pages
 
@@ -345,7 +375,7 @@ values, and another test keeps the engine's `DEFAULTS` equal to
 | Setting | Extension (desktop) | Web (mobile) |
 | --- | --- | --- |
 | `fontPx` | 24 | 18 |
-| `maxActive` | 2000 | 250 |
+| `maxActive` | 100 | 250 |
 | `maxQueue` | 2400 | 1000 |
 | `spawnPerFrame` | 10 | 6 |
 | `renderScalePct` | 75 | 60 |
@@ -375,7 +405,7 @@ Change a message or score shape only together with
 │   ├── manifest.json, background.mjs, background.js
 │   ├── content.js    chat extraction (chat frames) + stage host (top frame)
 │   ├── stage.html, stage.js   the frame the engine runs in
-│   ├── danmaku.js, scoring.js, filter.js, settings.js, sanitize.js, emoji.js, translate.js
+│   ├── danmaku.js, danmaku-dom.js, scoring.js, filter.js, settings.js, sanitize.js, emoji.js, translate.js
 │   ├── options.*, popup.*, _locales/, icons/
 │   └── test/
 ├── web/              mobile PWA (TypeScript modules + the shared classic scripts), built to web/dist

@@ -404,6 +404,12 @@
         name.textContent = t(`s_${spec.key}`, spec.label);
         row.append(name, makeControl(spec, values[spec.key]));
         root.appendChild(row);
+        if (spec.note) {
+          const note = document.createElement("p");
+          note.className = "setting-note";
+          note.textContent = t(`sn_${spec.key}`, spec.note);
+          root.appendChild(note);
+        }
       }
     }
 

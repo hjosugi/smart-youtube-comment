@@ -19,6 +19,15 @@
   //   * priority admission — at the cap, a high-value comment evicts the lowest
   //     value one; a low-value comment is dropped instead of melting the frame
   //   * near-duplicate drop — keep variety (serves communication quality)
+  //
+  // Comments are live: one that cannot be shown soon is dropped, never queued
+  // for later. push() refuses comments while no frames are being produced (a
+  // hidden tab, a player scrolled out of view, a paused video), and whatever
+  // was still waiting when frames resume is discarded. Without that, the queue
+  // filled up in the background and flooded the video on return.
+  //
+  // This file is the canvas renderer. danmaku-dom.js builds the default,
+  // compositor-driven renderer on the same queue, admission and lane logic.
 
   const SYCScoring = globalThis.SYCScoring ?? {};
   const signatureDistance = SYCScoring.signatureDistance;
@@ -26,7 +35,7 @@
   const visibleLength = SYCScoring.visibleLength;
 
   const DEFAULTS = {
-    maxActive: 2000,      // hard ceiling on concurrent sprites
+    maxActive: 100,       // hard ceiling on concurrent sprites ("Max comments on screen")
     minActive: 80,        // adaptive floor (weak machines still usable)
     fontPx: 24,
     lineHeight: 30,       // lane height incl. gap
@@ -66,6 +75,7 @@
     wrapText: false,      // wrap overflowing text instead of trimming it
     cacheMax: 900,        // max cached atlas slots (a slot lives while its page does)
     maxQueue: 2400,       // pending comments waiting for rasterization
+    maxWaitMs: 2000,      // a comment that waited longer than this is stale: drop it
     spawnPerFrame: 10,    // cap expensive canvas text rasterization per frame
     debugHud: false,
     maxTextChars: 260,    // prevent giant one-off bitmaps from stalling video
@@ -192,7 +202,11 @@
       this.measure = null;
       this.raf = 0;
       this.running = false;
+      this.paused = false;      // stop() was called: comments are not accepted
       this.lastTs = 0;
+      this._frameAt = 0;        // when the last frame ran (0 = none yet)
+      this._pausedMs = 0;       // time the scene stood still (see _now)
+      this._stoppedAt = 0;
       this._dirty = true;       // canvas needs a clear+redraw next frame
       this.frameEMA = 16;
       this.dynamicCap = this.cfg.maxActive;
@@ -212,6 +226,36 @@
       this.w = 1; this.h = 1; this.laneCount = 1; this.laneTop = 0; this.laneH = this.cfg.lineHeight;
       this.scale = 1;           // text scale for the player size (fontScaleMode)
       this.gap = this.cfg.gapPx;
+    }
+
+    // Whether there is a surface to draw on.
+    get attached() {
+      return Boolean(this.canvas);
+    }
+
+    // The scene's clock: real time minus the time the scene stood still, so
+    // lane bookkeeping still matches the comments on screen after a pause.
+    _now() {
+      return performance.now() - this._pausedMs;
+    }
+
+    // True while frames are due but not arriving: the tab is hidden, the player
+    // is scrolled out of view, or the page is frozen.
+    _stalled(now) {
+      return this.running && this._frameAt > 0 && now - this._frameAt > LONG_GAP_MS;
+    }
+
+    // Discard every comment that has not been admitted yet.
+    _dropBacklog() {
+      this.dropped += this.pending.length - this.pendingHead;
+      this.pending.length = 0;
+      this.pendingHead = 0;
+      for (let i = this.readyHead; i < this.ready.length; i++) {
+        this._releaseSlot(this.ready[i].slot);
+        this.dropped++;
+      }
+      this.ready.length = 0;
+      this.readyHead = 0;
     }
 
     attach(player) {
@@ -306,7 +350,7 @@
       Object.assign(this.cfg, next);
       if (shouldClearRasterCache) this.cache.clear();
       if (partial.maxActive != null || partial.minActive != null) this._updateDynamicCap();
-      if (this.canvas && shouldResize) this._resize();
+      if (this.attached && shouldResize) this._resize();
     }
 
     _updateDynamicCap() {
@@ -331,7 +375,7 @@
     }
 
     _resize() {
-      if (!this.player || !this.canvas) return;
+      if (!this.player || !this.attached) return;
       const r = this.player.getBoundingClientRect();
       this._setSize(r.width, r.height);
     }
@@ -339,11 +383,16 @@
     // Apply a stage size in CSS px.
     _setSize(width, height) {
       if (!this.canvas) return;
-      this.w = Math.max(1, Math.round(width));
-      this.h = Math.max(1, Math.round(height));
+      this._setGeometry(width, height);
       const dpr = this.cfg.dpr;
       this.canvas.width = Math.round(this.w * dpr);
       this.canvas.height = Math.round(this.h * dpr);
+    }
+
+    // Stage size, text scale and lanes for a stage of width x height CSS px.
+    _setGeometry(width, height) {
+      this.w = Math.max(1, Math.round(width));
+      this.h = Math.max(1, Math.round(height));
       const usable = this.h * (1 - this.cfg.topPct - this.cfg.bottomPct);
       // Steps of 5% so a window being dragged does not re-rasterize every pixel.
       const ratio = this.h / SCALE_REF_HEIGHT;
@@ -362,13 +411,34 @@
       this._dirty = true;
     }
 
-    start() { if (this.running) return; this.running = true; this.lastTs = 0; this.raf = requestAnimationFrame(this._loop); }
-    stop() { this.running = false; cancelAnimationFrame(this.raf); }
+    start() {
+      this.paused = false;
+      if (this.running) return;
+      const now = performance.now();
+      if (this._stoppedAt) this._pausedMs += now - this._stoppedAt;
+      this._stoppedAt = 0;
+      this.running = true;
+      this.lastTs = 0;
+      this._frameAt = now; // a first frame is due: grace before push() calls it stalled
+      this.raf = requestAnimationFrame(this._loop);
+    }
+
+    stop() {
+      this.paused = true;
+      if (this.running) this._stoppedAt = performance.now();
+      this.running = false;
+      cancelAnimationFrame(this.raf);
+      this.raf = 0;
+    }
 
     // Admission control + spawn. Returns true if the comment was accepted.
     push(payload) {
-      if (!this.canvas || !payload || !payload.text) return false;
+      if (!this.attached || !payload || !payload.text) return false;
       if (!this._typeVisible(payload)) return false;
+      // Not rendering (paused, hidden, out of view): the comment would only be
+      // shown later, out of context, so it is dropped instead of queued.
+      const now = performance.now();
+      if (this.paused || this._stalled(now)) { this.dropped++; return false; }
       const text = truncateText(payload.text, this.cfg.maxTextChars);
       const safePayload = text === payload.text ? payload : Object.assign({}, payload, { text });
 
@@ -390,7 +460,7 @@
         else { this.dropped++; return false; }
       }
 
-      this.pending.push({ payload: safePayload, priority });
+      this.pending.push({ payload: safePayload, priority, at: now });
       this.queued++;
       return true;
     }
@@ -502,12 +572,14 @@
     // buffered). Bounded so a burst never blows the frame budget, and driven only
     // from the frame loop so there is no separate task to perturb frame pacing.
     _rasterizePending(budgetMs) {
-      if (!this.canvas || this.pendingHead >= this.pending.length) return;
+      if (!this.attached || this.pendingHead >= this.pending.length) return;
       const highWater = Math.max(this.cfg.spawnPerFrame * 2, 8);
       if (this._readyCount() >= highWater) return;
       const t0 = performance.now();
+      const staleBefore = t0 - (this.cfg.maxWaitMs || Infinity);
       while (this.pendingHead < this.pending.length && this._readyCount() < highWater) {
         const next = this.pending[this.pendingHead++];
+        if (next.at < staleBefore) { this.dropped++; continue; } // waited too long to still be live
         const prep = this._prepare(next.payload, next.priority);
         if (prep) this.ready.push(prep);
         if (performance.now() - t0 >= budgetMs) break;
@@ -517,6 +589,14 @@
 
     // Rasterize a payload into a ready-to-admit sprite (no admission policy).
     _prepare(payload, priority) {
+      const look = this._look(payload);
+      const slot = this._rasterize(look.parts, look.color, look.fontPx, look.glow, look.band);
+      if (slot.page) slot.page.sprites++; // the prep holds its page until admitted or dropped
+      return { payload, priority, slot, w: slot.w, h: slot.h, dur: this._duration(payload) };
+    }
+
+    // How a comment is drawn: size, color, Super Chat band, glow and its parts.
+    _look(payload) {
       const emphasis = payload.emphasis ?? 0;
       const scoreScale = this.cfg.sizeByScore
         ? (emphasis >= 0.62 ? 1.12 : emphasis <= 0.18 ? 0.9 : 1.0)
@@ -533,9 +613,11 @@
       );
       const parts = (named ? [{ t: `${payload.author}: ` }, ...msgParts] : msgParts).slice(0, 60);
       const glow = emphasis >= 0.62 && this.frameEMA < 24; // skip glow when frames are heavy
-      const slot = this._rasterize(parts, labelColor, fontPx, glow, band);
-      if (slot.page) slot.page.sprites++; // the prep holds its page until admitted or dropped
+      return { parts, color: labelColor, fontPx, glow, band };
+    }
 
+    // How long a comment's head takes to cross the stage, in ms.
+    _duration(payload) {
       const td = this.cfg.tierDurations;
       // Membership (stamp/announcement) items are visual, not readable prose.
       // Keep them snappy regardless of how long the announcement text is.
@@ -551,7 +633,7 @@
       }
       // Super Chats get extra dwell time so the paid message can be read.
       if (payload.kind === "paid") dur *= 1.3;
-      return { payload, priority, slot, w: slot.w, h: slot.h, dur };
+      return dur;
     }
 
     // Admit a prepared sprite: cap/eviction policy + lane assignment + push.
@@ -563,7 +645,9 @@
         else { this.dropped++; this._releaseSlot(prep.slot); return false; } // drop incoming
       }
 
-      const now = performance.now();
+      // A renderer may start a comment a little after admitting it (prep.delay,
+      // see the compositor renderer): its lane is booked from when it enters.
+      const now = this._now() + (prep.delay || 0);
       // A tier's time is how long a comment's head takes to cross the stage,
       // so the tiers differ in speed whatever the comment's width: a wide
       // comment stays on screen longer instead of moving faster.
@@ -577,7 +661,7 @@
 
       const slot = prep.slot;
       const entry = {
-        img: slot.img, sx: slot.sx, sy: slot.sy, sw: slot.sw, sh: slot.sh, page: slot.page,
+        img: slot?.img, sx: slot?.sx, sy: slot?.sy, sw: slot?.sw, sh: slot?.sh, page: slot?.page,
         w: prep.w, h: prep.h,
         x: startX, y: this.laneTop + lane * this.laneH + this.laneH / 2,
         author: prep.payload.author || "", channel: prep.payload.authorChannelId || "",
@@ -586,10 +670,15 @@
         index: this.active.length,
         active: true
       };
+      this._mount(entry, prep, dir);
       this.active.push(entry);
       this._heapPush(entry);
       return true;
     }
+
+    // Put an admitted sprite on the surface. The canvas renderer draws it from
+    // its atlas slot every frame, so there is nothing to do here.
+    _mount(_entry, _prep, _dir) {}
 
     // Synchronous prepare+admit for callers that want immediate admission; the
     // frame loop goes through the raster pump so text work stays off the frame.
@@ -1095,8 +1184,14 @@
       // tab) is a pause: no teleport and no expiry, so the scene survives.
       const raw = this.lastTs ? ts - this.lastTs : this.frameEMA;
       this.lastTs = ts;
+      this._frameAt = performance.now();
       let dt = 0;
-      if (raw <= LONG_GAP_MS) {
+      if (raw > LONG_GAP_MS) {
+        // Frames stopped for a while. What queued up before push() noticed is
+        // from before the pause, and the scene did not move meanwhile.
+        this._dropBacklog();
+        this._pausedMs += raw;
+      } else {
         const sample = Math.min(raw, MIN_CAP_FRAME_MS);
         this.frameEMA = this.frameEMA * 0.9 + sample * 0.1;
         dt = this.frameEMA;
@@ -1173,5 +1268,5 @@
     }
   }
 
-  globalThis.SYCDanmaku = { DanmakuOverlay, DEFAULTS };
+  globalThis.SYCDanmaku = { DanmakuOverlay, DEFAULTS, LONG_GAP_MS, withAlpha };
 })();

@@ -3,13 +3,18 @@
 //   2. the options page renders the settings form
 //   3. changing a setting persists to chrome.storage and survives a reload
 //   4. a fake YouTube watch page gets the overlay stage frame
-//   5. a fake live-chat iframe is extracted and rendered into nonblank pixels
-//      on the stage's canvas, and the stage frame stays transparent
+//   5. a fake live-chat iframe is extracted and rendered as a comment on the
+//      stage (an element with the default compositor renderer), and the stage
+//      frame stays transparent
 //   6. the right-click menu pins a comment, dragging moves it, and "hide user"
 //      removes the author's comments and saves them to the NG list (input is
 //      forwarded from the player to the stage, which takes no pointer events)
 //   7. picture-in-picture moves the video and a stage into the PiP window,
 //      and closing it puts both back
+//   8. the "canvas" renderer setting swaps the stage to the canvas engine and
+//      paints nonblank pixels
+//   9. the overlay starts after an in-page (SPA) navigation from a page that
+//      is not a watch page, the way YouTube opens a stream from its home page
 //
 // MV3 extensions need a HEADED browser (or --headless=new) + the full Chromium
 // build — they do NOT load in the headless-shell. So run this on your desktop:
@@ -32,20 +37,27 @@ const useHeadlessChrome =
   process.env.CI === "1" || process.env.CI === "true" || process.env.SYC_EXTENSION_HEADLESS === "1"
 const FAKE_VIDEO_ID = "VIDEOIDXXXX"
 const FAKE_WATCH_URL = `https://www.youtube.com/watch?v=${FAKE_VIDEO_ID}`
+const FAKE_HOME_URL = "https://www.youtube.com/"
 const realYoutubeUrl = process.env.SYC_REAL_YOUTUBE_URL || ""
 const requireRealYoutube = process.env.SYC_REAL_YOUTUBE_REQUIRED === "1"
 const realYoutubeTimeoutMs = Number(process.env.SYC_REAL_YOUTUBE_TIMEOUT_MS || 45000)
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
-// The danmaku canvas lives in the extension's stage frame laid over the player.
+// Comments are drawn in the extension's stage frame laid over the player: as
+// elements on a layer (compositor renderer, the default) or as canvas pixels.
 const stagePainted = async (page, timeout) => {
   await waitUntil(async () => page.frames().some(frame => frame.url().includes("/stage.html")), timeout)
   const stage = page.frames().find(frame => frame.url().includes("/stage.html"))
   return stage
     .waitForFunction(
       () => {
-        const canvas = document.querySelector(".syc-danmaku-canvas")
+        const comment = document.querySelector(".syc-danmaku-layer > .syc-c")
+        if (comment) {
+          const box = comment.getBoundingClientRect()
+          return comment.textContent.length > 0 && box.width > 1 && box.height > 1
+        }
+        const canvas = document.querySelector("canvas.syc-danmaku-canvas")
         if (!canvas || canvas.width <= 1 || canvas.height <= 1) return false
         const data = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data
         for (let i = 3; i < data.length; i += 4) {
@@ -113,6 +125,7 @@ const chatHtml = `<!doctype html>
 async function main() {
   const context = await chromium.launchPersistentContext("", {
     headless: false,
+    executablePath: process.env.SYC_BROWSER || undefined, // another Chromium, e.g. Brave
     args: [
       ...(useHeadlessChrome ? ["--headless=new"] : []),
       `--disable-extensions-except=${EXT}`,
@@ -126,6 +139,13 @@ async function main() {
   )
   await context.route(`https://www.youtube.com/live_chat?v=${FAKE_VIDEO_ID}*`, route =>
     route.fulfill({ status: 200, contentType: "text/html", body: chatHtml }),
+  )
+  await context.route(FAKE_HOME_URL, route =>
+    route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: "<!doctype html><html><head><title>Fake YouTube Home</title></head><body style=\"margin:0;background:#111\"></body></html>",
+    }),
   )
 
   // 1. extension loaded → its service worker is registered
@@ -207,14 +227,19 @@ async function main() {
   const playerBox = await watch.locator(".html5-video-player").boundingBox()
   const sprite = () =>
     stageFrame.evaluate(() => {
-      const a = globalThis.__sycOverlay.active[0]
-      return a ? { x: a.x, y: a.y, w: a.w, pinned: Boolean(a.pinned) } : null
+      const overlay = globalThis.__sycOverlay
+      const a = overlay.active[0]
+      // The compositor renderer moves comments off the main thread; ask it where one is.
+      return a ? { x: overlay._spriteX ? overlay._spriteX(a) : a.x, y: a.y, w: a.w, pinned: Boolean(a.pinned) } : null
     })
   let transparent = false
   let pinned = false
   let dragged = false
   let hidden = false
   let pip = false
+  let canvasPainted = false
+  let spaStarted = false
+  const defaultRenderer = await stageFrame?.evaluate(() => globalThis.__sycOverlay?.stats().renderer).catch(() => "")
   if (painted && playerBox) {
     // The fake player is black; an opaque stage backdrop would show as white.
     const shot = await watch.screenshot({ clip: { x: playerBox.x + 2, y: playerBox.y + playerBox.height - 4, width: 1, height: 1 } })
@@ -293,6 +318,70 @@ async function main() {
       pip = inside && back
       console.log(`picture-in-picture opened=${inside} restored=${back}`)
     }
+
+    // 8. Switch to the canvas renderer: the stage rebuilds itself in place.
+    await page.evaluate(async () => {
+      const got = await chrome.storage.sync.get("syc:settings")
+      await chrome.storage.sync.set({ "syc:settings": { ...got["syc:settings"], renderer: "canvas" } })
+    })
+    const stageNow = () => watch.frames().find(frame => frame.url().includes("/stage.html"))
+    await waitUntil(
+      () => stageNow().evaluate(() => Boolean(document.querySelector("canvas.syc-danmaku-canvas"))).catch(() => false),
+      5000,
+    ).catch(() => {})
+    await stageNow()
+      .evaluate(() => {
+        const text = "canvas renderer e2e comment"
+        globalThis.__sycOverlay.start() // step 7 left a paused video, which pauses the comments
+        globalThis.__sycOverlay.push({ text, parts: [{ t: text }], tier: 1, durationMs: 5000, score: 0.3, emphasis: 0.2, authorType: "normal", kind: "text" })
+      })
+      .catch(() => {})
+    canvasPainted = await stagePainted(watch, 5000).catch(() => false)
+    await page.evaluate(async () => {
+      const got = await chrome.storage.sync.get("syc:settings")
+      await chrome.storage.sync.set({ "syc:settings": { ...got["syc:settings"], renderer: "compositor" } })
+    })
+    console.log(`canvas renderer painted=${canvasPainted}`)
+  }
+
+  // 9. YouTube opens a stream from its home page without loading a document.
+  // The content script was injected into the home page, so it has to notice the
+  // navigation and start there.
+  {
+    // Step 6 put the fake chat's only author on the NG list.
+    await page.evaluate(() => chrome.storage.local.remove("syc:filter"))
+    const home = await context.newPage()
+    await home.goto(FAKE_HOME_URL, { waitUntil: "load" })
+    await sleep(600)
+    const idleOnHome = await home.evaluate(() => !document.querySelector(".syc-danmaku-canvas"))
+    await home.evaluate(
+      ({ id }) => {
+        history.pushState({}, "", `/watch?v=${id}`)
+        const player = document.createElement("div")
+        player.className = "html5-video-player"
+        player.style.cssText = "position:relative;width:640px;height:360px;background:#000"
+        const buttons = document.createElement("div")
+        buttons.className = "ytp-right-controls"
+        player.append(buttons)
+        const flexy = document.createElement("ytd-watch-flexy")
+        const chat = document.createElement("div")
+        chat.id = "chat"
+        const frame = document.createElement("iframe")
+        frame.src = `https://www.youtube.com/live_chat?v=${id}`
+        chat.append(frame)
+        flexy.append(chat)
+        document.body.append(player, flexy)
+        document.dispatchEvent(new CustomEvent("yt-navigate-finish", { bubbles: true }))
+      },
+      { id: FAKE_VIDEO_ID },
+    )
+    const attached = await home.waitForSelector(".syc-danmaku-canvas", { timeout: 10000 }).then(
+      () => true,
+      () => false,
+    )
+    spaStarted = idleOnHome && attached && (await stagePainted(home, 10000).catch(() => false))
+    console.log(`in-page navigation from home: idle before=${idleOnHome} stage attached=${attached} painted=${spaStarted}`)
+    await home.close()
   }
 
   let realPainted = !requireRealYoutube
@@ -327,11 +416,14 @@ async function main() {
     dragged &&
     hidden &&
     pip &&
+    defaultRenderer === "compositor" &&
+    canvasPainted &&
+    spaStarted &&
     realPainted
   console.log(
     ok
       ? `PASS ✅  extension loads + settings persist + overlay/chat render (opacity=${shown})`
-      : `FAIL ❌  expected opacity 40, painted transparent overlay, pin, drag and hide; stored=${stored?.opacity}, shown=${shown}, painted=${painted}, transparent=${transparent}, pinned=${pinned}, dragged=${dragged}, hidden=${hidden}, pip=${pip}, debug=${JSON.stringify(renderDebug)}`,
+      : `FAIL ❌  expected opacity 40, painted transparent overlay, pin, drag and hide; stored=${stored?.opacity}, shown=${shown}, painted=${painted}, transparent=${transparent}, pinned=${pinned}, dragged=${dragged}, hidden=${hidden}, pip=${pip}, renderer=${defaultRenderer}, canvasPainted=${canvasPainted}, spaStarted=${spaStarted}, debug=${JSON.stringify(renderDebug)}`,
   )
   process.exit(ok ? 0 : 1)
 }
