@@ -25,6 +25,18 @@ try {
   const exe = chromium.executablePath()
   if (!exe || !existsSync(exe)) {
     e2eSkip = "chromium not installed (run: npx playwright install chromium)"
+  } else {
+    // An installed build can still fail to start, e.g. on NixOS, which lacks
+    // the shared libraries Playwright's Chromium links against.
+    try {
+      const browser = await chromium.launch()
+      await browser.close()
+    } catch (error) {
+      const reason = String(error?.message || error).match(
+        /error while loading shared libraries: [^\n]*/,
+      )?.[0]
+      e2eSkip = `chromium does not start here (${reason || "launch failed"})`
+    }
   }
 } catch {
   e2eSkip = "playwright not installed (run: npm i -D playwright && npx playwright install chromium)"
