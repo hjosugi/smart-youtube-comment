@@ -5,8 +5,8 @@
   // player. It runs in the extension's own renderer process, so the frame loop
   // neither drives YouTube's page lifecycle every vsync nor stalls behind
   // YouTube's long main-thread tasks (docs/PERFORMANCE.md "Stage Frame").
-  // Comments arrive from content.js over postMessage; settings come straight
-  // from extension storage.
+  // Comments arrive from content.js over a MessageChannel; settings come
+  // straight from extension storage.
 
   const PARENT_ORIGIN = "https://www.youtube.com";
   const { sanitizeRenderPayload } = globalThis.SYCSanitize;
@@ -21,7 +21,8 @@
   let renderer = "";
   let stopped = false; // content.js paused the comments with the video
 
-  const post = (message) => parent.postMessage(message, PARENT_ORIGIN);
+  let port = null; // the channel content.js handed over (see "connect" below)
+  const post = (message) => port?.postMessage(message);
 
   // While the pointer is over the player, keep content.js told what is under
   // it (comments move under a still cursor), so it can decide synchronously
@@ -66,9 +67,8 @@
   // parent is the PiP window, opened by that tab.
   const fromPage = (source) => source === parent || (source != null && source === parent.opener);
 
-  addEventListener("message", (event) => {
-    if (!overlay || !fromPage(event.source) || event.origin !== PARENT_ORIGIN) return;
-    const message = event.data;
+  const handle = (message) => {
+    if (!overlay) return;
     switch (message?.type) {
       case "push": {
         const payload = sanitizeRenderPayload(message.payload);
@@ -122,6 +122,20 @@
         overlay.dragEnd();
         break;
     }
+  };
+
+  // Any script on the YouTube page can post to this window: it shares the
+  // content script's window and origin. So content.js opens a MessageChannel
+  // once this document has loaded and hands over one end in a "connect"
+  // message, and everything else goes over that port, which only content.js
+  // holds. The first connect is the one kept; "ready" goes out once the
+  // settings are applied as well.
+  addEventListener("message", (event) => {
+    if (port || event.data?.type !== "connect" || !event.ports[0]) return;
+    if (!fromPage(event.source) || event.origin !== PARENT_ORIGIN) return;
+    port = event.ports[0];
+    port.onmessage = (portEvent) => handle(portEvent.data);
+    if (overlay) post({ type: "ready" });
   });
 
   const apply = (settings) => {

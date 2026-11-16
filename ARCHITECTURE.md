@@ -84,10 +84,11 @@ background.js
         v
 top frame  (content.js, initRenderer)
     sanitizeRenderPayload; optional on-device translation (translate.js)
-        |  stage.push -> postMessage({ type: "push" }) to the stage frame
+        |  stage.push -> port.postMessage({ type: "push" }) over the MessageChannel
+        |  handed to the stage frame when it loaded
         v
 stage.html  (stage.js)
-    checks event.source and origin; sanitizeRenderPayload
+    reads only that port; sanitizeRenderPayload
     overlay.push -> one element per comment, moved by the compositor
                     (CompositorOverlay), or canvas (DanmakuOverlay)
 ```
@@ -146,7 +147,7 @@ Code map:
 | | `createChatSource` | hidden stand-in chat frame |
 | | `initRenderer`, `createStage` | top frame: toggle button, stage frame, pointer input, PiP |
 | `extension/background.js` | `onMessage` listener, `isAllowedSender` | chat frame to top frame relay |
-| `extension/stage.js` | `message` listener | stage side: push, clear, start/stop, hit test, pin, hide user |
+| `extension/stage.js` | `connect` listener, `handle` | stage side: push, clear, start/stop, hit test, pin, hide user |
 | `extension/sanitize.js` | `sanitizeRenderPayload`, `sanitizeMessageParts` | payload and emoji URL validation |
 | `extension/filter.js` | `SYCFilter.apply` | NG users, channels, words, regexes |
 | `extension/scoring.js` | `createFallbackScorer`, `buildRenderPlan` | tier and priority ([docs/SCORING.md](docs/SCORING.md)) |
@@ -166,6 +167,14 @@ routine 0.5 s tasks; in the stage it has its own process and frame clock (see
 - The stage reads settings straight from `chrome.storage`
   (`SYCSettings.load` / `onChange`). The top frame only forwards comments and
   pointer input.
+- The top frame and the stage talk over a `MessageChannel`, not over
+  `window.postMessage`. YouTube's own scripts share the content script's window
+  and origin, so a message posted to the stage's window cannot be told apart
+  from one of ours. Each time the stage document loads, the top frame posts a
+  `connect` message carrying one port; the stage keeps the first one (checking
+  `event.source` and origin) and ignores its window from then on. If another
+  script got there first, the stage never reports `ready` on our port and the
+  top frame reloads it (`STAGE_RELOAD_MAX`).
 - The stage takes no pointer events. The top frame listens on the player
   (capture phase), sends `hover` / `select` / `drag*` messages, and the stage
   answers with what is under the pointer. The right-click menu is built in the
@@ -173,8 +182,8 @@ routine 0.5 s tasks; in the stage it has its own process and frame clock (see
   the author to the NG lists; the chat frame's `SYCFilter` sees the storage
   change and drops that author from then on.
 - Picture-in-picture (beta) moves the `<video>` element into a Document
-  Picture-in-Picture window with a stage of its own. The stage accepts messages
-  from `parent.opener` for this case.
+  Picture-in-Picture window with a stage of its own. The stage accepts its
+  `connect` message from `parent.opener` for this case.
 - Two renderers share one engine. `CompositorOverlay` (`danmaku-dom.js`, the
   default) makes each comment an element and moves it with a transform
   animation that Chrome's compositor runs without script. The main thread
