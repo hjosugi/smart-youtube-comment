@@ -236,6 +236,7 @@ async function main() {
   let pinned = false
   let dragged = false
   let hidden = false
+  let sealed = false
   let pip = false
   let canvasPainted = false
   let spaStarted = false
@@ -291,6 +292,29 @@ async function main() {
       hidden = (await sprite()) === null && saved?.users?.includes("alice")
     }
     console.log(`stage transparent=${transparent} pinned=${pinned} dragged=${dragged} hidden=${hidden}`)
+
+    // 6b. The page's own scripts share the content script's window and origin,
+    // but cannot drive the stage: a message posted to its window, or over a
+    // channel of their own, is ignored.
+    await stageFrame.evaluate(() => {
+      const overlay = globalThis.__sycOverlay
+      const clear = overlay.clear
+      globalThis.__sycClears = 0
+      overlay.clear = function () {
+        globalThis.__sycClears++
+        return clear.call(this)
+      }
+    })
+    await watch.evaluate(() => {
+      const stage = document.querySelector("iframe.syc-danmaku-canvas").contentWindow
+      stage.postMessage({ type: "clear" }, "*")
+      const channel = new MessageChannel()
+      stage.postMessage({ type: "connect" }, "*", [channel.port2])
+      channel.port1.postMessage({ type: "clear" })
+    })
+    await sleep(300)
+    sealed = (await stageFrame.evaluate(() => globalThis.__sycClears)) === 0
+    console.log(`stage ignores page scripts=${sealed}`)
 
     // 7. Picture-in-picture (only where the browser has Document PiP).
     const hasPip = await watch.evaluate(() => "documentPictureInPicture" in window)
@@ -415,6 +439,7 @@ async function main() {
     pinned &&
     dragged &&
     hidden &&
+    sealed &&
     pip &&
     defaultRenderer === "compositor" &&
     canvasPainted &&
@@ -423,7 +448,7 @@ async function main() {
   console.log(
     ok
       ? `PASS ✅  extension loads + settings persist + overlay/chat render (opacity=${shown})`
-      : `FAIL ❌  expected opacity 40, painted transparent overlay, pin, drag and hide; stored=${stored?.opacity}, shown=${shown}, painted=${painted}, transparent=${transparent}, pinned=${pinned}, dragged=${dragged}, hidden=${hidden}, pip=${pip}, renderer=${defaultRenderer}, canvasPainted=${canvasPainted}, spaStarted=${spaStarted}, debug=${JSON.stringify(renderDebug)}`,
+      : `FAIL ❌  expected opacity 40, painted transparent overlay, pin, drag and hide; stored=${stored?.opacity}, shown=${shown}, painted=${painted}, transparent=${transparent}, pinned=${pinned}, dragged=${dragged}, hidden=${hidden}, sealed=${sealed}, pip=${pip}, renderer=${defaultRenderer}, canvasPainted=${canvasPainted}, spaStarted=${spaStarted}, debug=${JSON.stringify(renderDebug)}`,
   )
   process.exit(ok ? 0 : 1)
 }

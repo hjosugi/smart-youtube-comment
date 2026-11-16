@@ -325,6 +325,7 @@
     let player = null;
     let win = null; // the player's window: the page, or a Picture-in-Picture window
     let origin = "";
+    let port = null; // our end of the channel to the stage document
     let ready = false;
     let queue = [];
     let readyTimer = 0;
@@ -337,7 +338,7 @@
     const send = (message) => {
       if (!frame) return;
       if (ready) {
-        frame.contentWindow?.postMessage(message, origin);
+        port?.postMessage(message);
         return;
       }
       // Until the stage reports ready, keep only the newest comments: a long
@@ -421,19 +422,30 @@
       menu.querySelector("button")?.focus();
     };
 
-    const onMessage = (event) => {
-      if (!frame || event.source !== frame.contentWindow || event.origin !== origin) return;
+    const onStageMessage = (event) => {
       const data = event.data;
       if (data?.type === "ready") {
         ready = true;
         clearTimeout(readyTimer);
-        for (const message of queue) frame.contentWindow.postMessage(message, origin);
+        for (const message of queue) port.postMessage(message);
         queue = [];
       } else if (data?.type === "hit") {
         hit = data.state | 0;
       } else if (data?.type === "selected" && data.ok && menuAt) {
         showMenu(menuAt, Boolean(data.pinned), typeof data.author === "string" ? data.author.slice(0, 80) : "");
       }
+    };
+    // Each time the stage document loads, hand it a new MessageChannel and talk
+    // over nothing else. The stage keeps the first channel it is given, so
+    // other scripts on the page, which share this window and origin, can
+    // neither drive it nor read what it reports.
+    const connect = () => {
+      port?.close();
+      ready = false;
+      const channel = new MessageChannel();
+      port = channel.port1;
+      port.onmessage = onStageMessage;
+      frame?.contentWindow?.postMessage({ type: "connect" }, origin, [channel.port2]);
     };
     const onHover = (event) => {
       if (!dragging && !inMenu(event)) send({ type: "hover", ...local(event) });
@@ -498,7 +510,7 @@
           colorScheme: "normal", background: "transparent",
           pointerEvents: "none", zIndex: "2147483646"
         });
-        win.addEventListener("message", onMessage);
+        frame.addEventListener("load", connect);
         player.addEventListener("pointermove", onHover, { passive: true });
         player.addEventListener("pointerleave", onLeave);
         player.addEventListener("contextmenu", onContextMenu, true);
@@ -510,7 +522,6 @@
       detach() {
         if (dragging) onDragEnd();
         closeMenu(true);
-        win?.removeEventListener("message", onMessage);
         player?.removeEventListener("pointermove", onHover, { passive: true });
         player?.removeEventListener("pointerleave", onLeave);
         player?.removeEventListener("contextmenu", onContextMenu, true);
@@ -518,6 +529,8 @@
         clearTimeout(readyTimer);
         frame?.remove();
         frame = null;
+        port?.close();
+        port = null;
         player = null;
         win = null;
         ready = false;
