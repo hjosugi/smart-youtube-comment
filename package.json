@@ -52,7 +52,7 @@
     "esbuild": "0.28.2",
     "oxfmt": "0.78.0",
     "oxlint": "1.93.0",
-    "playwright": "1.65.0",
+    "playwright": "1.65.1",
     "typescript": "7.0.2",
     "wrangler": "4.165.0"
   },
